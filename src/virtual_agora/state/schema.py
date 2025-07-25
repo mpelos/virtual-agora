@@ -78,6 +78,8 @@ class VoteRound(TypedDict):
     received_votes: int
     result: Optional[str]
     status: str  # 'active', 'completed', 'cancelled'
+    minority_voters: NotRequired[List[str]]  # Story 3.7: Agents who voted for losing option
+    minority_considerations: NotRequired[List[str]]  # Story 3.7: Final considerations from minority
 
 
 class ToolCallInfo(TypedDict):
@@ -157,6 +159,15 @@ class VirtualAgoraState(TypedDict):
     topic_summaries: Dict[str, str]
     consensus_summaries: Dict[str, str]  # topic -> consensus summary
     final_report: Optional[str]
+    
+    # Story 3.8: Report Writer Mode state
+    report_structure: NotRequired[List[str]]  # Ordered list of report section titles
+    report_sections: NotRequired[Dict[str, str]]  # section_title -> content
+    report_generation_status: NotRequired[str]  # 'pending', 'structuring', 'writing', 'completed'
+    
+    # Story 3.9: Agenda modification state
+    pending_agenda_modifications: NotRequired[List[str]]  # Proposed changes between topics
+    agenda_modification_votes: NotRequired[Dict[str, str]]  # agent_id -> vote/suggestion
     
     # Runtime statistics
     total_messages: int

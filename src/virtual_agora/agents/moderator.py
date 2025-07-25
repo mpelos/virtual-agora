@@ -2408,6 +2408,362 @@ class ModeratorAgent(LLMAgent):
                     })
         
         return active_polls
+    
+    # Story 3.7: Minority Considerations Management methods
+    
+    async def collect_minority_consideration(
+        self, 
+        voter_id: str, 
+        topic: str, 
+        state: VirtualAgoraState
+    ) -> Optional[str]:
+        """Collect final consideration from a minority voter.
+        
+        Args:
+            voter_id: ID of the agent who voted in minority
+            topic: The topic being concluded
+            state: Current VirtualAgoraState
+            
+        Returns:
+            The minority voter's final consideration, or None if failed
+        """
+        try:
+            # Create a prompt for the minority voter
+            prompt = (
+                f"As a participant who voted against the majority to conclude the topic '{topic}', "
+                f"you have the opportunity to share any final considerations, concerns, or important "
+                f"points that should be noted before we proceed. This ensures all perspectives are "
+                f"properly represented in our final summary.\n\n"
+                f"Please provide your final thoughts on this topic in 2-3 sentences."
+            )
+            
+            # This would normally call the specific agent - for now return a placeholder
+            # In real implementation, this would use the agent communication system
+            consideration = f"[Minority consideration from {voter_id} on topic '{topic}']"
+            
+            logger.info(f"Collected minority consideration from {voter_id}")
+            return consideration
+            
+        except Exception as e:
+            logger.error(f"Failed to collect minority consideration from {voter_id}: {e}")
+            return None
+    
+    async def incorporate_minority_views(
+        self, 
+        existing_summary: str, 
+        minority_considerations: List[str], 
+        topic: str
+    ) -> Optional[str]:
+        """Incorporate minority views into topic summary.
+        
+        Args:
+            existing_summary: Current topic summary
+            minority_considerations: List of minority considerations
+            topic: The topic name
+            
+        Returns:
+            Updated summary incorporating minority views
+        """
+        # Switch to synthesis mode for this operation
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            prompt = (
+                f"Please update the following topic summary to incorporate minority viewpoints "
+                f"that were expressed during the final considerations phase.\n\n"
+                f"**Topic:** {topic}\n\n"
+                f"**Current Summary:**\n{existing_summary}\n\n"
+                f"**Minority Considerations:**\n"
+            )
+            
+            for i, consideration in enumerate(minority_considerations, 1):
+                prompt += f"{i}. {consideration}\n"
+            
+            prompt += (
+                "\n\nPlease revise the summary to ensure that the minority perspectives are "
+                "properly represented while maintaining the overall coherence and balance of the summary."
+            )
+            
+            response = await self.generate_response(prompt)
+            
+            if response:
+                logger.info(f"Successfully incorporated minority views into summary for {topic}")
+                return response
+            else:
+                logger.warning(f"Failed to generate updated summary for {topic}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error incorporating minority views: {e}")
+            return None
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    # Story 3.8: Report Writer Mode methods
+    
+    async def define_report_structure(self, topic_summaries: Dict[str, str]) -> Optional[List[str]]:
+        """Define the structure for the final report based on topic summaries.
+        
+        Args:
+            topic_summaries: Dictionary mapping topic names to their summaries
+            
+        Returns:
+            Ordered list of report section titles, or None if failed
+        """
+        # Switch to writer mode for this operation
+        original_mode = self.current_mode
+        self.set_mode("writer")
+        
+        try:
+            # Use existing generate_report_structure method but adapt for dict input
+            summaries_list = list(topic_summaries.values())
+            sections = self.generate_report_structure(summaries_list)
+            
+            logger.info(f"Defined report structure with {len(sections)} sections")
+            return sections
+            
+        except Exception as e:
+            logger.error(f"Failed to define report structure: {e}")
+            return None
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    async def generate_report_section(
+        self, 
+        section_title: str, 
+        topic_summaries: Dict[str, str], 
+        report_structure: List[str]
+    ) -> Optional[str]:
+        """Generate content for a specific report section.
+        
+        Args:
+            section_title: Title of the section to generate
+            topic_summaries: All topic summaries for reference
+            report_structure: Complete report structure for context
+            
+        Returns:
+            Generated section content, or None if failed
+        """
+        # Switch to writer mode for this operation
+        original_mode = self.current_mode
+        self.set_mode("writer")
+        
+        try:
+            # Use existing generate_section_content method but adapt for dict input
+            summaries_list = list(topic_summaries.values())
+            
+            # Add context about the section's place in the overall structure
+            section_context = f"This is section '{section_title}' in a {len(report_structure)}-section report."
+            
+            content = self.generate_section_content(
+                section_title, 
+                summaries_list, 
+                section_context
+            )
+            
+            logger.info(f"Generated content for report section: {section_title}")
+            return content
+            
+        except Exception as e:
+            logger.error(f"Failed to generate content for section {section_title}: {e}")
+            return None
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    # Story 3.9: Agenda Modification Facilitation methods
+    
+    async def request_agenda_modification(
+        self, 
+        agent_id: str, 
+        current_queue: List[str], 
+        completed_topics: List[str], 
+        state: VirtualAgoraState
+    ) -> Optional[str]:
+        """Request agenda modification suggestions from an agent.
+        
+        Args:
+            agent_id: ID of the agent to request modifications from
+            current_queue: Current list of remaining topics
+            completed_topics: List of topics already completed
+            state: Current VirtualAgoraState
+            
+        Returns:
+            Agent's modification suggestion, or None if failed
+        """
+        try:
+            prompt = (
+                f"Based on our discussions so far, we have completed these topics: "
+                f"{', '.join(completed_topics) if completed_topics else 'None yet'}\n\n"
+                f"The remaining topics in our agenda are:\n"
+            )
+            
+            for i, topic in enumerate(current_queue, 1):
+                prompt += f"{i}. {topic}\n"
+            
+            prompt += (
+                f"\n\nBased on the insights gained from our previous discussions, "
+                f"would you like to suggest any modifications to the remaining agenda? "
+                f"You can suggest:\n"
+                f"- Adding new topics that emerged from our discussions\n"
+                f"- Removing topics that may no longer be relevant\n"
+                f"- Combining or splitting existing topics\n\n"
+                f"Please provide your suggestions or respond with 'No changes' if you're "
+                f"satisfied with the current agenda."
+            )
+            
+            # This would normally call the specific agent - for now return a placeholder
+            # In real implementation, this would use the agent communication system
+            suggestion = f"[Agenda modification suggestion from {agent_id}]"
+            
+            logger.info(f"Collected agenda modification suggestion from {agent_id}")
+            return suggestion
+            
+        except Exception as e:
+            logger.error(f"Failed to collect agenda modification from {agent_id}: {e}")
+            return None
+    
+    async def synthesize_agenda_modifications(
+        self, 
+        modifications: List[str], 
+        current_queue: List[str]
+    ) -> Optional[List[str]]:
+        """Synthesize agenda modification suggestions into a new proposed agenda.
+        
+        Args:
+            modifications: List of modification suggestions from agents
+            current_queue: Current topic queue
+            
+        Returns:
+            New proposed agenda incorporating modifications, or None if failed
+        """
+        # Switch to synthesis mode for this operation
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            prompt = (
+                f"Analyze the following agenda modification suggestions and synthesize them "
+                f"into an updated agenda. Consider the merit of each suggestion and create "
+                f"a balanced approach that incorporates valuable additions while maintaining "
+                f"focus and coherence.\n\n"
+                f"**Current Agenda:**\n"
+            )
+            
+            for i, topic in enumerate(current_queue, 1):
+                prompt += f"{i}. {topic}\n"
+            
+            prompt += f"\n**Modification Suggestions:**\n"
+            
+            for i, modification in enumerate(modifications, 1):
+                prompt += f"{i}. {modification}\n"
+            
+            prompt += (
+                f"\n\nPlease synthesize these suggestions into a revised agenda. "
+                f"Return the result as a JSON object with the key 'proposed_agenda' "
+                f"containing an ordered list of topics."
+            )
+            
+            # Use existing agenda synthesis method
+            json_response = self.generate_json_response(
+                prompt,
+                model_class=None  # Use basic JSON parsing
+            )
+            
+            if "proposed_agenda" in json_response:
+                new_agenda = json_response["proposed_agenda"]
+                logger.info(f"Synthesized agenda modifications into {len(new_agenda)} topics")
+                return new_agenda
+            else:
+                logger.warning("Failed to extract proposed_agenda from response")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to synthesize agenda modifications: {e}")
+            return None
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    async def collect_agenda_vote(
+        self, 
+        agent_id: str, 
+        proposed_topics: List[str], 
+        state: VirtualAgoraState
+    ) -> Optional[str]:
+        """Collect vote on proposed agenda from an agent.
+        
+        Args:
+            agent_id: ID of the agent to collect vote from
+            proposed_topics: List of proposed topics to vote on
+            state: Current VirtualAgoraState
+            
+        Returns:
+            Agent's vote response, or None if failed
+        """
+        try:
+            prompt = (
+                f"Please vote on the following proposed agenda by ranking the topics "
+                f"in your preferred order of discussion:\n\n"
+            )
+            
+            for i, topic in enumerate(proposed_topics, 1):
+                prompt += f"{i}. {topic}\n"
+            
+            prompt += (
+                f"\n\nPlease provide your ranking with brief reasoning for your preferences. "
+                f"You can reference topics by their numbers or names."
+            )
+            
+            # This would normally call the specific agent - for now return a placeholder
+            # In real implementation, this would use the agent communication system
+            vote = f"[Agenda vote from {agent_id}]"
+            
+            logger.info(f"Collected agenda vote from {agent_id}")
+            return vote
+            
+        except Exception as e:
+            logger.error(f"Failed to collect agenda vote from {agent_id}: {e}")
+            return None
+    
+    async def synthesize_agenda_votes(
+        self, 
+        votes: Dict[str, str], 
+        proposed_topics: List[str]
+    ) -> Optional[List[str]]:
+        """Synthesize agenda votes into final ordered topic queue.
+        
+        Args:
+            votes: Dictionary mapping agent IDs to their vote responses
+            proposed_topics: List of topics that were voted on
+            
+        Returns:
+            Final ordered topic queue, or None if failed
+        """
+        try:
+            # Use existing synthesize_agenda method
+            vote_list = list(votes.values())
+            voter_ids = list(votes.keys())
+            
+            final_agenda = self.synthesize_agenda(
+                proposed_topics, 
+                vote_list, 
+                voter_ids
+            )
+            
+            logger.info(f"Synthesized final agenda from {len(votes)} votes")
+            return final_agenda
+            
+        except Exception as e:
+            logger.error(f"Failed to synthesize agenda votes: {e}")
+            return None
 
 
 # Factory functions for common moderator configurations
