@@ -15,6 +15,8 @@ from rich.console import Console
 from rich.traceback import install as install_rich_traceback
 
 from virtual_agora import __version__
+from virtual_agora.config.loader import ConfigLoader
+from virtual_agora.config.validators import ConfigValidator
 from virtual_agora.utils.logging import setup_logging, get_logger
 from virtual_agora.utils.exceptions import VirtualAgoraError, ConfigurationError
 
@@ -110,8 +112,56 @@ async def run_application(args: argparse.Namespace) -> int:
                 "Please create a .env file with your API keys or specify a different path with --env"
             )
         
-        # TODO: Load environment variables
-        # TODO: Load and validate configuration
+        # Load environment variables
+        from dotenv import load_dotenv
+        if args.env.exists():
+            load_dotenv(args.env)
+            logger.info(f"Loaded environment variables from: {args.env}")
+        
+        # Load and validate configuration
+        config_loader = ConfigLoader(args.config)
+        config = config_loader.load()
+        
+        # Check for missing API keys
+        missing_keys = config_loader.get_missing_api_keys()
+        if missing_keys:
+            console.print(
+                "[red]Error:[/red] Missing API keys for providers: " +
+                ", ".join(missing_keys) + "\n"
+                "Please set the required environment variables or add them to your .env file."
+            )
+            return 1
+        
+        # Validate configuration
+        validator = ConfigValidator(config)
+        validation_report = validator.get_validation_report()
+        
+        # Show configuration summary
+        console.print("\n[bold cyan]Configuration Summary:[/bold cyan]")
+        console.print(f"Moderator: {config.moderator.model} ({config.moderator.provider.value})")
+        console.print(f"Total Agents: {config.get_total_agent_count()}")
+        
+        # Show agent breakdown
+        console.print("\n[bold]Discussion Agents:[/bold]")
+        for agent_config in config.agents:
+            console.print(
+                f"  - {agent_config.model} ({agent_config.provider.value}) "
+                f"x{agent_config.count}"
+            )
+        
+        # Show any validation warnings
+        if validation_report.get("warnings"):
+            console.print("\n[yellow]Configuration Warnings:[/yellow]")
+            for warning in validation_report["warnings"]:
+                console.print(f"  ⚠️  {warning}")
+        
+        # Run additional validation
+        try:
+            validator.validate_all()
+        except ConfigurationError as e:
+            console.print(f"\n[red]Configuration Error:[/red] {e}")
+            return 1
+        
         # TODO: Initialize providers
         # TODO: Initialize agents
         # TODO: Run discussion workflow
