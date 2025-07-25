@@ -205,3 +205,177 @@ class StateError(VirtualAgoraError):
         self.state_field = state_field
         self.current_value = current_value
         self.expected_value = expected_value
+
+
+class RecoverableError(VirtualAgoraError):
+    """Base class for errors that can be recovered through retry or other means.
+    
+    This indicates an error that is temporary and the operation
+    can be retried with a reasonable expectation of success.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        retry_after: Optional[float] = None,
+        max_retries: Optional[int] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        """Initialize recoverable error.
+        
+        Args:
+            message: Error message.
+            retry_after: Suggested delay before retry (seconds).
+            max_retries: Maximum number of retries recommended.
+            details: Additional error details.
+        """
+        super().__init__(message, details)
+        self.retry_after = retry_after
+        self.max_retries = max_retries
+
+
+class CriticalError(VirtualAgoraError):
+    """Raised when a critical error occurs that requires immediate shutdown.
+    
+    This indicates an unrecoverable error that compromises the
+    integrity or security of the application.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        system_component: Optional[str] = None,
+        requires_restart: bool = True,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        """Initialize critical error.
+        
+        Args:
+            message: Error message.
+            system_component: Component that failed critically.
+            requires_restart: Whether application restart is required.
+            details: Additional error details.
+        """
+        super().__init__(message, details)
+        self.system_component = system_component
+        self.requires_restart = requires_restart
+
+
+class ProviderRateLimitError(ProviderError, RecoverableError):
+    """Raised when a provider rate limit is exceeded.
+    
+    This is a specific type of provider error that indicates
+    the request was rejected due to rate limiting.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        provider: str,
+        retry_after: Optional[float] = None,
+        limit_type: Optional[str] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        """Initialize rate limit error.
+        
+        Args:
+            message: Error message.
+            provider: Provider that returned the rate limit.
+            retry_after: Time to wait before retry (from provider).
+            limit_type: Type of limit hit (requests, tokens, etc).
+            details: Additional error details.
+        """
+        ProviderError.__init__(self, message, provider, "rate_limit", details)
+        RecoverableError.__init__(self, message, retry_after, 3, details)
+        self.limit_type = limit_type
+
+
+class NetworkTransientError(RecoverableError):
+    """Raised when a temporary network error occurs.
+    
+    This includes connection timeouts, DNS failures, and other
+    network-related issues that are likely temporary.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        operation: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        """Initialize network error.
+        
+        Args:
+            message: Error message.
+            operation: Operation that failed.
+            endpoint: Network endpoint involved.
+            details: Additional error details.
+        """
+        super().__init__(message, retry_after=1.0, max_retries=5, details=details)
+        self.operation = operation
+        self.endpoint = endpoint
+
+
+class StateCorruptionError(StateError, CriticalError):
+    """Raised when application state is corrupted beyond repair.
+    
+    This indicates that the state has become inconsistent in a way
+    that cannot be automatically recovered.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        corrupted_fields: Optional[list[str]] = None,
+        last_known_good_state: Optional[dict[str, Any]] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        """Initialize state corruption error.
+        
+        Args:
+            message: Error message.
+            corrupted_fields: List of corrupted state fields.
+            last_known_good_state: Snapshot of last valid state.
+            details: Additional error details.
+        """
+        StateError.__init__(self, message, details=details)
+        CriticalError.__init__(
+            self,
+            message,
+            system_component="state_manager",
+            requires_restart=True,
+            details=details,
+        )
+        self.corrupted_fields = corrupted_fields or []
+        self.last_known_good_state = last_known_good_state
+
+
+class UserInterventionRequired(VirtualAgoraError):
+    """Raised when user intervention is required to proceed.
+    
+    This indicates a situation where the application cannot
+    proceed without explicit user input or decision.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        prompt: str,
+        options: Optional[list[str]] = None,
+        default_option: Optional[str] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        """Initialize user intervention error.
+        
+        Args:
+            message: Error message.
+            prompt: Prompt to show the user.
+            options: Available options for the user.
+            default_option: Default option if user doesn't respond.
+            details: Additional error details.
+        """
+        super().__init__(message, details)
+        self.prompt = prompt
+        self.options = options or []
+        self.default_option = default_option
