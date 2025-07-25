@@ -821,7 +821,337 @@ class TestModeratorIntegration:
         
         # Verify message count increased
         assert moderator.message_count == 4
+
+
+class TestModeratorAgendaSynthesis:
+    """Test ModeratorAgent agenda synthesis and voting management functionality."""
     
+    def setup_method(self):
+        """Set up test method."""
+        self.mock_llm = Mock()
+        self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
+        self.mock_llm.model_name = "gemini-1.5-pro"
+        
+        self.moderator = ModeratorAgent(
+            agent_id="synthesis-moderator",
+            llm=self.mock_llm,
+            mode="synthesis",
+            enable_error_handling=False
+        )
+    
+    def test_request_topic_proposals(self):
+        """Test requesting topic proposals from agents."""
+        prompt = self.moderator.request_topic_proposals(
+            main_topic="AI Ethics",
+            agent_count=4
+        )
+        
+        # Verify prompt content
+        assert "AI Ethics" in prompt
+        assert "3-5 sub-topics" in prompt
+        assert "4 participants" in prompt
+        assert "numbered list" in prompt
+        
+        # Should restore original mode
+        assert self.moderator.current_mode == "synthesis"
+    
+    def test_request_topic_proposals_with_context(self):
+        """Test requesting topic proposals with context messages."""
+        from virtual_agora.state.schema import Message
+        from datetime import datetime
+        
+        context_messages = [
+            Message(
+                id="msg1",
+                speaker_id="user",
+                speaker_role="moderator",
+                content="Previous context",
+                timestamp=datetime.now(),
+                phase=1,
+                topic=None
+            )
+        ]
+        
+        prompt = self.moderator.request_topic_proposals(
+            main_topic="Climate Change",
+            agent_count=3,
+            context_messages=context_messages
+        )
+        
+        assert "Climate Change" in prompt
+        assert "3 participants" in prompt
+    
+    def test_collect_proposals_basic(self):
+        """Test basic proposal collection and deduplication."""
+        agent_responses = [
+            "1. AI Safety\n2. Machine Learning Ethics\n3. Privacy Rights",
+            "1. AI Safety\n2. Algorithmic Bias\n3. Data Protection",
+            "1. Privacy Rights\n2. Future of Work\n3. AI Governance"
+        ]
+        
+        result = self.moderator.collect_proposals(agent_responses)
+        
+        # Should have unique topics
+        expected_topics = [
+            "Ai Safety",
+            "Machine Learning Ethics", 
+            "Privacy Rights",
+            "Algorithmic Bias",
+            "Data Protection",
+            "Future Of Work",
+            "Ai Governance"
+        ]
+        
+        assert len(result["unique_topics"]) == 7
+        assert result["total_responses"] == 3
+        assert result["total_unique_topics"] == 7
+        
+        # Check specific topics are present (accounting for title case normalization)
+        unique_lower = [t.lower() for t in result["unique_topics"]]
+        assert "ai safety" in unique_lower
+        assert "privacy rights" in unique_lower
+    
+    def test_collect_proposals_with_agent_ids(self):
+        """Test proposal collection with agent ID tracking."""
+        agent_responses = [
+            "1. Topic A\n2. Topic B",
+            "1. Topic A\n2. Topic C"
+        ]
+        agent_ids = ["agent1", "agent2"]
+        
+        result = self.moderator.collect_proposals(agent_responses, agent_ids)
+        
+        # Check topic sources tracking
+        assert "Topic A" in result["topic_sources"]
+        assert len(result["topic_sources"]["Topic A"]) == 2
+        assert "agent1" in result["topic_sources"]["Topic A"]
+        assert "agent2" in result["topic_sources"]["Topic A"]
+    
+    def test_collect_proposals_mismatched_ids(self):
+        """Test error handling for mismatched agent IDs."""
+        agent_responses = ["1. Topic A"]
+        agent_ids = ["agent1", "agent2"]  # More IDs than responses
+        
+        with pytest.raises(ValueError, match="agent_ids and agent_responses must have same length"):
+            self.moderator.collect_proposals(agent_responses, agent_ids)
+    
+    def test_extract_topics_from_response(self):
+        """Test topic extraction from various response formats."""
+        # Test numbered lists
+        response1 = "1. First Topic\n2. Second Topic\n3. Third Topic"
+        topics1 = self.moderator._extract_topics_from_response(response1)
+        assert topics1 == ["First Topic", "Second Topic", "Third Topic"]
+        
+        # Test bullet points
+        response2 = "- First Topic\n• Second Topic\n* Third Topic"
+        topics2 = self.moderator._extract_topics_from_response(response2)
+        assert topics2 == ["First Topic", "Second Topic", "Third Topic"]
+        
+        # Test mixed format
+        response3 = "Some intro text\n1. Topic One\nRandom text\n2. Topic Two\n- Bullet topic"
+        topics3 = self.moderator._extract_topics_from_response(response3)
+        assert topics3 == ["Topic One", "Topic Two", "Bullet topic"]
+        
+        # Test empty response
+        response4 = "No topics here, just plain text"
+        topics4 = self.moderator._extract_topics_from_response(response4)
+        assert topics4 == []
+    
+    def test_request_votes_basic(self):
+        """Test basic voting request generation."""
+        topics = ["AI Safety", "Privacy Rights", "Future of Work"]
+        
+        prompt = self.moderator.request_votes(topics)
+        
+        # Verify prompt contains all topics
+        for topic in topics:
+            assert topic in prompt
+        
+        # Verify voting instructions
+        assert "vote on the order" in prompt
+        assert "preferred order" in prompt
+        assert "reasoning" in prompt
+    
+    def test_request_votes_with_instructions(self):
+        """Test voting request with custom instructions."""
+        topics = ["Topic A", "Topic B"]
+        custom_instructions = "Consider urgency when voting"
+        
+        prompt = self.moderator.request_votes(topics, custom_instructions)
+        
+        assert custom_instructions in prompt
+        assert "Topic A" in prompt
+        assert "Topic B" in prompt
+    
+    def test_request_votes_empty_topics(self):
+        """Test error handling for empty topic list."""
+        with pytest.raises(ValueError, match="Cannot request votes on empty topic list"):
+            self.moderator.request_votes([])
+    
+    def test_synthesize_agenda_basic(self):
+        """Test basic agenda synthesis from votes."""
+        topics = ["AI Safety", "Privacy Rights", "Future of Work"]
+        votes = [
+            "My preferred order: 1, 3, 2. AI Safety should come first as it's fundamental.",
+            "I prefer: 2, 1, 3. Privacy is most urgent given current regulations.",
+            "Order: 1, 2, 3. Follow the logical progression."
+        ]
+        
+        # Mock successful JSON response
+        mock_response = Mock()
+        mock_response.content = '{"proposed_agenda": ["AI Safety", "Privacy Rights", "Future of Work"]}'
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        agenda = self.moderator.synthesize_agenda(topics, votes)
+        
+        assert agenda == ["AI Safety", "Privacy Rights", "Future of Work"]
+        assert self.moderator.current_mode == "synthesis"  # Should restore mode
+    
+    def test_synthesize_agenda_with_voter_ids(self):
+        """Test agenda synthesis with voter ID tracking."""
+        topics = ["Topic A", "Topic B"]
+        votes = ["Order: 1, 2", "Order: 2, 1"]
+        voter_ids = ["agent1", "agent2"]
+        
+        # Mock successful JSON response
+        mock_response = Mock()
+        mock_response.content = '{"proposed_agenda": ["Topic A", "Topic B"]}'
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        agenda = self.moderator.synthesize_agenda(topics, votes, voter_ids)
+        
+        assert len(agenda) == 2
+        # Verify the LLM was called with voter IDs in the prompt
+        call_args = self.mock_llm.invoke.call_args[0][0]
+        human_messages = [msg for msg in call_args if hasattr(msg, 'content')]
+        prompt_content = ' '.join([msg.content for msg in human_messages])
+        assert "agent1:" in prompt_content
+        assert "agent2:" in prompt_content
+    
+    def test_synthesize_agenda_empty_inputs(self):
+        """Test error handling for empty inputs."""
+        # Empty topics
+        with pytest.raises(ValueError, match="Cannot synthesize agenda from empty topics or votes"):
+            self.moderator.synthesize_agenda([], ["vote1"])
+            
+        # Empty votes
+        with pytest.raises(ValueError, match="Cannot synthesize agenda from empty topics or votes"):
+            self.moderator.synthesize_agenda(["topic1"], [])
+    
+    def test_synthesize_agenda_failure(self):
+        """Test agenda synthesis failure handling."""
+        topics = ["Topic A"]
+        votes = ["Invalid vote"]
+        
+        # Mock LLM failure
+        self.mock_llm.invoke.side_effect = Exception("LLM error")
+        
+        with pytest.raises(ValueError, match="Failed to synthesize agenda"):
+            self.moderator.synthesize_agenda(topics, votes)
+    
+    def test_parse_agenda_json_enhanced_validation(self):
+        """Test enhanced validation in parse_agenda_json."""
+        # Test empty agenda
+        mock_response = Mock()
+        mock_response.content = '{"proposed_agenda": []}'
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        with pytest.raises(ValueError, match="Agenda cannot be empty"):
+            self.moderator.parse_agenda_json("Generate empty agenda")
+    
+    def test_parse_agenda_json_duplicate_handling(self):
+        """Test duplicate topic handling in parse_agenda_json."""
+        # Mock response with duplicates
+        mock_response = Mock()
+        mock_response.content = '{"proposed_agenda": ["AI Safety", "Privacy Rights", "AI SAFETY", "Future of Work"]}'
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        agenda = self.moderator.parse_agenda_json("Generate agenda with duplicates")
+        
+        # Should remove duplicates while preserving order
+        assert len(agenda) == 3
+        assert "AI Safety" in agenda
+        assert "Privacy Rights" in agenda
+        assert "Future of Work" in agenda
+        # Should not contain the duplicate "AI SAFETY"
+        assert agenda.count("AI Safety") == 1
+    
+    def test_parse_agenda_json_invalid_types(self):
+        """Test validation of agenda item types."""
+        # Mock response with non-string item
+        mock_response = Mock()
+        mock_response.content = '{"proposed_agenda": ["Valid Topic", 123, "Another Topic"]}'
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        # Pydantic validation will catch this first and wrap it in our ValueError
+        with pytest.raises(ValueError, match="Failed to parse agenda"):
+            self.moderator.parse_agenda_json("Generate invalid agenda")
+    
+    def test_full_agenda_workflow(self):
+        """Test the complete agenda synthesis workflow."""
+        # 1. Request proposals
+        proposal_prompt = self.moderator.request_topic_proposals("AI Ethics", 3)
+        assert "AI Ethics" in proposal_prompt
+        
+        # 2. Collect proposals
+        agent_responses = [
+            "1. AI Safety\n2. Privacy Rights\n3. Algorithmic Bias",
+            "1. AI Safety\n2. Future of Work\n3. Data Protection",
+            "1. Privacy Rights\n2. AI Governance\n3. Transparency"
+        ]
+        collected = self.moderator.collect_proposals(agent_responses)
+        topics = collected["unique_topics"]
+        assert len(topics) >= 3  # Should have multiple unique topics
+        
+        # 3. Request votes
+        voting_prompt = self.moderator.request_votes(topics[:3])  # Use first 3 topics
+        assert "vote on the order" in voting_prompt
+        
+        # 4. Synthesize agenda
+        votes = [
+            "My order: 1, 2, 3. This makes logical sense.",
+            "I prefer: 2, 1, 3. Privacy should come first.",
+            "Order: 1, 3, 2. AI Safety is foundational."
+        ]
+        
+        # Mock successful synthesis
+        mock_response = Mock()
+        mock_response.content = f'{{"proposed_agenda": {json.dumps(topics[:3])}}}'
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        final_agenda = self.moderator.synthesize_agenda(topics[:3], votes)
+        
+        assert len(final_agenda) == 3
+        assert all(isinstance(topic, str) for topic in final_agenda)
+    
+    def test_mode_switching_during_operations(self):
+        """Test that mode switching works correctly during operations."""
+        original_mode = "facilitation"
+        self.moderator.set_mode(original_mode)
+        
+        # Each method should temporarily switch to synthesis mode
+        self.moderator.request_topic_proposals("Test Topic", 2)
+        assert self.moderator.current_mode == original_mode
+        
+        topics = ["Topic A", "Topic B"]
+        self.moderator.request_votes(topics)
+        assert self.moderator.current_mode == original_mode
+        
+        # synthesize_agenda will also test mode switching
+        mock_response = Mock()
+        mock_response.content = '{"proposed_agenda": ["Topic A", "Topic B"]}'
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        self.moderator.synthesize_agenda(topics, ["vote1", "vote2"])
+        assert self.moderator.current_mode == original_mode
+
     def test_moderator_context_preservation(self):
         """Test that context is preserved across mode switches."""
         mock_llm = Mock()

@@ -347,9 +347,45 @@ class ModeratorAgent(LLMAgent):
             
             agenda = json_response["proposed_agenda"]
             
+            # Enhanced validation
+            if not agenda:
+                raise ValueError("Agenda cannot be empty")
+            
+            if not isinstance(agenda, list):
+                raise ValueError("Agenda must be a list of topics")
+            
+            # Check for duplicate topics
+            seen_topics = set()
+            duplicates = []
+            for topic in agenda:
+                if not isinstance(topic, str):
+                    raise ValueError(f"All agenda items must be strings, got {type(topic)}")
+                
+                normalized_topic = topic.strip().lower()
+                if normalized_topic in seen_topics:
+                    duplicates.append(topic)
+                else:
+                    seen_topics.add(normalized_topic)
+            
+            if duplicates:
+                logger.warning(
+                    f"ModeratorAgent {self.agent_id} found duplicate topics in agenda: {duplicates}"
+                )
+                # Remove duplicates while preserving order
+                unique_agenda = []
+                seen = set()
+                for topic in agenda:
+                    normalized = topic.strip().lower()
+                    if normalized not in seen:
+                        unique_agenda.append(topic)
+                        seen.add(normalized)
+                agenda = unique_agenda
+            
+            # Log voting data for transparency
             logger.info(
                 f"ModeratorAgent {self.agent_id} parsed agenda with {len(agenda)} topics"
             )
+            logger.debug(f"Final agenda order: {agenda}")
             
             return agenda
             
@@ -358,6 +394,250 @@ class ModeratorAgent(LLMAgent):
                 f"ModeratorAgent {self.agent_id} failed to parse agenda: {e}"
             )
             raise ValueError(f"Failed to parse agenda: {e}")
+    
+    def request_topic_proposals(
+        self,
+        main_topic: str,
+        agent_count: int,
+        context_messages: Optional[List[Message]] = None
+    ) -> str:
+        """Generate a prompt requesting topic proposals from agents.
+        
+        Args:
+            main_topic: The main discussion topic
+            agent_count: Number of agents to request proposals from
+            context_messages: Previous messages for context
+            
+        Returns:
+            Formatted prompt for topic proposal request
+        """
+        # Switch to synthesis mode for this operation
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            prompt = (
+                f"Please propose 3-5 sub-topics for discussion related to '{main_topic}'. "
+                f"Each agent should provide thoughtful sub-topics that would facilitate "
+                f"meaningful discussion among {agent_count} participants. "
+                f"Consider different perspectives and aspects of the main topic. "
+                f"Present your proposals clearly as a numbered list."
+            )
+            
+            logger.info(
+                f"ModeratorAgent {self.agent_id} generated topic proposal request for '{main_topic}'"
+            )
+            
+            return prompt
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    def collect_proposals(
+        self,
+        agent_responses: List[str],
+        agent_ids: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Collect and deduplicate topic proposals from agent responses.
+        
+        Args:
+            agent_responses: List of agent response texts containing proposals
+            agent_ids: Optional list of agent IDs for tracking proposals
+            
+        Returns:
+            Dictionary containing unique topics and metadata
+        """
+        if agent_ids and len(agent_ids) != len(agent_responses):
+            raise ValueError("agent_ids and agent_responses must have same length")
+        
+        all_topics = []
+        topic_sources = {}  # topic -> list of agents who proposed it
+        
+        # Extract topics from each response
+        for i, response in enumerate(agent_responses):
+            agent_id = agent_ids[i] if agent_ids else f"agent_{i}"
+            
+            # Simple extraction - look for numbered lists
+            topics_in_response = self._extract_topics_from_response(response)
+            
+            for topic in topics_in_response:
+                # Normalize topic text (strip, title case)
+                normalized_topic = topic.strip().title()
+                
+                if normalized_topic not in topic_sources:
+                    topic_sources[normalized_topic] = []
+                    all_topics.append(normalized_topic)
+                
+                topic_sources[normalized_topic].append(agent_id)
+        
+        # Remove duplicates while preserving order
+        unique_topics = []
+        seen = set()
+        for topic in all_topics:
+            if topic not in seen:
+                unique_topics.append(topic)
+                seen.add(topic)
+        
+        logger.info(
+            f"ModeratorAgent {self.agent_id} collected {len(unique_topics)} unique topics "
+            f"from {len(agent_responses)} responses"
+        )
+        
+        return {
+            "unique_topics": unique_topics,
+            "topic_sources": topic_sources,
+            "total_responses": len(agent_responses),
+            "total_unique_topics": len(unique_topics)
+        }
+    
+    def _extract_topics_from_response(self, response: str) -> List[str]:
+        """Extract topic proposals from an agent response.
+        
+        Args:
+            response: Agent response text
+            
+        Returns:
+            List of extracted topics
+        """
+        topics = []
+        lines = response.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            # Look for numbered lists (1., 2., etc.) or bullet points
+            if any(line.startswith(f"{i}.") for i in range(1, 10)):
+                # Remove the number and period
+                topic = line.split('.', 1)[1].strip()
+                if topic:
+                    topics.append(topic)
+            elif line.startswith(('- ', '• ', '* ')):
+                # Remove bullet point
+                topic = line[2:].strip()
+                if topic:
+                    topics.append(topic)
+        
+        return topics
+    
+    def request_votes(
+        self,
+        topics: List[str],
+        voting_instructions: Optional[str] = None
+    ) -> str:
+        """Generate a prompt requesting votes on topic ordering.
+        
+        Args:
+            topics: List of topics to vote on
+            voting_instructions: Optional custom voting instructions
+            
+        Returns:
+            Formatted prompt for voting request
+        """
+        if not topics:
+            raise ValueError("Cannot request votes on empty topic list")
+        
+        # Switch to synthesis mode for this operation
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            prompt = (
+                "Please vote on the order of discussion for the following topics. "
+                "Rank them in your preferred order from first to last, and provide "
+                "brief reasoning for your preferences.\n\n"
+                "Topics to vote on:\n"
+            )
+            
+            for i, topic in enumerate(topics, 1):
+                prompt += f"{i}. {topic}\n"
+            
+            prompt += (
+                "\nPlease respond with your preferred order (e.g., '1, 3, 2, 4, 5') "
+                "and explain your reasoning. Consider which topics would flow "
+                "best together and which should be addressed first."
+            )
+            
+            if voting_instructions:
+                prompt += f"\n\nAdditional instructions: {voting_instructions}"
+            
+            logger.info(
+                f"ModeratorAgent {self.agent_id} generated voting request for {len(topics)} topics"
+            )
+            
+            return prompt
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    def synthesize_agenda(
+        self,
+        topics: List[str],
+        votes: List[str],
+        voter_ids: Optional[List[str]] = None
+    ) -> List[str]:
+        """Synthesize agent votes into a ranked agenda.
+        
+        Args:
+            topics: List of topics being voted on
+            votes: List of vote responses from agents
+            voter_ids: Optional list of voter IDs for logging
+            
+        Returns:
+            List of topics in ranked order
+            
+        Raises:
+            ValueError: If agenda synthesis fails
+        """
+        if not topics or not votes:
+            raise ValueError("Cannot synthesize agenda from empty topics or votes")
+        
+        # Switch to synthesis mode for this operation
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            # Construct prompt for vote analysis
+            prompt = (
+                "Analyze the following votes and synthesize them into a ranked agenda. "
+                "Consider the preferences expressed by each voter and use fair tie-breaking "
+                "when votes are close. Output the result as a JSON object.\n\n"
+                "Topics being voted on:\n"
+            )
+            
+            for i, topic in enumerate(topics, 1):
+                prompt += f"{i}. {topic}\n"
+            
+            prompt += "\nVotes received:\n"
+            
+            for i, vote in enumerate(votes):
+                voter_id = voter_ids[i] if voter_ids else f"Voter {i+1}"
+                prompt += f"{voter_id}: {vote}\n\n"
+            
+            prompt += (
+                "Analyze these votes to determine the preferred order of discussion. "
+                "Break ties fairly by considering the reasoning provided. "
+                "Return a JSON object with the topics in ranked order."
+            )
+            
+            # Use existing JSON response generation with validation
+            agenda = self.parse_agenda_json(prompt)
+            
+            logger.info(
+                f"ModeratorAgent {self.agent_id} synthesized agenda from {len(votes)} votes"
+            )
+            
+            return agenda
+            
+        except Exception as e:
+            logger.error(
+                f"ModeratorAgent {self.agent_id} failed to synthesize agenda: {e}"
+            )
+            raise ValueError(f"Failed to synthesize agenda: {e}")
+        
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
     
     def generate_report_structure(
         self,
