@@ -1,12 +1,17 @@
 """Tests for LLM agent wrapper."""
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from datetime import datetime
 import uuid
+import asyncio
+
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.types import StreamWriter
 
 from virtual_agora.agents.llm_agent import LLMAgent
-from virtual_agora.state.schema import AgentInfo, Message
+from virtual_agora.state.schema import AgentInfo, Message, MessagesState, VirtualAgoraState
 
 
 class TestLLMAgent:
@@ -66,7 +71,7 @@ class TestLLMAgent:
         
         moderator = LLMAgent("mod", moderator_llm, role="moderator")
         assert "impartial Moderator" in moderator.system_prompt
-        assert "facilitate the creation" in moderator.system_prompt
+        assert "Facilitate the creation" in moderator.system_prompt
         
         # Test participant role
         participant_llm = Mock()
@@ -345,3 +350,390 @@ class TestLLMAgentIntegration:
         info = agent.get_agent_info()
         assert info["message_count"] == 3
         assert info["provider"] == "anthropic"
+
+
+class TestLLMAgentLangGraphIntegration:
+    """Test LLMAgent's LangGraph integration features."""
+    
+    def setup_method(self):
+        """Set up test method."""
+        # Create mock LLM
+        self.mock_llm = Mock()
+        self.mock_llm.__class__.__name__ = "ChatOpenAI"
+        self.mock_llm.model_name = "gpt-4"
+        
+        # Create agent
+        self.agent = LLMAgent(
+            agent_id="test-agent",
+            llm=self.mock_llm,
+            role="participant"
+        )
+    
+    def test_agent_as_callable_node_with_messages_state(self):
+        """Test agent can be used as a callable node with MessagesState."""
+        # Setup mock response
+        mock_response = Mock()
+        mock_response.content = "Test response"
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Create state with messages
+        state = {
+            "messages": [
+                HumanMessage(content="Hello, how are you?")
+            ]
+        }
+        
+        # Call agent as node
+        result = self.agent(state)
+        
+        # Check result
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+        assert isinstance(result["messages"][0], AIMessage)
+        assert result["messages"][0].content == "Test response"
+        assert result["messages"][0].name == "test-agent"
+    
+    def test_agent_with_virtual_agora_state(self):
+        """Test agent with full VirtualAgoraState."""
+        # Setup mock
+        mock_response = Mock()
+        mock_response.content = "I propose discussing AI ethics."
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Create VirtualAgoraState
+        state = {
+            "session_id": "test-session",
+            "current_phase": 1,  # Agenda setting
+            "agents": {"test-agent": {"id": "test-agent"}},
+            "messages": [],
+            "active_topic": None,
+            "messages_by_agent": {},
+            "messages_by_topic": {}
+        }
+        
+        # Call agent
+        result = self.agent(state)
+        
+        # Check result - now returns AIMessage objects for LangGraph compatibility
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+        message = result["messages"][0]
+        assert isinstance(message, AIMessage)
+        assert message.name == "test-agent"
+        assert message.content == "I propose discussing AI ethics."
+        assert "messages_by_agent" in result
+        assert result["messages_by_agent"]["test-agent"] == 1
+    
+    @pytest.mark.asyncio
+    async def test_async_call_with_messages_state(self):
+        """Test async __acall__ method."""
+        # Setup mock
+        mock_response = Mock()
+        mock_response.content = "Async response"
+        self.mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        
+        # Create state
+        state = {
+            "messages": [
+                HumanMessage(content="Test async")
+            ]
+        }
+        
+        # Call async
+        result = await self.agent.__acall__(state)
+        
+        # Verify
+        assert "messages" in result
+        assert result["messages"][0].content == "Async response"
+        assert result["messages"][0].name == "test-agent"
+    
+    def test_thread_safety_of_message_count(self):
+        """Test thread-safe message count updates."""
+        mock_response = Mock()
+        mock_response.content = "Response"
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Simulate concurrent calls
+        import threading
+        
+        def call_agent():
+            state = {"messages": [HumanMessage(content="Test")]}
+            self.agent(state)
+        
+        threads = []
+        initial_count = self.agent.message_count
+        
+        # Create 10 threads
+        for _ in range(10):
+            t = threading.Thread(target=call_agent)
+            threads.append(t)
+            t.start()
+        
+        # Wait for all threads
+        for t in threads:
+            t.join()
+        
+        # Check count incremented correctly
+        assert self.agent.message_count == initial_count + 10
+    
+    def test_stream_in_graph_messages_mode(self):
+        """Test streaming in graph with messages mode."""
+        # Setup streaming chunks
+        mock_chunks = [
+            Mock(content="Hello"),
+            Mock(content=" world"),
+            Mock(content="!")
+        ]
+        self.mock_llm.stream.return_value = iter(mock_chunks)
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        state = {
+            "messages": [HumanMessage(content="Say hello")]
+        }
+        
+        # Stream in messages mode
+        chunks = list(self.agent.stream_in_graph(state, stream_mode="messages"))
+        
+        assert chunks == ["Hello", " world", "!"]
+    
+    def test_stream_in_graph_updates_mode(self):
+        """Test streaming in graph with updates mode."""
+        # Setup
+        mock_chunks = [Mock(content="Test")]
+        self.mock_llm.stream.return_value = iter(mock_chunks)
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        state = {"messages": [HumanMessage(content="Test")]}
+        
+        # Stream in updates mode
+        updates = list(self.agent.stream_in_graph(state, stream_mode="updates"))
+        
+        assert len(updates) == 1
+        assert "messages" in updates[0]
+        assert isinstance(updates[0]["messages"][0], AIMessage)
+        assert updates[0]["messages"][0].content == "Test"
+    
+    def test_stream_in_graph_values_mode(self):
+        """Test streaming in graph with values mode."""
+        # Setup
+        mock_chunks = [
+            Mock(content="Part1"),
+            Mock(content="Part2")
+        ]
+        self.mock_llm.stream.return_value = iter(mock_chunks)
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        initial_message = HumanMessage(content="Test")
+        state = {"messages": [initial_message]}
+        
+        # Stream in values mode
+        values = list(self.agent.stream_in_graph(state, stream_mode="values"))
+        
+        # First value should have partial response
+        assert len(values[0]["messages"]) == 2
+        assert values[0]["messages"][0] == initial_message
+        assert values[0]["messages"][1].content == "Part1"
+        
+        # Second value should have full response
+        assert len(values[1]["messages"]) == 2
+        assert values[1]["messages"][1].content == "Part1Part2"
+    
+    @pytest.mark.asyncio
+    async def test_stream_in_graph_async(self):
+        """Test async streaming in graph."""
+        # Setup async streaming
+        async def async_chunks():
+            chunks = [Mock(content="Async1"), Mock(content="Async2")]
+            for chunk in chunks:
+                yield chunk
+        
+        self.mock_llm.astream.return_value = async_chunks()
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        state = {"messages": [HumanMessage(content="Test")]}
+        
+        # Collect async stream
+        chunks = []
+        async for chunk in self.agent.stream_in_graph_async(state, stream_mode="messages"):
+            chunks.append(chunk)
+        
+        assert chunks == ["Async1", "Async2"]
+    
+    def test_handle_generic_state(self):
+        """Test handling of generic state dictionary."""
+        mock_response = Mock()
+        mock_response.content = "Generic response"
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Generic state with prompt
+        state = {"prompt": "What is AI?"}
+        
+        result = self.agent(state)
+        
+        assert result == {
+            "response": "Generic response",
+            "agent_id": "test-agent"
+        }
+    
+    def test_writer_integration(self):
+        """Test StreamWriter integration."""
+        mock_response = Mock()
+        mock_response.content = "Written response"
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Mock writer with write method
+        mock_writer = Mock()
+        mock_writer.write = Mock()
+        
+        state = {"messages": [HumanMessage(content="Test")]}
+        
+        # Call with writer
+        result = self.agent(state, writer=mock_writer)
+        
+        # Check writer was called
+        mock_writer.write.assert_called_once()
+        written_data = mock_writer.write.call_args[0][0]
+        assert "messages" in written_data
+        assert written_data["messages"][0].content == "Written response"
+    
+    @pytest.mark.asyncio
+    async def test_async_writer_integration(self):
+        """Test async StreamWriter integration."""
+        mock_response = Mock()
+        mock_response.content = "Async written"
+        self.mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        
+        # Mock async writer
+        mock_writer = AsyncMock()
+        
+        state = {"messages": [HumanMessage(content="Test")]}
+        
+        # Call with writer
+        result = await self.agent.__acall__(state, writer=mock_writer)
+        
+        # Check async writer was called
+        mock_writer.awrite.assert_called_once()
+    
+    def test_config_passthrough(self):
+        """Test RunnableConfig is properly handled."""
+        mock_response = Mock()
+        mock_response.content = "Config test"
+        self.mock_llm.invoke.return_value = mock_response
+        
+        state = {"messages": [HumanMessage(content="Test")]}
+        config = RunnableConfig({"metadata": {"test": True}})
+        
+        # Call with config
+        result = self.agent(state, config)
+        
+        assert "messages" in result
+        assert result["messages"][0].content == "Config test"
+    
+    def test_error_handling_in_call(self):
+        """Test error handling in __call__ method."""
+        # Test with invalid state type
+        with pytest.raises(TypeError) as exc_info:
+            self.agent("invalid state type")
+        
+        assert "Unsupported state type" in str(exc_info.value)
+        
+        # Test with missing prompt
+        state = {"unknown_field": "value"}
+        with pytest.raises(ValueError) as exc_info:
+            self.agent(state)
+        
+        assert "No prompt found" in str(exc_info.value)
+    
+    def test_phase_specific_prompts(self):
+        """Test phase-specific prompt generation for VirtualAgoraState."""
+        mock_response = Mock()
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Test different phases
+        test_cases = [
+            (1, None, "Please propose 3-5 discussion topics"),
+            (2, "AI Safety", "Please share your thoughts on: AI Safety"),
+            (3, "Ethics", "Should we conclude our discussion on 'Ethics'?"),
+            (0, None, "Please provide your input")
+        ]
+        
+        for phase, topic, expected_prompt_part in test_cases:
+            mock_response.content = f"Response for phase {phase}"
+            
+            state = {
+                "current_phase": phase,
+                "active_topic": topic,
+                "agents": {},
+                "messages": [],
+                "messages_by_agent": {},
+                "messages_by_topic": {}
+            }
+            
+            result = self.agent(state)
+            
+            # Verify the correct prompt was used
+            call_args = self.mock_llm.invoke.call_args[0][0]
+            human_messages = [msg for msg in call_args if isinstance(msg, HumanMessage)]
+            assert len(human_messages) > 0
+            assert expected_prompt_part in human_messages[-1].content
+    
+    def test_message_context_filtering(self):
+        """Test that messages are properly filtered by phase and topic."""
+        mock_response = Mock()
+        mock_response.content = "Filtered response"
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Create messages with proper Message structure
+        messages = [
+            {
+                "id": "1", 
+                "speaker_id": "agent1",
+                "speaker_role": "participant",
+                "content": "Phase 1 message",
+                "timestamp": datetime.now(),
+                "phase": 1, 
+                "topic": None
+            },
+            {
+                "id": "2",
+                "speaker_id": "agent2", 
+                "speaker_role": "participant",
+                "content": "AI topic message",
+                "timestamp": datetime.now(),
+                "phase": 2,
+                "topic": "AI"
+            },
+            {
+                "id": "3",
+                "speaker_id": "agent3",
+                "speaker_role": "participant", 
+                "content": "Ethics topic message",
+                "timestamp": datetime.now(),
+                "phase": 2,
+                "topic": "Ethics"
+            },
+            {
+                "id": "4",
+                "speaker_id": "agent1",
+                "speaker_role": "participant",
+                "content": "Phase 3 AI message",
+                "timestamp": datetime.now(),
+                "phase": 3,
+                "topic": "AI"
+            }
+        ]
+        
+        state = {
+            "current_phase": 2,
+            "active_topic": "AI",
+            "agents": {},
+            "messages": messages,
+            "messages_by_agent": {},
+            "messages_by_topic": {}
+        }
+        
+        result = self.agent(state)
+        
+        # The agent should have filtered messages for phase 2 and topic "AI"
+        assert "messages" in result
+        assert len(result["messages"]) == 1

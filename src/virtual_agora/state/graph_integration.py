@@ -4,17 +4,20 @@ This module provides the integration between Virtual Agora's state management
 and LangGraph's graph execution framework.
 """
 
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 from datetime import datetime
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.runnables import RunnableConfig
 
-from virtual_agora.state.schema import VirtualAgoraState
+from virtual_agora.state.schema import VirtualAgoraState, MessagesState
 from virtual_agora.state.manager import StateManager
 from virtual_agora.config.models import Config as VirtualAgoraConfig
 from virtual_agora.utils.logging import get_logger
 from virtual_agora.utils.exceptions import StateError
+from virtual_agora.agents.llm_agent import LLMAgent
+from virtual_agora.providers import create_provider
 
 
 logger = get_logger(__name__)
@@ -34,6 +37,46 @@ class VirtualAgoraGraph:
         self.graph: Optional[StateGraph] = None
         self.compiled_graph: Optional[Any] = None
         self.checkpointer = MemorySaver()
+        
+        # Initialize agents
+        self.agents: Dict[str, LLMAgent] = {}
+        self._initialize_agents()
+    
+    def _initialize_agents(self) -> None:
+        """Initialize LLM agents from configuration."""
+        # Create moderator
+        moderator_llm = create_provider(
+            provider=self.config.moderator.provider.value,
+            model=self.config.moderator.model,
+            temperature=getattr(self.config.moderator, 'temperature', 0.7),
+            max_tokens=getattr(self.config.moderator, 'max_tokens', None)
+        )
+        self.agents["moderator"] = LLMAgent(
+            agent_id="moderator",
+            llm=moderator_llm,
+            role="moderator"
+        )
+        logger.info("Initialized moderator agent")
+        
+        # Create participant agents
+        agent_counter = 0
+        for agent_config in self.config.agents:
+            provider_llm = create_provider(
+                provider=agent_config.provider.value,
+                model=agent_config.model,
+                temperature=getattr(agent_config, 'temperature', 0.7),
+                max_tokens=getattr(agent_config, 'max_tokens', None)
+            )
+            
+            for i in range(agent_config.count):
+                agent_counter += 1
+                agent_id = f"{agent_config.model}_{agent_counter}"
+                self.agents[agent_id] = LLMAgent(
+                    agent_id=agent_id,
+                    llm=provider_llm,
+                    role="participant"
+                )
+                logger.info(f"Initialized participant agent: {agent_id}")
         
     def build_graph(self) -> StateGraph:
         """Build the Virtual Agora state graph.
@@ -157,7 +200,29 @@ class VirtualAgoraGraph:
                 "phase_start_time": datetime.now(),
             }
         
-        # Discussion continues with current state
+        # Get current speaker
+        speaker_id = state.get("current_speaker_id")
+        if not speaker_id:
+            # Start with first agent in speaking order
+            if state["speaking_order"]:
+                speaker_id = state["speaking_order"][0]
+            else:
+                return {}
+        
+        # Get the agent and let them speak
+        if speaker_id in self.agents:
+            agent = self.agents[speaker_id]
+            # Use the agent's __call__ method for LangGraph integration
+            updates = agent(state)
+            
+            # Update speaker rotation
+            speaking_order = state["speaking_order"]
+            current_index = speaking_order.index(speaker_id) if speaker_id in speaking_order else -1
+            next_index = (current_index + 1) % len(speaking_order)
+            updates["current_speaker_id"] = speaking_order[next_index]
+            
+            return updates
+        
         return {}
     
     def _consensus_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
@@ -351,3 +416,57 @@ class VirtualAgoraGraph:
         
         config = {"configurable": {"thread_id": self.state_manager.state["session_id"]}}
         return list(self.compiled_graph.get_state_history(config))
+    
+    def create_agent_node(self, agent_id: str) -> Callable:
+        """Create a node function for a specific agent.
+        
+        This allows adding agents as individual nodes in the graph:
+        ```python
+        graph.add_node("moderator", self.create_agent_node("moderator"))
+        ```
+        
+        Args:
+            agent_id: ID of the agent
+            
+        Returns:
+            Node function for the agent
+        """
+        if agent_id not in self.agents:
+            raise ValueError(f"Agent {agent_id} not found")
+        
+        agent = self.agents[agent_id]
+        
+        def agent_node(state: VirtualAgoraState, config: RunnableConfig) -> Dict[str, Any]:
+            """Agent-specific node function."""
+            return agent(state, config)
+        
+        # Set function name for debugging
+        agent_node.__name__ = f"{agent_id}_node"
+        
+        return agent_node
+    
+    def create_streaming_agent_node(self, agent_id: str) -> Callable:
+        """Create a streaming node function for a specific agent.
+        
+        Args:
+            agent_id: ID of the agent
+            
+        Returns:
+            Async streaming node function
+        """
+        if agent_id not in self.agents:
+            raise ValueError(f"Agent {agent_id} not found")
+        
+        agent = self.agents[agent_id]
+        
+        async def streaming_agent_node(
+            state: VirtualAgoraState,
+            config: RunnableConfig,
+            writer: Any
+        ) -> Dict[str, Any]:
+            """Agent-specific streaming node."""
+            return await agent.__acall__(state, config, writer=writer)
+        
+        streaming_agent_node.__name__ = f"{agent_id}_streaming_node"
+        
+        return streaming_agent_node

@@ -11,6 +11,7 @@ from typing_extensions import NotRequired
 
 # LangGraph's message reducer for append-only message lists
 from langgraph.graph.message import add_messages
+from langchain_core.messages import BaseMessage
 
 
 class AgentInfo(TypedDict):
@@ -142,3 +143,12 @@ class VirtualAgoraState(TypedDict):
     last_error: Optional[str]
     error_count: int
     warnings: Annotated[List[str], list.append]
+
+
+class MessagesState(TypedDict):
+    """Simple state for message-based interactions in LangGraph.
+    
+    This is a lightweight state used for agent nodes that primarily
+    deal with message exchanges.
+    """
+    messages: Annotated[List[BaseMessage], add_messages]
