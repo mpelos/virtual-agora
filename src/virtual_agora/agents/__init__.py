@@ -6,12 +6,14 @@ for discussion agents and the moderator agent.
 
 from typing import TYPE_CHECKING
 
+# Import actual implementations
+from .llm_agent import LLMAgent
+from .moderator import ModeratorAgent
+
 if TYPE_CHECKING:
     # Type imports for better IDE support
     from .base import BaseAgent, AgentRole
     from .discussion import DiscussionAgent
-    from .moderator import ModeratorAgent
-    from .llm_agent import LLMAgent
     from .tool_enabled_factory import (
         create_tool_enabled_moderator,
         create_tool_enabled_participant,
