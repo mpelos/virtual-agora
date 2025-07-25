@@ -30,6 +30,24 @@ from virtual_agora.state.schema import (
     MessagesState
 )
 
+# Import LangGraph error handling if available
+try:
+    from virtual_agora.utils.langgraph_error_handler import (
+        LangGraphErrorHandler,
+        with_langgraph_error_handling,
+    )
+    LANGGRAPH_ERROR_HANDLING = True
+except ImportError:
+    LANGGRAPH_ERROR_HANDLING = False
+    LangGraphErrorHandler = None
+    with_langgraph_error_handling = None
+
+# Import LangGraph RetryPolicy if available
+try:
+    from langgraph.pregel import RetryPolicy
+except ImportError:
+    RetryPolicy = None
+
 
 logger = get_logger(__name__)
 
@@ -51,7 +69,10 @@ class LLMAgent:
         agent_id: str,
         llm: BaseChatModel,
         role: str = "participant",
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        enable_error_handling: bool = True,
+        max_retries: int = 3,
+        fallback_llm: Optional[BaseChatModel] = None
     ):
         """Initialize the LLM agent.
         
@@ -60,6 +81,9 @@ class LLMAgent:
             llm: LangChain chat model instance
             role: Agent role (moderator or participant)
             system_prompt: Optional system prompt for the agent
+            enable_error_handling: Whether to enable enhanced error handling
+            max_retries: Maximum number of retries for failed operations
+            fallback_llm: Optional fallback LLM for error recovery
         """
         self.agent_id = agent_id
         self.llm = llm
@@ -67,6 +91,9 @@ class LLMAgent:
         self.system_prompt = system_prompt or self._get_default_system_prompt()
         self.message_count = 0
         self.created_at = datetime.now()
+        self.enable_error_handling = enable_error_handling and LANGGRAPH_ERROR_HANDLING
+        self.max_retries = max_retries
+        self.fallback_llm = fallback_llm
         
         # Extract model info from LLM
         self.model = getattr(llm, "model_name", "unknown")
@@ -75,9 +102,14 @@ class LLMAgent:
         # Thread safety
         self._count_lock = Lock()
         
+        # Configure error handling if enabled
+        if self.enable_error_handling:
+            self._configure_error_handling()
+        
         logger.info(
             f"Initialized agent {agent_id} with role={role}, "
-            f"model={self.model}, provider={self.provider}"
+            f"model={self.model}, provider={self.provider}, "
+            f"error_handling={self.enable_error_handling}"
         )
     
     def _extract_provider_name(self) -> str:
@@ -91,6 +123,51 @@ class LLMAgent:
             return "google"
         else:
             return "unknown"
+    
+    def _configure_error_handling(self) -> None:
+        """Configure enhanced error handling for the agent."""
+        if not LANGGRAPH_ERROR_HANDLING or LangGraphErrorHandler is None:
+            logger.warning(f"LangGraph error handling not available for agent {self.agent_id}")
+            return
+        
+        handler = LangGraphErrorHandler()
+        
+        # Create self-correcting chain for the main LLM
+        self.llm = handler.create_self_correcting_chain(
+            self.llm,
+            max_retries=self.max_retries,
+            include_error_context=True
+        )
+        
+        # Add fallback if provided
+        if self.fallback_llm:
+            fallback_chain = handler.create_self_correcting_chain(
+                self.fallback_llm,
+                max_retries=self.max_retries,
+                include_error_context=True
+            )
+            self.llm = handler.create_fallback_chain(
+                self.llm,
+                [fallback_chain]
+            )
+        
+        logger.info(f"Configured error handling for agent {self.agent_id}")
+    
+    def get_retry_policy(self) -> Optional['RetryPolicy']:
+        """Get LangGraph RetryPolicy for this agent.
+        
+        Returns:
+            RetryPolicy instance or None if not available
+        """
+        if not self.enable_error_handling or RetryPolicy is None:
+            return None
+        
+        from virtual_agora.utils.exceptions import ProviderError, TimeoutError, NetworkTransientError
+        
+        return RetryPolicy(
+            retry_on=lambda e: isinstance(e, (ProviderError, TimeoutError, NetworkTransientError)),
+            max_attempts=self.max_retries
+        )
     
     def _get_default_system_prompt(self) -> str:
         """Get default system prompt based on role."""
@@ -202,7 +279,7 @@ class LLMAgent:
         # Log the prompt
         logger.debug(f"Agent {self.agent_id} generating response to: {prompt[:100]}...")
         
-        # Generate response
+        # Generate response with error handling
         try:
             if llm_kwargs:
                 # Use bind to set parameters
@@ -228,8 +305,35 @@ class LLMAgent:
             return response_text
             
         except Exception as e:
-            logger.error(f"Agent {self.agent_id} failed to generate response: {e}")
-            raise
+            # Log error with context
+            logger.error(
+                f"Agent {self.agent_id} failed to generate response: {e}",
+                extra={
+                    "agent_id": self.agent_id,
+                    "provider": self.provider,
+                    "model": self.model,
+                    "error_type": type(e).__name__,
+                    "prompt_length": len(prompt),
+                    "context_messages": len(context_messages) if context_messages else 0,
+                }
+            )
+            
+            # If error handling is disabled or no fallback, re-raise
+            if not self.enable_error_handling or not self.fallback_llm:
+                raise
+            
+            # If we have enhanced error handling, the error should have been handled
+            # by the self-correcting chain. If we're here, it means all retries failed.
+            # Convert to a more specific error type if possible
+            from virtual_agora.utils.exceptions import ProviderError
+            if isinstance(e, ProviderError):
+                raise
+            else:
+                raise ProviderError(
+                    f"Failed to generate response after {self.max_retries} attempts",
+                    provider=self.provider,
+                    details={"original_error": str(e)}
+                )
     
     async def generate_response_async(
         self,
@@ -288,8 +392,33 @@ class LLMAgent:
             return response_text
             
         except Exception as e:
-            logger.error(f"Agent {self.agent_id} failed to generate async response: {e}")
-            raise
+            # Log error with context
+            logger.error(
+                f"Agent {self.agent_id} failed to generate async response: {e}",
+                extra={
+                    "agent_id": self.agent_id,
+                    "provider": self.provider,
+                    "model": self.model,
+                    "error_type": type(e).__name__,
+                    "prompt_length": len(prompt),
+                    "context_messages": len(context_messages) if context_messages else 0,
+                }
+            )
+            
+            # If error handling is disabled or no fallback, re-raise
+            if not self.enable_error_handling or not self.fallback_llm:
+                raise
+            
+            # Convert to provider error if needed
+            from virtual_agora.utils.exceptions import ProviderError
+            if isinstance(e, ProviderError):
+                raise
+            else:
+                raise ProviderError(
+                    f"Failed to generate async response after {self.max_retries} attempts",
+                    provider=self.provider,
+                    details={"original_error": str(e)}
+                )
     
     def stream_response(
         self,
@@ -972,4 +1101,125 @@ class LLMAgent:
             elif stream_mode == "values":
                 current_messages = list(messages) + [AIMessage(content=full_response, name=self.agent_id)]
                 yield {"messages": current_messages}
+    
+    def as_langgraph_node(
+        self,
+        name: Optional[str] = None,
+        retry_policy: Optional['RetryPolicy'] = None
+    ) -> Dict[str, Any]:
+        """Convert this agent to a LangGraph-compatible node configuration.
+        
+        This method returns a configuration that can be used with LangGraph's
+        add_node() method, including error handling and retry configuration.
+        
+        Args:
+            name: Node name (defaults to agent_id)
+            retry_policy: Optional RetryPolicy (uses agent's default if None)
+            
+        Returns:
+            Node configuration dict for LangGraph
+            
+        Example:
+            ```python
+            agent = LLMAgent("agent1", llm)
+            graph.add_node(**agent.as_langgraph_node())
+            ```
+        """
+        node_name = name or self.agent_id
+        
+        # Use agent's retry policy if not provided
+        if retry_policy is None:
+            retry_policy = self.get_retry_policy()
+        
+        # Create node configuration
+        node_config = {
+            "name": node_name,
+            "func": self,  # The agent itself is callable
+        }
+        
+        # Add retry policy if available
+        if retry_policy is not None:
+            node_config["retry_policy"] = retry_policy
+        
+        # Add metadata for debugging
+        node_config["metadata"] = {
+            "agent_id": self.agent_id,
+            "role": self.role,
+            "model": self.model,
+            "provider": self.provider,
+            "error_handling": self.enable_error_handling,
+        }
+        
+        logger.debug(f"Created LangGraph node config for agent {self.agent_id}")
+        return node_config
+    
+    @classmethod
+    def create_with_fallback(
+        cls,
+        agent_id: str,
+        primary_llm: BaseChatModel,
+        fallback_llms: List[BaseChatModel],
+        role: str = "participant",
+        system_prompt: Optional[str] = None,
+        max_retries: int = 3
+    ) -> 'LLMAgent':
+        """Create an agent with built-in fallback LLMs.
+        
+        This factory method creates an agent that automatically falls back
+        to alternative LLMs when the primary fails, using LangGraph patterns.
+        
+        Args:
+            agent_id: Unique identifier for the agent
+            primary_llm: Primary LLM to use
+            fallback_llms: List of fallback LLMs in order of preference
+            role: Agent role (moderator or participant)
+            system_prompt: Optional system prompt
+            max_retries: Max retries per LLM
+            
+        Returns:
+            LLMAgent instance with fallback configuration
+            
+        Example:
+            ```python
+            agent = LLMAgent.create_with_fallback(
+                "agent1",
+                primary_llm=openai_llm,
+                fallback_llms=[anthropic_llm, google_llm],
+                max_retries=2
+            )
+            ```
+        """
+        # Import here to avoid circular dependency
+        from virtual_agora.utils.langgraph_error_handler import (
+            LangGraphErrorHandler,
+            create_provider_error_chain,
+        )
+        
+        # Create error-resilient chain with all providers
+        all_providers = [primary_llm] + fallback_llms
+        resilient_llm = create_provider_error_chain(
+            all_providers,
+            max_retries_per_provider=max_retries
+        )
+        
+        # Create agent with the resilient LLM
+        # Note: We don't pass fallback_llm here since the chain already handles it
+        agent = cls(
+            agent_id=agent_id,
+            llm=resilient_llm,
+            role=role,
+            system_prompt=system_prompt,
+            enable_error_handling=False,  # Already handled by the chain
+            max_retries=max_retries
+        )
+        
+        # Store fallback info for debugging
+        agent._fallback_llms = fallback_llms
+        agent._fallback_configured = True
+        
+        logger.info(
+            f"Created agent {agent_id} with {len(fallback_llms)} fallback LLMs"
+        )
+        
+        return agent
 

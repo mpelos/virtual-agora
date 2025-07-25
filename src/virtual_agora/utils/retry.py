@@ -2,6 +2,7 @@
 
 This module provides retry functionality with exponential backoff,
 jitter, and circuit breaker patterns for handling transient failures.
+Enhanced with LangGraph RetryPolicy integration.
 """
 
 import asyncio
@@ -33,6 +34,14 @@ from virtual_agora.utils.exceptions import (
     ProviderRateLimitError,
 )
 from virtual_agora.utils.error_handler import error_handler, ErrorContext
+
+# Import LangGraph RetryPolicy if available
+try:
+    from langgraph.pregel import RetryPolicy
+    LANGGRAPH_AVAILABLE = True
+except ImportError:
+    RetryPolicy = None
+    LANGGRAPH_AVAILABLE = False
 
 
 logger = get_logger(__name__)
@@ -116,13 +125,14 @@ class RetryStatistics:
 
 
 class CircuitBreaker:
-    """Circuit breaker pattern implementation."""
+    """Circuit breaker pattern implementation with LangGraph integration."""
     
     def __init__(
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
         expected_exception: Type[Exception] = Exception,
+        name: Optional[str] = None,
     ):
         """Initialize circuit breaker.
         
@@ -130,14 +140,23 @@ class CircuitBreaker:
             failure_threshold: Number of failures before opening circuit
             recovery_timeout: Seconds to wait before trying again
             expected_exception: Exception type to count as failure
+            name: Optional name for the circuit breaker (useful for tracking)
         """
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
+        self.name = name or f"circuit_{id(self)}"
         
         self.failure_count = 0
         self.last_failure_time: Optional[datetime] = None
         self.state = CircuitState.CLOSED
+        
+        # Statistics tracking
+        self.total_calls = 0
+        self.successful_calls = 0
+        self.failed_calls = 0
+        self.circuit_opens = 0
+        self.last_state_change: Optional[datetime] = None
     
     def call(self, func: Callable[..., T], *args, **kwargs) -> T:
         """Call function through circuit breaker.
@@ -153,13 +172,24 @@ class CircuitBreaker:
         Raises:
             Exception: If circuit is open or function fails
         """
+        self.total_calls += 1
+        
         if self.state == CircuitState.OPEN:
             if self._should_attempt_reset():
                 self.state = CircuitState.HALF_OPEN
+                self.last_state_change = datetime.now()
+                logger.info(f"Circuit breaker {self.name} moved to HALF_OPEN state")
             else:
                 raise VirtualAgoraError(
-                    "Circuit breaker is open",
-                    details={"failure_count": self.failure_count}
+                    f"Circuit breaker {self.name} is open",
+                    details={
+                        "failure_count": self.failure_count,
+                        "recovery_timeout": self.recovery_timeout,
+                        "time_until_reset": (
+                            self.recovery_timeout - 
+                            (datetime.now() - self.last_failure_time).total_seconds()
+                        ) if self.last_failure_time else 0
+                    }
                 )
         
         try:
@@ -184,13 +214,24 @@ class CircuitBreaker:
         Raises:
             Exception: If circuit is open or function fails
         """
+        self.total_calls += 1
+        
         if self.state == CircuitState.OPEN:
             if self._should_attempt_reset():
                 self.state = CircuitState.HALF_OPEN
+                self.last_state_change = datetime.now()
+                logger.info(f"Circuit breaker {self.name} moved to HALF_OPEN state")
             else:
                 raise VirtualAgoraError(
-                    "Circuit breaker is open",
-                    details={"failure_count": self.failure_count}
+                    f"Circuit breaker {self.name} is open",
+                    details={
+                        "failure_count": self.failure_count,
+                        "recovery_timeout": self.recovery_timeout,
+                        "time_until_reset": (
+                            self.recovery_timeout - 
+                            (datetime.now() - self.last_failure_time).total_seconds()
+                        ) if self.last_failure_time else 0
+                    }
                 )
         
         try:
@@ -216,18 +257,88 @@ class CircuitBreaker:
     def _on_success(self) -> None:
         """Handle successful call."""
         self.failure_count = 0
-        self.state = CircuitState.CLOSED
-    
+        self.successful_calls += 1
+        
+        # Close circuit if it was half-open
+        if self.state == CircuitState.HALF_OPEN:
+            old_state = self.state
+            self.state = CircuitState.CLOSED
+            self.last_state_change = datetime.now()
+            logger.info(f"Circuit breaker {self.name} closed after successful call")
+        
     def _on_failure(self) -> None:
         """Handle failed call."""
         self.failure_count += 1
+        self.failed_calls += 1
         self.last_failure_time = datetime.now()
         
         if self.failure_count >= self.failure_threshold:
-            self.state = CircuitState.OPEN
-            logger.warning(
-                f"Circuit breaker opened after {self.failure_count} failures"
-            )
+            if self.state != CircuitState.OPEN:
+                old_state = self.state
+                self.state = CircuitState.OPEN
+                self.circuit_opens += 1
+                self.last_state_change = datetime.now()
+                logger.warning(
+                    f"Circuit breaker {self.name} opened after {self.failure_count} failures"
+                )
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get circuit breaker statistics.
+        
+        Returns:
+            Statistics dictionary
+        """
+        success_rate = 0.0
+        if self.total_calls > 0:
+            success_rate = (self.successful_calls / self.total_calls) * 100
+        
+        return {
+            "name": self.name,
+            "state": self.state.value,
+            "total_calls": self.total_calls,
+            "successful_calls": self.successful_calls,
+            "failed_calls": self.failed_calls,
+            "success_rate": round(success_rate, 2),
+            "failure_count": self.failure_count,
+            "circuit_opens": self.circuit_opens,
+            "last_failure": self.last_failure_time.isoformat() if self.last_failure_time else None,
+            "last_state_change": self.last_state_change.isoformat() if self.last_state_change else None,
+        }
+    
+    def reset(self) -> None:
+        """Reset circuit breaker to initial state."""
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = CircuitState.CLOSED
+        self.last_state_change = datetime.now()
+        logger.info(f"Circuit breaker {self.name} reset")
+    
+    def as_langgraph_policy(self) -> Optional['RetryPolicy']:
+        """Convert circuit breaker to LangGraph RetryPolicy.
+        
+        Returns:
+            LangGraph RetryPolicy that respects circuit breaker state
+        """
+        if not LANGGRAPH_AVAILABLE or RetryPolicy is None:
+            return None
+        
+        def circuit_aware_retry(error: Exception) -> bool:
+            """Check if retry is allowed based on circuit state."""
+            # Don't retry if circuit is open
+            if self.state == CircuitState.OPEN:
+                # Check if we should attempt reset
+                if not self._should_attempt_reset():
+                    logger.debug(f"Circuit breaker {self.name} is open, blocking retry")
+                    return False
+            
+            # Check if error is expected type
+            return isinstance(error, self.expected_exception)
+        
+        # Create retry policy with circuit breaker awareness
+        return RetryPolicy(
+            retry_on=circuit_aware_retry,
+            max_attempts=self.failure_threshold,  # Use threshold as max attempts
+        )
 
 
 def calculate_backoff_delay(
@@ -450,13 +561,14 @@ def retry_with_backoff(
 
 
 class RetryManager:
-    """Manages retry policies and statistics."""
+    """Manages retry policies and statistics with LangGraph integration."""
     
     def __init__(self):
         """Initialize retry manager."""
         self.statistics: Dict[str, RetryStatistics] = {}
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self.policies: Dict[str, Dict[str, Any]] = self._default_policies()
+        self.langgraph_policies: Dict[str, 'RetryPolicy'] = {}  # Cache for LangGraph policies
     
     def _default_policies(self) -> Dict[str, Dict[str, Any]]:
         """Get default retry policies.
@@ -517,6 +629,7 @@ class RetryManager:
         operation: str,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
+        expected_exception: Type[Exception] = Exception,
     ) -> CircuitBreaker:
         """Get or create circuit breaker for operation.
         
@@ -524,6 +637,7 @@ class RetryManager:
             operation: Operation name
             failure_threshold: Failure threshold
             recovery_timeout: Recovery timeout
+            expected_exception: Exception type to track
             
         Returns:
             Circuit breaker instance
@@ -532,6 +646,8 @@ class RetryManager:
             self.circuit_breakers[operation] = CircuitBreaker(
                 failure_threshold=failure_threshold,
                 recovery_timeout=recovery_timeout,
+                expected_exception=expected_exception,
+                name=operation,
             )
         return self.circuit_breakers[operation]
     
@@ -605,6 +721,208 @@ class RetryManager:
                 return cast(F, sync_wrapper)
         
         return decorator
+    
+    def create_langgraph_policy(
+        self,
+        operation_type: str = "network",
+        custom_retry_on: Optional[Callable[[Exception], bool]] = None,
+    ) -> Optional['RetryPolicy']:
+        """Create a LangGraph RetryPolicy from our retry configuration.
+        
+        Args:
+            operation_type: Type of operation for policy selection
+            custom_retry_on: Custom function to determine if error should be retried
+            
+        Returns:
+            LangGraph RetryPolicy or None if not available
+        """
+        if not LANGGRAPH_AVAILABLE or RetryPolicy is None:
+            logger.debug("LangGraph RetryPolicy not available")
+            return None
+        
+        # Check cache first
+        if operation_type in self.langgraph_policies:
+            return self.langgraph_policies[operation_type]
+        
+        # Get our policy configuration
+        policy_config = self.get_policy(operation_type)
+        
+        # Create retry_on function if not provided
+        if custom_retry_on is None:
+            retryable_exceptions = policy_config.get("exceptions", (Exception,))
+            
+            def default_retry_on(error: Exception) -> bool:
+                return is_retryable_error(error, retryable_exceptions)
+            
+            custom_retry_on = default_retry_on
+        
+        # Create LangGraph RetryPolicy
+        langgraph_policy = RetryPolicy(
+            retry_on=custom_retry_on,
+            max_attempts=policy_config.get("max_attempts", 3),
+        )
+        
+        # Cache the policy
+        self.langgraph_policies[operation_type] = langgraph_policy
+        
+        logger.debug(f"Created LangGraph RetryPolicy for {operation_type}")
+        return langgraph_policy
+    
+    def with_langgraph_retry(
+        self,
+        operation: str,
+        operation_type: str = "network",
+    ) -> Dict[str, Any]:
+        """Get configuration for LangGraph node with retry policy.
+        
+        This method returns a configuration dict that can be used when
+        adding nodes to a LangGraph StateGraph.
+        
+        Args:
+            operation: Operation name for tracking
+            operation_type: Type of operation for policy
+            
+        Returns:
+            Configuration dict with retry policy
+            
+        Example:
+            ```python
+            retry_config = retry_manager.with_langgraph_retry(
+                "api_call", "provider_api"
+            )
+            graph.add_node("my_node", my_func, **retry_config)
+            ```
+        """
+        config = {
+            "metadata": {
+                "operation": operation,
+                "operation_type": operation_type,
+            }
+        }
+        
+        # Add LangGraph retry policy if available
+        retry_policy = self.create_langgraph_policy(operation_type)
+        if retry_policy:
+            config["retry_policy"] = retry_policy
+        
+        # Track operation in statistics
+        stats = self.get_statistics(operation)
+        config["metadata"]["stats"] = stats
+        
+        return config
+    
+    def create_resilient_node(
+        self,
+        func: Callable,
+        operation: str,
+        operation_type: str = "network",
+        use_circuit_breaker: bool = True,
+    ) -> Callable:
+        """Create a resilient function for use as a LangGraph node.
+        
+        This wraps a function with both our retry logic and circuit breaker,
+        making it suitable for use in LangGraph workflows.
+        
+        Args:
+            func: Function to wrap
+            operation: Operation name for tracking
+            operation_type: Type of operation
+            use_circuit_breaker: Whether to use circuit breaker
+            
+        Returns:
+            Wrapped function with error resilience
+        """
+        # Apply our retry decorator
+        retry_func = self.with_retry(
+            operation, operation_type, use_circuit_breaker
+        )(func)
+        
+        # Add LangGraph metadata
+        retry_func._langgraph_metadata = {
+            "operation": operation,
+            "operation_type": operation_type,
+            "retry_policy": self.create_langgraph_policy(operation_type),
+        }
+        
+        return retry_func
+    
+    def get_retry_context(self, operation: str) -> Dict[str, Any]:
+        """Get retry context information for an operation.
+        
+        This is useful for logging and debugging in LangGraph workflows.
+        
+        Args:
+            operation: Operation name
+            
+        Returns:
+            Context dict with statistics and circuit breaker state
+        """
+        context = {
+            "operation": operation,
+            "statistics": {},
+            "circuit_breaker": None,
+        }
+        
+        # Add statistics if available
+        if operation in self.statistics:
+            stats = self.statistics[operation]
+            context["statistics"] = {
+                "total_attempts": stats.total_attempts,
+                "success_rate": stats.get_success_rate(),
+                "average_duration": stats.get_average_retry_duration(),
+                "last_attempt": stats.last_attempt_time,
+                "last_success": stats.last_success_time,
+                "last_failure": stats.last_failure_time,
+            }
+        
+        # Add circuit breaker state if available
+        if operation in self.circuit_breakers:
+            breaker = self.circuit_breakers[operation]
+            context["circuit_breaker"] = {
+                "state": breaker.state.value,
+                "failure_count": breaker.failure_count,
+                "last_failure": breaker.last_failure_time,
+            }
+        
+        return context
+    
+    def get_circuit_breaker_status(self) -> Dict[str, Dict[str, Any]]:
+        """Get status of all circuit breakers.
+        
+        Returns:
+            Dictionary mapping operation names to circuit breaker stats
+        """
+        status = {}
+        for operation, breaker in self.circuit_breakers.items():
+            status[operation] = breaker.get_stats()
+        return status
+    
+    def create_langgraph_circuit_aware_policy(
+        self,
+        operation: str,
+        operation_type: str = "network",
+    ) -> Optional['RetryPolicy']:
+        """Create a LangGraph RetryPolicy that's aware of circuit breakers.
+        
+        This creates a retry policy that checks both the circuit breaker
+        state and the standard retry logic.
+        
+        Args:
+            operation: Operation name
+            operation_type: Type of operation
+            
+        Returns:
+            Circuit-aware RetryPolicy or None
+        """
+        # Get or create circuit breaker
+        policy_config = self.get_policy(operation_type)
+        breaker = self.get_circuit_breaker(
+            operation,
+            expected_exception=policy_config.get("exceptions", (Exception,))[0]
+        )
+        
+        # Use circuit breaker's LangGraph policy
+        return breaker.as_langgraph_policy()
 
 
 # Global retry manager instance

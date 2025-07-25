@@ -19,7 +19,13 @@ if TYPE_CHECKING:
         TimeoutError,
         StateError,
     )
+    from .langgraph_error_handler import (
+        LangGraphErrorHandler,
+        create_provider_error_chain,
+        with_langgraph_error_handling,
+    )
 
+# Base exports
 __all__ = [
     "setup_logging",
     "get_logger",
@@ -32,3 +38,19 @@ __all__ = [
     "TimeoutError",
     "StateError",
 ]
+
+# Add LangGraph exports if available
+try:
+    from .langgraph_error_handler import (
+        LangGraphErrorHandler,
+        create_provider_error_chain,
+        with_langgraph_error_handling,
+    )
+    __all__.extend([
+        "LangGraphErrorHandler",
+        "create_provider_error_chain", 
+        "with_langgraph_error_handling",
+    ])
+except ImportError:
+    # LangGraph not available, continue with base exports only
+    pass

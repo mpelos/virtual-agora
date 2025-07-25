@@ -19,6 +19,13 @@ from .config import (
 )
 from .factory import ProviderFactory, create_provider, create_provider_with_fallbacks
 from .registry import registry, ProviderInfo, ModelInfo
+from .fallback_builder import (
+    FallbackChainBuilder,
+    FallbackStrategy,
+    FallbackMonitor,
+    ProviderPriority,
+    create_simple_fallback_chain,
+)
 
 if TYPE_CHECKING:
     # Type imports for better IDE support
@@ -41,4 +48,10 @@ __all__ = [
     "registry",
     "ProviderInfo",
     "ModelInfo",
+    # Fallback Builder
+    "FallbackChainBuilder",
+    "FallbackStrategy",
+    "FallbackMonitor",
+    "ProviderPriority",
+    "create_simple_fallback_chain",
 ]

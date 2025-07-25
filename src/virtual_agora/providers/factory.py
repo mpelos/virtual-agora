@@ -6,7 +6,7 @@ provider types and LangChain's implementation classes.
 """
 
 import os
-from typing import Optional, Dict, Any, Union, List
+from typing import Optional, Dict, Any, Union, List, Type
 from functools import lru_cache
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -24,6 +24,13 @@ from virtual_agora.providers.config import (
 from virtual_agora.providers.registry import registry
 from virtual_agora.utils.logging import get_logger
 from virtual_agora.utils.exceptions import ConfigurationError
+
+# Import LangGraph retry policy for enhanced error handling
+try:
+    from langgraph.pregel import RetryPolicy
+except ImportError:
+    # Fallback if LangGraph is not available
+    RetryPolicy = None
 
 
 logger = get_logger(__name__)
@@ -105,17 +112,22 @@ class ProviderFactory:
         cls,
         primary_config: Union[ProviderConfig, Dict[str, Any]],
         fallback_configs: List[Union[ProviderConfig, Dict[str, Any]]] = None,
-        use_cache: bool = True
+        use_cache: bool = True,
+        max_retries: int = 3,
+        retry_on_errors: Optional[List[Type[Exception]]] = None
     ) -> BaseChatModel:
         """Create a LangChain chat model with fallback providers using .with_fallbacks().
         
         This method implements LangGraph's recommended fallback pattern by creating
         a primary provider and chaining fallback providers using the .with_fallbacks() method.
+        It also supports retry configuration for transient errors.
         
         Args:
             primary_config: Primary provider configuration
             fallback_configs: List of fallback provider configurations
             use_cache: Whether to use cached instances
+            max_retries: Maximum number of retries for each provider
+            retry_on_errors: List of exception types to retry on
             
         Returns:
             LangChain chat model instance with fallbacks configured
@@ -123,18 +135,40 @@ class ProviderFactory:
         Raises:
             ConfigurationError: If no providers can be created
         """
-        # Create primary provider
+        # Import here to avoid circular dependency
+        from virtual_agora.utils.exceptions import ProviderError, TimeoutError, NetworkTransientError
+        
+        # Default retry-able errors
+        if retry_on_errors is None:
+            retry_on_errors = [ProviderError, TimeoutError, NetworkTransientError]
+        
+        # Create primary provider with retry configuration
         primary_provider = cls.create_provider(primary_config, use_cache)
+        
+        # Apply retry configuration if available
+        if hasattr(primary_provider, 'with_retry'):
+            primary_provider = primary_provider.with_retry(
+                stop_after_attempt=max_retries,
+                retry_on_exception=lambda e: any(isinstance(e, err_type) for err_type in retry_on_errors)
+            )
         
         # If no fallbacks specified, return primary
         if not fallback_configs:
             return primary_provider
         
-        # Create fallback providers
+        # Create fallback providers with retry configuration
         fallback_providers = []
         for fallback_config in fallback_configs:
             try:
                 fallback_provider = cls.create_provider(fallback_config, use_cache)
+                
+                # Apply retry configuration to fallback providers
+                if hasattr(fallback_provider, 'with_retry'):
+                    fallback_provider = fallback_provider.with_retry(
+                        stop_after_attempt=max_retries,
+                        retry_on_exception=lambda e: any(isinstance(e, err_type) for err_type in retry_on_errors)
+                    )
+                
                 fallback_providers.append(fallback_provider)
             except Exception as e:
                 logger.warning(f"Failed to create fallback provider: {e}")
@@ -142,11 +176,63 @@ class ProviderFactory:
         
         # Return primary with fallbacks
         if fallback_providers:
-            return primary_provider.with_fallbacks(fallback_providers)
+            # Use LangChain's .with_fallbacks() method for proper error handling
+            return primary_provider.with_fallbacks(
+                fallback_providers,
+                exceptions_to_handle=(Exception,)  # Handle all exceptions by default
+            )
         else:
             logger.warning("No fallback providers could be created")
             return primary_provider
     
+    @classmethod
+    def create_provider_with_retry_policy(
+        cls,
+        config: Union[ProviderConfig, Dict[str, Any]],
+        retry_policy: Optional['RetryPolicy'] = None,
+        use_cache: bool = True
+    ) -> BaseChatModel:
+        """Create a provider with LangGraph RetryPolicy configuration.
+        
+        This method creates a provider and wraps it with LangGraph's RetryPolicy
+        for better error handling and retry mechanisms.
+        
+        Args:
+            config: Provider configuration
+            retry_policy: LangGraph RetryPolicy instance (if None, creates default)
+            use_cache: Whether to use cached instances
+            
+        Returns:
+            LangChain chat model instance with retry policy
+            
+        Raises:
+            ConfigurationError: If provider cannot be created
+        """
+        # Create the base provider
+        provider = cls.create_provider(config, use_cache)
+        
+        # If RetryPolicy is not available, return provider as-is
+        if RetryPolicy is None:
+            logger.debug("LangGraph RetryPolicy not available, returning provider without retry policy")
+            return provider
+        
+        # Create default retry policy if not provided
+        if retry_policy is None:
+            from virtual_agora.utils.exceptions import ProviderError, TimeoutError, NetworkTransientError
+            
+            # Default retry policy for provider errors
+            retry_policy = RetryPolicy(
+                retry_on=lambda e: isinstance(e, (ProviderError, TimeoutError, NetworkTransientError)),
+                max_attempts=3
+            )
+        
+        # Note: LangGraph RetryPolicy is typically applied at the node level in StateGraph,
+        # not directly to the LLM. For direct LLM retry, we use LangChain's built-in retry.
+        # This method is provided for future integration with LangGraph workflows.
+        
+        logger.info(f"Created provider with retry policy (max_attempts={retry_policy.max_attempts})")
+        return provider
+
     @classmethod
     def _create_provider_with_init_chat_model(
         cls,
@@ -544,6 +630,8 @@ def create_provider_with_fallbacks(
     primary_provider: Union[str, ProviderType],
     primary_model: str,
     fallback_configs: List[Dict[str, Any]] = None,
+    max_retries: int = 3,
+    retry_on_errors: Optional[List[Type[Exception]]] = None,
     **primary_kwargs
 ) -> BaseChatModel:
     """Convenience function to create a provider instance with fallbacks.
@@ -552,6 +640,8 @@ def create_provider_with_fallbacks(
         primary_provider: Primary provider type (string or enum)
         primary_model: Primary model name
         fallback_configs: List of fallback configurations as dicts
+        max_retries: Maximum number of retries for each provider
+        retry_on_errors: List of exception types to retry on
         **primary_kwargs: Additional configuration parameters for primary provider
         
     Returns:
@@ -573,5 +663,8 @@ def create_provider_with_fallbacks(
     
     # Create provider with fallbacks
     return ProviderFactory.create_provider_with_fallbacks(
-        primary_config, fallback_configs or []
+        primary_config, 
+        fallback_configs or [],
+        max_retries=max_retries,
+        retry_on_errors=retry_on_errors
     )

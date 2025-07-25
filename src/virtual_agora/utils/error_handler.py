@@ -1,7 +1,8 @@
 """Error context management for Virtual Agora.
 
 This module provides comprehensive error handling with context capture,
-recovery strategies, and user-friendly error reporting.
+recovery strategies, and user-friendly error reporting. Enhanced with
+LangGraph integration for improved error resilience in workflows.
 """
 
 import sys
@@ -20,7 +21,25 @@ from virtual_agora.utils.exceptions import (
     ValidationError,
     ConfigurationError,
     TimeoutError,
+    NetworkTransientError,
+    RecoverableError,
 )
+
+# Import LangGraph components if available
+try:
+    from langgraph.pregel import RetryPolicy
+    from langgraph.checkpoint import Checkpoint
+    from virtual_agora.utils.langgraph_error_handler import (
+        LangGraphErrorHandler,
+        with_langgraph_error_handling,
+    )
+    LANGGRAPH_AVAILABLE = True
+except ImportError:
+    LANGGRAPH_AVAILABLE = False
+    RetryPolicy = None
+    Checkpoint = None
+    LangGraphErrorHandler = None
+    with_langgraph_error_handling = None
 
 
 logger = get_logger(__name__)
@@ -49,7 +68,7 @@ class RecoveryStrategy(Enum):
 
 @dataclass
 class ErrorContext:
-    """Captures comprehensive error context."""
+    """Captures comprehensive error context with LangGraph integration."""
     
     error: Exception
     timestamp: datetime = field(default_factory=datetime.now)
@@ -62,6 +81,12 @@ class ErrorContext:
     recovery_strategy: RecoveryStrategy = RecoveryStrategy.NONE
     retry_count: int = 0
     max_retries: int = 3
+    
+    # LangGraph specific fields
+    graph_node: Optional[str] = None  # Current graph node where error occurred
+    graph_state: Optional[Dict[str, Any]] = None  # LangGraph state at error time
+    checkpoint_id: Optional[str] = None  # Checkpoint ID for recovery
+    parent_errors: List['ErrorContext'] = field(default_factory=list)  # Chain of errors
     
     def add_breadcrumb(self, message: str) -> None:
         """Add a breadcrumb to track execution path.
@@ -78,7 +103,7 @@ class ErrorContext:
         Returns:
             Dictionary representation
         """
-        return {
+        result = {
             "error_type": type(self.error).__name__,
             "error_message": str(self.error),
             "timestamp": self.timestamp.isoformat(),
@@ -90,6 +115,21 @@ class ErrorContext:
             "breadcrumbs": self.breadcrumbs[-10:],  # Last 10 breadcrumbs
             "metadata": self.metadata,
         }
+        
+        # Add LangGraph fields if available
+        if self.graph_node:
+            result["graph_node"] = self.graph_node
+        if self.graph_state:
+            result["graph_state_keys"] = list(self.graph_state.keys())
+        if self.checkpoint_id:
+            result["checkpoint_id"] = self.checkpoint_id
+        if self.parent_errors:
+            result["parent_errors"] = [
+                {"type": type(e.error).__name__, "message": str(e.error)}
+                for e in self.parent_errors
+            ]
+        
+        return result
 
 
 class ErrorHandler:
@@ -398,6 +438,229 @@ class ErrorHandler:
             return True
         
         return False
+
+
+    def create_langgraph_retry_policy(
+        self,
+        error_types: Optional[List[Type[Exception]]] = None,
+        max_attempts: int = 3,
+    ) -> Optional['RetryPolicy']:
+        """Create a LangGraph RetryPolicy based on error handler configuration.
+        
+        Args:
+            error_types: Error types to retry on (uses defaults if None)
+            max_attempts: Maximum retry attempts
+            
+        Returns:
+            LangGraph RetryPolicy or None if not available
+        """
+        if not LANGGRAPH_AVAILABLE or RetryPolicy is None:
+            logger.debug("LangGraph RetryPolicy not available")
+            return None
+        
+        # Default retryable errors
+        if error_types is None:
+            error_types = [
+                ProviderError,
+                TimeoutError,
+                NetworkTransientError,
+                RecoverableError,
+            ]
+        
+        def should_retry(error: Exception) -> bool:
+            """Determine if error should be retried."""
+            # Check if error type is retryable
+            for error_type in error_types:
+                if isinstance(error, error_type):
+                    # Check if we should circuit break
+                    if self.should_circuit_break(type(error)):
+                        logger.warning(f"Circuit breaker open for {type(error).__name__}")
+                        return False
+                    return True
+            return False
+        
+        return RetryPolicy(
+            retry_on=should_retry,
+            max_attempts=max_attempts,
+        )
+    
+    def capture_langgraph_context(
+        self,
+        error: Exception,
+        graph_node: str,
+        graph_state: Dict[str, Any],
+        checkpoint_id: Optional[str] = None,
+        **kwargs
+    ) -> ErrorContext:
+        """Capture error context with LangGraph-specific information.
+        
+        Args:
+            error: The exception that occurred
+            graph_node: Current graph node name
+            graph_state: Current graph state
+            checkpoint_id: Optional checkpoint ID
+            **kwargs: Additional context parameters
+            
+        Returns:
+            Captured error context
+        """
+        # Extract operation and phase from kwargs or graph info
+        operation = kwargs.get("operation", f"graph_node_{graph_node}")
+        phase = kwargs.get("phase", "graph_execution")
+        
+        # Create base context
+        context = self.capture_context(
+            error=error,
+            operation=operation,
+            phase=phase,
+            state_snapshot=graph_state,
+            **kwargs
+        )
+        
+        # Add LangGraph-specific fields
+        context.graph_node = graph_node
+        context.graph_state = graph_state
+        context.checkpoint_id = checkpoint_id
+        
+        # Add breadcrumb
+        context.add_breadcrumb(f"Error in graph node: {graph_node}")
+        
+        return context
+    
+    def create_error_recovery_node(
+        self,
+        recovery_strategies: Optional[Dict[str, RecoveryStrategy]] = None
+    ) -> Callable:
+        """Create a LangGraph node for error recovery.
+        
+        This node can be added to a StateGraph to handle errors from other nodes.
+        
+        Args:
+            recovery_strategies: Custom recovery strategies by node name
+            
+        Returns:
+            Callable node function for error recovery
+        """
+        def error_recovery_node(state: Dict[str, Any]) -> Dict[str, Any]:
+            """LangGraph node for error recovery."""
+            # Check if there's an error in state
+            error_info = state.get("error")
+            if not error_info:
+                return state
+            
+            # Extract error details
+            error = error_info.get("error")
+            node_name = error_info.get("node", "unknown")
+            
+            # Capture context
+            context = self.capture_langgraph_context(
+                error=error,
+                graph_node=node_name,
+                graph_state=state,
+            )
+            
+            # Determine recovery strategy
+            if recovery_strategies and node_name in recovery_strategies:
+                context.recovery_strategy = recovery_strategies[node_name]
+            
+            # Attempt recovery
+            recovery_successful = self.attempt_recovery(context)
+            
+            # Update state based on recovery
+            if recovery_successful:
+                logger.info(f"Successfully recovered from error in node {node_name}")
+                state["error_recovered"] = True
+                state.pop("error", None)  # Remove error from state
+            else:
+                logger.error(f"Failed to recover from error in node {node_name}")
+                state["error_recovered"] = False
+                state["error_context"] = context.to_dict()
+            
+            return state
+        
+        return error_recovery_node
+    
+    @contextmanager
+    def langgraph_error_boundary(
+        self,
+        node_name: str,
+        state: Dict[str, Any],
+        checkpoint_id: Optional[str] = None,
+        reraise: bool = True,
+    ):
+        """Context manager for LangGraph node error boundaries.
+        
+        Args:
+            node_name: Name of the graph node
+            state: Current graph state
+            checkpoint_id: Optional checkpoint ID
+            reraise: Whether to reraise the exception
+            
+        Yields:
+            Error context if an error occurs
+        """
+        context = None
+        try:
+            yield context
+        except Exception as e:
+            context = self.capture_langgraph_context(
+                error=e,
+                graph_node=node_name,
+                graph_state=state,
+                checkpoint_id=checkpoint_id,
+            )
+            
+            # Add error to state for downstream handling
+            state["error"] = {
+                "error": e,
+                "node": node_name,
+                "context": context.to_dict(),
+            }
+            
+            if reraise:
+                raise
+    
+    def get_node_error_summary(self, node_name: str) -> Dict[str, Any]:
+        """Get error summary for a specific graph node.
+        
+        Args:
+            node_name: Name of the graph node
+            
+        Returns:
+            Error summary for the node
+        """
+        node_errors = [
+            ctx for ctx in self.error_history
+            if ctx.graph_node == node_name
+        ]
+        
+        if not node_errors:
+            return {
+                "node": node_name,
+                "total_errors": 0,
+                "error_rate": 0.0,
+                "error_types": {},
+            }
+        
+        # Count error types
+        error_types = {}
+        for ctx in node_errors:
+            error_type = type(ctx.error).__name__
+            error_types[error_type] = error_types.get(error_type, 0) + 1
+        
+        # Calculate error rate
+        time_span = (
+            node_errors[-1].timestamp - node_errors[0].timestamp
+        ).total_seconds() / 60.0
+        error_rate = len(node_errors) / max(time_span, 1.0)
+        
+        return {
+            "node": node_name,
+            "total_errors": len(node_errors),
+            "error_rate": round(error_rate, 2),
+            "error_types": error_types,
+            "last_error": node_errors[-1].timestamp.isoformat(),
+        }
 
 
 # Global error handler instance
