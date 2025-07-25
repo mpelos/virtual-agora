@@ -175,3 +175,33 @@ class TimeoutError(VirtualAgoraError):
         super().__init__(message, details)
         self.operation = operation
         self.timeout_seconds = timeout_seconds
+
+
+class StateError(VirtualAgoraError):
+    """Raised when there's an error with application state.
+    
+    This includes state initialization errors, invalid state transitions,
+    or state corruption issues.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        state_field: Optional[str] = None,
+        current_value: Optional[Any] = None,
+        expected_value: Optional[Any] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        """Initialize state error.
+        
+        Args:
+            message: Error message.
+            state_field: State field that caused the error.
+            current_value: Current value of the field.
+            expected_value: Expected value of the field.
+            details: Additional error details.
+        """
+        super().__init__(message, details)
+        self.state_field = state_field
+        self.current_value = current_value
+        self.expected_value = expected_value

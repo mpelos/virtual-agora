@@ -14,6 +14,10 @@ if TYPE_CHECKING:
         ConfigurationError,
         ProviderError,
         AgentError,
+        WorkflowError,
+        ValidationError,
+        TimeoutError,
+        StateError,
     )
 
 __all__ = [
@@ -23,4 +27,8 @@ __all__ = [
     "ConfigurationError", 
     "ProviderError",
     "AgentError",
+    "WorkflowError",
+    "ValidationError",
+    "TimeoutError",
+    "StateError",
 ]
