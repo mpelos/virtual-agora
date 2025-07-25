@@ -4,7 +4,7 @@ This module provides a wrapper around LangChain chat models to add
 Virtual Agora-specific functionality for discussion agents.
 """
 
-from typing import Optional, List, Dict, Any, Union, AsyncIterator, Iterator, Annotated
+from typing import Optional, List, Dict, Any, Union, AsyncIterator, Iterator, Annotated, Sequence
 from datetime import datetime
 import uuid
 import asyncio
@@ -15,12 +15,15 @@ from langchain_core.messages import (
     BaseMessage,
     HumanMessage,
     AIMessage,
-    SystemMessage
+    SystemMessage,
+    ToolMessage
 )
 from langchain_core.outputs import ChatGeneration
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import BaseTool
 from langgraph.graph.message import add_messages
 from langgraph.types import StreamWriter
+from langgraph.prebuilt import ToolNode
 
 from virtual_agora.utils.logging import get_logger
 from virtual_agora.state.schema import (
@@ -72,7 +75,8 @@ class LLMAgent:
         system_prompt: Optional[str] = None,
         enable_error_handling: bool = True,
         max_retries: int = 3,
-        fallback_llm: Optional[BaseChatModel] = None
+        fallback_llm: Optional[BaseChatModel] = None,
+        tools: Optional[Sequence[BaseTool]] = None
     ):
         """Initialize the LLM agent.
         
@@ -84,6 +88,7 @@ class LLMAgent:
             enable_error_handling: Whether to enable enhanced error handling
             max_retries: Maximum number of retries for failed operations
             fallback_llm: Optional fallback LLM for error recovery
+            tools: Optional list of tools the agent can use
         """
         self.agent_id = agent_id
         self.llm = llm
@@ -94,6 +99,9 @@ class LLMAgent:
         self.enable_error_handling = enable_error_handling and LANGGRAPH_ERROR_HANDLING
         self.max_retries = max_retries
         self.fallback_llm = fallback_llm
+        self.tools = list(tools) if tools else []
+        self._tool_bound_llm = None
+        self._tool_node = None
         
         # Extract model info from LLM
         self.model = getattr(llm, "model_name", "unknown")
@@ -106,10 +114,15 @@ class LLMAgent:
         if self.enable_error_handling:
             self._configure_error_handling()
         
+        # Bind tools if provided
+        if self.tools:
+            self._bind_tools()
+        
         logger.info(
             f"Initialized agent {agent_id} with role={role}, "
             f"model={self.model}, provider={self.provider}, "
-            f"error_handling={self.enable_error_handling}"
+            f"error_handling={self.enable_error_handling}, "
+            f"tools={len(self.tools)}"
         )
     
     def _extract_provider_name(self) -> str:
@@ -152,6 +165,60 @@ class LLMAgent:
             )
         
         logger.info(f"Configured error handling for agent {self.agent_id}")
+    
+    def _bind_tools(self) -> None:
+        """Bind tools to the LLM using LangChain's bind_tools pattern."""
+        if not self.tools:
+            return
+        
+        try:
+            # Bind tools to the LLM
+            self._tool_bound_llm = self.llm.bind_tools(self.tools)
+            
+            # Create ToolNode for tool execution
+            self._tool_node = ToolNode(self.tools)
+            
+            logger.info(f"Bound {len(self.tools)} tools to agent {self.agent_id}")
+        except Exception as e:
+            logger.warning(
+                f"Failed to bind tools for agent {self.agent_id}: {e}. "
+                "Agent will function without tools."
+            )
+            self._tool_bound_llm = None
+            self._tool_node = None
+    
+    def bind_tools(self, tools: Sequence[BaseTool]) -> None:
+        """Bind tools to the agent after initialization.
+        
+        Args:
+            tools: List of tools to bind to the agent
+        """
+        self.tools = list(tools)
+        self._bind_tools()
+    
+    def get_bound_llm(self) -> BaseChatModel:
+        """Get the LLM with tools bound if available, otherwise the base LLM.
+        
+        Returns:
+            The tool-bound LLM if tools are bound, otherwise the base LLM
+        """
+        return self._tool_bound_llm if self._tool_bound_llm else self.llm
+    
+    def get_tool_node(self) -> Optional[ToolNode]:
+        """Get the ToolNode for this agent if tools are configured.
+        
+        Returns:
+            ToolNode instance or None if no tools are configured
+        """
+        return self._tool_node
+    
+    def has_tools(self) -> bool:
+        """Check if the agent has tools configured.
+        
+        Returns:
+            True if tools are configured, False otherwise
+        """
+        return bool(self.tools and self._tool_bound_llm)
     
     def get_retry_policy(self) -> Optional['RetryPolicy']:
         """Get LangGraph RetryPolicy for this agent.
@@ -281,11 +348,14 @@ class LLMAgent:
         
         # Generate response with error handling
         try:
+            # Use tool-bound LLM if available
+            llm_to_use = self.get_bound_llm()
+            
             if llm_kwargs:
                 # Use bind to set parameters
-                response = self.llm.bind(**llm_kwargs).invoke(messages)
+                response = llm_to_use.bind(**llm_kwargs).invoke(messages)
             else:
-                response = self.llm.invoke(messages)
+                response = llm_to_use.invoke(messages)
             
             # Extract text content
             if hasattr(response, "content"):
@@ -369,10 +439,13 @@ class LLMAgent:
         logger.debug(f"Agent {self.agent_id} generating async response to: {prompt[:100]}...")
         
         try:
+            # Use tool-bound LLM if available
+            llm_to_use = self.get_bound_llm()
+            
             if llm_kwargs:
-                response = await self.llm.bind(**llm_kwargs).ainvoke(messages)
+                response = await llm_to_use.bind(**llm_kwargs).ainvoke(messages)
             else:
-                response = await self.llm.ainvoke(messages)
+                response = await llm_to_use.ainvoke(messages)
             
             # Extract text content
             if hasattr(response, "content"):
@@ -454,10 +527,13 @@ class LLMAgent:
         logger.debug(f"Agent {self.agent_id} streaming response to: {prompt[:100]}...")
         
         try:
+            # Use tool-bound LLM if available
+            llm_to_use = self.get_bound_llm()
+            
             if llm_kwargs:
-                stream = self.llm.bind(**llm_kwargs).stream(messages)
+                stream = llm_to_use.bind(**llm_kwargs).stream(messages)
             else:
-                stream = self.llm.stream(messages)
+                stream = llm_to_use.stream(messages)
             
             full_response = ""
             for chunk in stream:
@@ -516,10 +592,13 @@ class LLMAgent:
         logger.debug(f"Agent {self.agent_id} async streaming response to: {prompt[:100]}...")
         
         try:
+            # Use tool-bound LLM if available
+            llm_to_use = self.get_bound_llm()
+            
             if llm_kwargs:
-                stream = self.llm.bind(**llm_kwargs).astream(messages)
+                stream = llm_to_use.bind(**llm_kwargs).astream(messages)
             else:
-                stream = self.llm.astream(messages)
+                stream = llm_to_use.astream(messages)
             
             full_response = ""
             async for chunk in stream:
@@ -656,6 +735,20 @@ class LLMAgent:
         """
         messages = state.get("messages", [])
         
+        # Check if we need to handle tool calls from the last message
+        if messages and isinstance(messages[-1], AIMessage) and hasattr(messages[-1], "tool_calls"):
+            tool_calls = getattr(messages[-1], "tool_calls", [])
+            if tool_calls and self._tool_node:
+                # Execute tool calls using our ToolNode
+                logger.info(f"Agent {self.agent_id} executing {len(tool_calls)} tool calls")
+                tool_results = self._tool_node(state, config)
+                
+                # Stream tool results if writer provided
+                if writer:
+                    writer.write(tool_results)
+                
+                return tool_results
+        
         # Get prompt from kwargs or last message
         if "prompt" in kwargs:
             prompt = kwargs["prompt"]
@@ -680,16 +773,61 @@ class LLMAgent:
                         "topic": None
                     })
         
-        # Generate response
-        response = self.generate_response(
-            prompt,
-            context_messages,
-            temperature=kwargs.get("temperature"),
-            max_tokens=kwargs.get("max_tokens")
-        )
+        # Generate response using tool-bound LLM if available
+        llm_to_use = self.get_bound_llm()
+        
+        # If we have tools, the response might include tool calls
+        if self.tools:
+            # Use the tool-bound LLM to potentially generate tool calls
+            messages_for_llm = self.format_messages(prompt, context_messages)
+            
+            # Get LLM kwargs
+            llm_kwargs = {}
+            if "temperature" in kwargs:
+                llm_kwargs["temperature"] = kwargs["temperature"]
+            if "max_tokens" in kwargs:
+                llm_kwargs["max_tokens"] = kwargs["max_tokens"]
+            
+            # Invoke LLM
+            if llm_kwargs:
+                llm_response = llm_to_use.bind(**llm_kwargs).invoke(messages_for_llm)
+            else:
+                llm_response = llm_to_use.invoke(messages_for_llm)
+            
+            # Check if response contains tool calls
+            if isinstance(llm_response, AIMessage) and hasattr(llm_response, "tool_calls"):
+                tool_calls = getattr(llm_response, "tool_calls", [])
+                if tool_calls:
+                    # Return the AI message with tool calls
+                    ai_message = AIMessage(
+                        content=llm_response.content or "",
+                        name=self.agent_id,
+                        tool_calls=tool_calls
+                    )
+                    
+                    # Update message count
+                    with self._count_lock:
+                        self.message_count += 1
+                    
+                    # Stream if writer provided
+                    if writer:
+                        writer.write({"messages": [ai_message]})
+                    
+                    return {"messages": [ai_message]}
+            
+            # Extract response text
+            response_text = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
+        else:
+            # No tools, use regular response generation
+            response_text = self.generate_response(
+                prompt,
+                context_messages,
+                temperature=kwargs.get("temperature"),
+                max_tokens=kwargs.get("max_tokens")
+            )
         
         # Create AI message with agent name
-        ai_message = AIMessage(content=response, name=self.agent_id)
+        ai_message = AIMessage(content=response_text, name=self.agent_id)
         
         # Stream if writer is provided
         if writer:
@@ -718,6 +856,21 @@ class LLMAgent:
         """
         messages = state.get("messages", [])
         
+        # Check if we need to handle tool calls from the last message
+        if messages and isinstance(messages[-1], AIMessage) and hasattr(messages[-1], "tool_calls"):
+            tool_calls = getattr(messages[-1], "tool_calls", [])
+            if tool_calls and self._tool_node:
+                # Execute tool calls using our ToolNode
+                logger.info(f"Agent {self.agent_id} executing {len(tool_calls)} tool calls")
+                # ToolNode doesn't have async support yet, so use sync version
+                tool_results = self._tool_node(state, config)
+                
+                # Stream tool results if writer provided
+                if writer:
+                    await writer.awrite(tool_results)
+                
+                return tool_results
+        
         # Get prompt from kwargs or last message
         if "prompt" in kwargs:
             prompt = kwargs["prompt"]
@@ -741,16 +894,61 @@ class LLMAgent:
                         "topic": None
                     })
         
-        # Generate response asynchronously
-        response = await self.generate_response_async(
-            prompt,
-            context_messages,
-            temperature=kwargs.get("temperature"),
-            max_tokens=kwargs.get("max_tokens")
-        )
+        # Generate response using tool-bound LLM if available
+        llm_to_use = self.get_bound_llm()
+        
+        # If we have tools, the response might include tool calls
+        if self.tools:
+            # Use the tool-bound LLM to potentially generate tool calls
+            messages_for_llm = self.format_messages(prompt, context_messages)
+            
+            # Get LLM kwargs
+            llm_kwargs = {}
+            if "temperature" in kwargs:
+                llm_kwargs["temperature"] = kwargs["temperature"]
+            if "max_tokens" in kwargs:
+                llm_kwargs["max_tokens"] = kwargs["max_tokens"]
+            
+            # Invoke LLM
+            if llm_kwargs:
+                llm_response = await llm_to_use.bind(**llm_kwargs).ainvoke(messages_for_llm)
+            else:
+                llm_response = await llm_to_use.ainvoke(messages_for_llm)
+            
+            # Check if response contains tool calls
+            if isinstance(llm_response, AIMessage) and hasattr(llm_response, "tool_calls"):
+                tool_calls = getattr(llm_response, "tool_calls", [])
+                if tool_calls:
+                    # Return the AI message with tool calls
+                    ai_message = AIMessage(
+                        content=llm_response.content or "",
+                        name=self.agent_id,
+                        tool_calls=tool_calls
+                    )
+                    
+                    # Update message count
+                    with self._count_lock:
+                        self.message_count += 1
+                    
+                    # Stream if writer provided
+                    if writer:
+                        await writer.awrite({"messages": [ai_message]})
+                    
+                    return {"messages": [ai_message]}
+            
+            # Extract response text
+            response_text = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
+        else:
+            # No tools, use regular response generation
+            response_text = await self.generate_response_async(
+                prompt,
+                context_messages,
+                temperature=kwargs.get("temperature"),
+                max_tokens=kwargs.get("max_tokens")
+            )
         
         # Create AI message
-        ai_message = AIMessage(content=response, name=self.agent_id)
+        ai_message = AIMessage(content=response_text, name=self.agent_id)
         
         # Stream if writer is provided
         if writer:
@@ -1007,8 +1205,29 @@ class LLMAgent:
         Yields:
             Streamed content based on mode
         """
-        # Extract prompt
         messages = state.get("messages", [])
+        
+        # Check if we need to handle tool calls
+        if messages and isinstance(messages[-1], AIMessage) and hasattr(messages[-1], "tool_calls"):
+            tool_calls = getattr(messages[-1], "tool_calls", [])
+            if tool_calls and self._tool_node:
+                # Execute tool calls
+                tool_results = self._tool_node(state, config)
+                
+                # Yield tool results based on stream mode
+                if stream_mode == "messages":
+                    # Yield tool messages as text
+                    for msg in tool_results.get("messages", []):
+                        if isinstance(msg, ToolMessage):
+                            yield f"Tool Result: {msg.content}"
+                elif stream_mode == "updates":
+                    yield tool_results
+                elif stream_mode == "values":
+                    current_messages = list(messages) + tool_results.get("messages", [])
+                    yield {"messages": current_messages}
+                return
+        
+        # Extract prompt
         if "prompt" in kwargs:
             prompt = kwargs["prompt"]
         elif messages and hasattr(messages[-1], "content"):
@@ -1031,21 +1250,56 @@ class LLMAgent:
                         "topic": None
                     })
         
-        # Stream response
-        full_response = ""
-        for chunk in self.stream_response(prompt, context_messages):
-            full_response += chunk
+        # If we have tools, check if we should stream tool calls
+        if self.tools:
+            # Format messages for LLM
+            messages_for_llm = self.format_messages(prompt, context_messages)
+            llm_to_use = self.get_bound_llm()
             
-            if stream_mode == "messages":
-                # Yield message chunks
-                yield chunk
-            elif stream_mode == "updates":
-                # Yield state updates
-                yield {"messages": [AIMessage(content=chunk, name=self.agent_id)]}
-            elif stream_mode == "values":
-                # Yield full state
-                current_messages = list(messages) + [AIMessage(content=full_response, name=self.agent_id)]
-                yield {"messages": current_messages}
+            # Stream from LLM
+            full_response = ""
+            tool_calls = []
+            
+            for chunk in llm_to_use.stream(messages_for_llm):
+                # Check if chunk contains tool calls
+                if hasattr(chunk, "tool_calls") and chunk.tool_calls:
+                    tool_calls.extend(chunk.tool_calls)
+                
+                # Extract content
+                content = chunk.content if hasattr(chunk, "content") else ""
+                full_response += content
+                
+                if content:  # Only yield if there's content
+                    if stream_mode == "messages":
+                        yield content
+                    elif stream_mode == "updates":
+                        yield {"messages": [AIMessage(content=content, name=self.agent_id)]}
+                    elif stream_mode == "values":
+                        # Build current message
+                        current_ai_msg = AIMessage(
+                            content=full_response,
+                            name=self.agent_id,
+                            tool_calls=tool_calls if tool_calls else None
+                        )
+                        current_messages = list(messages) + [current_ai_msg]
+                        yield {"messages": current_messages}
+            
+            # Update message count
+            with self._count_lock:
+                self.message_count += 1
+        else:
+            # No tools, use regular streaming
+            full_response = ""
+            for chunk in self.stream_response(prompt, context_messages):
+                full_response += chunk
+                
+                if stream_mode == "messages":
+                    yield chunk
+                elif stream_mode == "updates":
+                    yield {"messages": [AIMessage(content=chunk, name=self.agent_id)]}
+                elif stream_mode == "values":
+                    current_messages = list(messages) + [AIMessage(content=full_response, name=self.agent_id)]
+                    yield {"messages": current_messages}
     
     async def stream_in_graph_async(
         self,
@@ -1065,8 +1319,28 @@ class LLMAgent:
         Yields:
             Streamed content based on mode
         """
-        # Extract prompt
         messages = state.get("messages", [])
+        
+        # Check if we need to handle tool calls
+        if messages and isinstance(messages[-1], AIMessage) and hasattr(messages[-1], "tool_calls"):
+            tool_calls = getattr(messages[-1], "tool_calls", [])
+            if tool_calls and self._tool_node:
+                # Execute tool calls (sync for now as ToolNode doesn't have async)
+                tool_results = self._tool_node(state, config)
+                
+                # Yield tool results based on stream mode
+                if stream_mode == "messages":
+                    for msg in tool_results.get("messages", []):
+                        if isinstance(msg, ToolMessage):
+                            yield f"Tool Result: {msg.content}"
+                elif stream_mode == "updates":
+                    yield tool_results
+                elif stream_mode == "values":
+                    current_messages = list(messages) + tool_results.get("messages", [])
+                    yield {"messages": current_messages}
+                return
+        
+        # Extract prompt
         if "prompt" in kwargs:
             prompt = kwargs["prompt"]
         elif messages and hasattr(messages[-1], "content"):
@@ -1089,18 +1363,56 @@ class LLMAgent:
                         "topic": None
                     })
         
-        # Stream response
-        full_response = ""
-        async for chunk in self.stream_response_async(prompt, context_messages):
-            full_response += chunk
+        # If we have tools, check if we should stream tool calls
+        if self.tools:
+            # Format messages for LLM
+            messages_for_llm = self.format_messages(prompt, context_messages)
+            llm_to_use = self.get_bound_llm()
             
-            if stream_mode == "messages":
-                yield chunk
-            elif stream_mode == "updates":
-                yield {"messages": [AIMessage(content=chunk, name=self.agent_id)]}
-            elif stream_mode == "values":
-                current_messages = list(messages) + [AIMessage(content=full_response, name=self.agent_id)]
-                yield {"messages": current_messages}
+            # Stream from LLM
+            full_response = ""
+            tool_calls = []
+            
+            async for chunk in llm_to_use.astream(messages_for_llm):
+                # Check if chunk contains tool calls
+                if hasattr(chunk, "tool_calls") and chunk.tool_calls:
+                    tool_calls.extend(chunk.tool_calls)
+                
+                # Extract content
+                content = chunk.content if hasattr(chunk, "content") else ""
+                full_response += content
+                
+                if content:  # Only yield if there's content
+                    if stream_mode == "messages":
+                        yield content
+                    elif stream_mode == "updates":
+                        yield {"messages": [AIMessage(content=content, name=self.agent_id)]}
+                    elif stream_mode == "values":
+                        # Build current message
+                        current_ai_msg = AIMessage(
+                            content=full_response,
+                            name=self.agent_id,
+                            tool_calls=tool_calls if tool_calls else None
+                        )
+                        current_messages = list(messages) + [current_ai_msg]
+                        yield {"messages": current_messages}
+            
+            # Update message count
+            with self._count_lock:
+                self.message_count += 1
+        else:
+            # No tools, use regular streaming
+            full_response = ""
+            async for chunk in self.stream_response_async(prompt, context_messages):
+                full_response += chunk
+                
+                if stream_mode == "messages":
+                    yield chunk
+                elif stream_mode == "updates":
+                    yield {"messages": [AIMessage(content=chunk, name=self.agent_id)]}
+                elif stream_mode == "values":
+                    current_messages = list(messages) + [AIMessage(content=full_response, name=self.agent_id)]
+                    yield {"messages": current_messages}
     
     def as_langgraph_node(
         self,
@@ -1222,4 +1534,55 @@ class LLMAgent:
         )
         
         return agent
+    
+    @classmethod
+    def create_with_tools(
+        cls,
+        agent_id: str,
+        llm: BaseChatModel,
+        tools: Sequence[BaseTool],
+        role: str = "participant",
+        system_prompt: Optional[str] = None,
+        enable_error_handling: bool = True,
+        max_retries: int = 3,
+        fallback_llm: Optional[BaseChatModel] = None
+    ) -> 'LLMAgent':
+        """Create an agent with tools bound.
+        
+        This factory method creates an agent with tools automatically bound
+        to the LLM, enabling tool calling capabilities in LangGraph workflows.
+        
+        Args:
+            agent_id: Unique identifier for the agent
+            llm: LangChain chat model instance
+            tools: List of tools the agent can use
+            role: Agent role (moderator or participant)
+            system_prompt: Optional system prompt
+            enable_error_handling: Whether to enable enhanced error handling
+            max_retries: Maximum retry attempts
+            fallback_llm: Optional fallback LLM
+            
+        Returns:
+            LLMAgent instance with tools bound
+            
+        Example:
+            ```python
+            tools = [search_tool, calculator_tool]
+            agent = LLMAgent.create_with_tools(
+                "assistant",
+                llm=openai_llm,
+                tools=tools
+            )
+            ```
+        """
+        return cls(
+            agent_id=agent_id,
+            llm=llm,
+            role=role,
+            system_prompt=system_prompt,
+            enable_error_handling=enable_error_handling,
+            max_retries=max_retries,
+            fallback_llm=fallback_llm,
+            tools=tools
+        )
 

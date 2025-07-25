@@ -11,7 +11,7 @@ from typing import Optional, Union
 import yaml
 from pydantic import ValidationError
 
-from virtual_agora.config.schema import Config
+from virtual_agora.config.models import Config
 from virtual_agora.utils.exceptions import ConfigurationError
 from virtual_agora.utils.logging import get_logger
 

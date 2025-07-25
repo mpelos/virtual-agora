@@ -7,7 +7,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from virtual_agora.config.schema import Config, ModeratorConfig, AgentConfig, Provider
+from virtual_agora.config.models import Config, ModeratorConfig, AgentConfig, Provider
 from virtual_agora.config.loader import ConfigLoader
 from virtual_agora.config.validators import ConfigValidator
 from virtual_agora.utils.exceptions import ConfigurationError

@@ -80,6 +80,32 @@ class VoteRound(TypedDict):
     status: str  # 'active', 'completed', 'cancelled'
 
 
+class ToolCallInfo(TypedDict):
+    """Information about a tool call made by an agent."""
+    id: str
+    agent_id: str
+    tool_name: str
+    arguments: Dict[str, Any]
+    timestamp: datetime
+    phase: int
+    topic: Optional[str]
+    status: str  # 'pending', 'executing', 'completed', 'failed'
+    result: NotRequired[str]
+    error: NotRequired[str]
+    execution_time_ms: NotRequired[float]
+
+
+class ToolExecutionMetrics(TypedDict):
+    """Metrics for tool execution."""
+    total_calls: int
+    successful_calls: int
+    failed_calls: int
+    average_execution_time_ms: float
+    calls_by_tool: Dict[str, int]
+    calls_by_agent: Dict[str, int]
+    errors_by_type: Dict[str, int]
+
+
 class VirtualAgoraState(TypedDict):
     """Complete state for a Virtual Agora session.
     
@@ -139,6 +165,12 @@ class VirtualAgoraState(TypedDict):
     messages_by_topic: Dict[str, int]
     vote_participation_rate: Dict[str, float]  # vote_id -> participation %
     
+    # Tool execution tracking
+    tool_calls: Annotated[List[ToolCallInfo], list.append]
+    active_tool_calls: Dict[str, ToolCallInfo]  # tool_call_id -> info
+    tool_metrics: ToolExecutionMetrics
+    tools_enabled_agents: List[str]  # List of agent IDs with tools enabled
+    
     # Error tracking (for recovery)
     last_error: Optional[str]
     error_count: int
@@ -152,3 +184,16 @@ class MessagesState(TypedDict):
     deal with message exchanges.
     """
     messages: Annotated[List[BaseMessage], add_messages]
+
+
+class ToolEnabledState(TypedDict):
+    """State for tool-enabled agent workflows.
+    
+    This extends MessagesState with tool tracking capabilities
+    for agents that can execute tools.
+    """
+    messages: Annotated[List[BaseMessage], add_messages]
+    tool_calls: Annotated[List[ToolCallInfo], list.append]
+    active_tool_calls: Dict[str, ToolCallInfo]
+    tool_metrics: NotRequired[ToolExecutionMetrics]
+    last_tool_error: NotRequired[str]

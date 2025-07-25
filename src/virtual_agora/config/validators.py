@@ -7,7 +7,7 @@ Pydantic schema validation.
 from collections import Counter
 from typing import Optional
 
-from virtual_agora.config.schema import Config, Provider
+from virtual_agora.config.models import Config, Provider
 from virtual_agora.utils.exceptions import ConfigurationError
 from virtual_agora.utils.logging import get_logger
 

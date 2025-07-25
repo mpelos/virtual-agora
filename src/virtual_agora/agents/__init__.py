@@ -11,10 +11,24 @@ if TYPE_CHECKING:
     from .base import BaseAgent, AgentRole
     from .discussion import DiscussionAgent
     from .moderator import ModeratorAgent
+    from .llm_agent import LLMAgent
+    from .tool_enabled_factory import (
+        create_tool_enabled_moderator,
+        create_tool_enabled_participant,
+        create_discussion_agents_with_tools,
+        add_tools_to_existing_agent,
+        create_specialized_agent,
+    )
 
 __all__ = [
     "BaseAgent",
     "AgentRole",
     "DiscussionAgent",
     "ModeratorAgent",
+    "LLMAgent",
+    "create_tool_enabled_moderator",
+    "create_tool_enabled_participant",
+    "create_discussion_agents_with_tools",
+    "add_tools_to_existing_agent",
+    "create_specialized_agent",
 ]

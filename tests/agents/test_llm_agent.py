@@ -737,3 +737,268 @@ class TestLLMAgentLangGraphIntegration:
         # The agent should have filtered messages for phase 2 and topic "AI"
         assert "messages" in result
         assert len(result["messages"]) == 1
+
+
+class TestLLMAgentToolIntegration:
+    """Test LLMAgent's tool integration features."""
+    
+    def setup_method(self):
+        """Set up test method."""
+        # Create mock LLM
+        self.mock_llm = Mock()
+        self.mock_llm.__class__.__name__ = "ChatOpenAI"
+        self.mock_llm.model_name = "gpt-4"
+        self.mock_llm.bind_tools = Mock(return_value=self.mock_llm)
+        
+        # Create mock tools
+        self.mock_tool1 = Mock()
+        self.mock_tool1.name = "test_tool_1"
+        self.mock_tool1.description = "Test tool 1"
+        
+        self.mock_tool2 = Mock()
+        self.mock_tool2.name = "test_tool_2"
+        self.mock_tool2.description = "Test tool 2"
+        
+        self.tools = [self.mock_tool1, self.mock_tool2]
+    
+    def test_agent_with_tools_initialization(self):
+        """Test creating agent with tools."""
+        agent = LLMAgent(
+            agent_id="tool-agent",
+            llm=self.mock_llm,
+            tools=self.tools
+        )
+        
+        assert agent.tools == self.tools
+        assert agent.has_tools()
+        assert agent._tool_bound_llm is not None
+        assert agent._tool_node is not None
+        
+        # Verify bind_tools was called
+        self.mock_llm.bind_tools.assert_called_once_with(self.tools)
+    
+    def test_agent_bind_tools_after_creation(self):
+        """Test binding tools after agent creation."""
+        agent = LLMAgent(
+            agent_id="test-agent",
+            llm=self.mock_llm
+        )
+        
+        # Initially no tools
+        assert not agent.has_tools()
+        assert agent.tools == []
+        
+        # Bind tools
+        agent.bind_tools(self.tools)
+        
+        assert agent.tools == self.tools
+        assert agent.has_tools()
+        self.mock_llm.bind_tools.assert_called_with(self.tools)
+    
+    def test_create_with_tools_factory(self):
+        """Test creating agent with tools using factory method."""
+        agent = LLMAgent.create_with_tools(
+            agent_id="factory-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            role="participant"
+        )
+        
+        assert agent.agent_id == "factory-agent"
+        assert agent.tools == self.tools
+        assert agent.role == "participant"
+        assert agent.has_tools()
+    
+    def test_agent_generates_tool_calls(self):
+        """Test agent generating tool calls in response."""
+        agent = LLMAgent(
+            agent_id="tool-agent",
+            llm=self.mock_llm,
+            tools=self.tools
+        )
+        
+        # Mock LLM response with tool calls
+        tool_call = {
+            "id": "call_123",
+            "name": "test_tool_1",
+            "args": {"param": "value"}
+        }
+        
+        mock_response = AIMessage(
+            content="I'll use a tool.",
+            tool_calls=[tool_call]
+        )
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Create state
+        state = {
+            "messages": [HumanMessage(content="Please use a tool")]
+        }
+        
+        # Call agent
+        result = agent(state)
+        
+        # Verify result contains tool call
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+        msg = result["messages"][0]
+        assert isinstance(msg, AIMessage)
+        assert hasattr(msg, "tool_calls")
+        assert len(msg.tool_calls) == 1
+        assert msg.tool_calls[0]["name"] == "test_tool_1"
+    
+    def test_agent_executes_tool_calls(self):
+        """Test agent executing tool calls in state."""
+        # Create mock ToolNode
+        mock_tool_node = Mock()
+        mock_tool_results = {
+            "messages": [
+                ToolMessage(
+                    content="Tool result",
+                    tool_call_id="call_123",
+                    name="test_tool_1"
+                )
+            ]
+        }
+        mock_tool_node.return_value = mock_tool_results
+        
+        agent = LLMAgent(
+            agent_id="tool-agent",
+            llm=self.mock_llm,
+            tools=self.tools
+        )
+        agent._tool_node = mock_tool_node
+        
+        # Create state with tool call
+        tool_call = {
+            "id": "call_123",
+            "name": "test_tool_1",
+            "args": {"param": "value"}
+        }
+        
+        ai_msg = AIMessage(
+            content="Using tool",
+            tool_calls=[tool_call]
+        )
+        
+        state = {
+            "messages": [
+                HumanMessage(content="Use tool"),
+                ai_msg
+            ]
+        }
+        
+        # Call agent - should execute tool
+        result = agent(state)
+        
+        # Verify tool node was called
+        mock_tool_node.assert_called_once()
+        
+        # Verify result
+        assert result == mock_tool_results
+    
+    def test_agent_streaming_with_tools(self):
+        """Test streaming with tool calls."""
+        agent = LLMAgent(
+            agent_id="stream-agent",
+            llm=self.mock_llm,
+            tools=self.tools
+        )
+        
+        # Mock streaming chunks with tool calls
+        chunks = [
+            Mock(content="I'll use ", tool_calls=[]),
+            Mock(content="the tool.", tool_calls=[{
+                "id": "call_stream",
+                "name": "test_tool_1",
+                "args": {"param": "value"}
+            }])
+        ]
+        
+        self.mock_llm.stream.return_value = iter(chunks)
+        
+        state = {
+            "messages": [HumanMessage(content="Stream with tool")]
+        }
+        
+        # Stream response
+        streamed = list(agent.stream_in_graph(state, stream_mode="messages"))
+        
+        assert len(streamed) == 2
+        assert streamed[0] == "I'll use "
+        assert streamed[1] == "the tool."
+    
+    @pytest.mark.asyncio
+    async def test_agent_async_with_tools(self):
+        """Test async execution with tools."""
+        agent = LLMAgent(
+            agent_id="async-tool-agent",
+            llm=self.mock_llm,
+            tools=self.tools
+        )
+        
+        # Mock async response with tool call
+        tool_call = {
+            "id": "call_async",
+            "name": "test_tool_2",
+            "args": {"async_param": "async_value"}
+        }
+        
+        mock_response = AIMessage(
+            content="Async tool call",
+            tool_calls=[tool_call]
+        )
+        self.mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        
+        state = {
+            "messages": [HumanMessage(content="Async tool test")]
+        }
+        
+        # Call async
+        result = await agent.__acall__(state)
+        
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+        msg = result["messages"][0]
+        assert msg.tool_calls[0]["name"] == "test_tool_2"
+    
+    def test_get_tool_node(self):
+        """Test getting tool node from agent."""
+        agent = LLMAgent(
+            agent_id="test-agent",
+            llm=self.mock_llm,
+            tools=self.tools
+        )
+        
+        tool_node = agent.get_tool_node()
+        assert tool_node is not None
+        
+        # Agent without tools
+        agent_no_tools = LLMAgent(
+            agent_id="no-tools",
+            llm=self.mock_llm
+        )
+        
+        assert agent_no_tools.get_tool_node() is None
+    
+    def test_tool_binding_failure_handling(self):
+        """Test handling of tool binding failures."""
+        # Mock bind_tools to raise exception
+        self.mock_llm.bind_tools.side_effect = Exception("Binding failed")
+        
+        # Create agent with tools - should handle error gracefully
+        agent = LLMAgent(
+            agent_id="fail-agent",
+            llm=self.mock_llm,
+            tools=self.tools
+        )
+        
+        # Agent should still be created but without tools
+        assert agent._tool_bound_llm is None
+        assert agent._tool_node is None
+        assert not agent.has_tools()
+        
+        # Agent should still work without tools
+        self.mock_llm.invoke.return_value = Mock(content="Response without tools")
+        response = agent.generate_response("Test prompt")
+        assert response == "Response without tools"
