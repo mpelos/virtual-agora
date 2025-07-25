@@ -1,9 +1,11 @@
 # Epic 8: Reporting & Documentation System
 
 ## Epic Overview
+
 Implement comprehensive reporting capabilities including per-topic summaries, final multi-file reports, and session documentation to preserve discussion insights.
 
 ## Technical Context
+
 - **Output Types:** Topic summaries, final report sections, session logs
 - **File Formats:** Markdown for reports, plain text for logs
 - **Report Structure:** Multi-file with logical sections
@@ -14,11 +16,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ## User Stories
 
 ### Story 8.1: Topic Summary Generation
-**As a** system  
-**I want** to generate topic summaries  
+
+**As a** system
+**I want** to generate topic summaries
 **So that** each discussion is preserved independently
 
 **Acceptance Criteria:**
+
 - Generate summary after topic conclusion
 - Include all key discussion points
 - Maintain agent-agnostic perspective
@@ -32,6 +36,7 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 - Ensure summary completeness
 
 **Technical Notes:**
+
 - Implement Markdown formatting utilities
 - Use filesystem-safe filenames
 - Consider summary templates
@@ -39,11 +44,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ---
 
 ### Story 8.2: Final Report Structure Definition
-**As a** system  
-**I want** to define report structure dynamically  
+
+**As a** system
+**I want** to define report structure dynamically
 **So that** reports match the discussion content
 
 **Acceptance Criteria:**
+
 - Analyze all topic summaries
 - Generate logical section structure
 - Output structure as JSON list
@@ -58,6 +65,7 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 - Validate structure completeness
 
 **Technical Notes:**
+
 - Implement intelligent sectioning
 - Consider report templates
 - Support custom sections
@@ -65,11 +73,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ---
 
 ### Story 8.3: Report Section Writing
-**As a** system  
-**I want** to write professional report sections  
+
+**As a** system
+**I want** to write professional report sections
 **So that** insights are communicated effectively
 
 **Acceptance Criteria:**
+
 - Generate content for each section
 - Maintain consistent tone and style
 - Cross-reference topic discussions
@@ -83,6 +93,7 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 - Target appropriate section lengths
 
 **Technical Notes:**
+
 - Implement style consistency checks
 - Use advanced Markdown features
 - Consider citation formatting
@@ -90,11 +101,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ---
 
 ### Story 8.4: Multi-File Report Management
-**As a** system  
-**I want** to organize report files effectively  
+
+**As a** system
+**I want** to organize report files effectively
 **So that** reports are easy to navigate
 
 **Acceptance Criteria:**
+
 - Create dedicated report directory
 - Use numbered filenames for ordering:
   - 01_Executive_Summary.md
@@ -107,6 +120,7 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 - Create report manifest
 
 **Technical Notes:**
+
 - Implement atomic file operations
 - Consider report packaging
 - Plan for large reports
@@ -114,11 +128,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ---
 
 ### Story 8.5: Session Logging System
-**As a** system  
-**I want** to log all session activity  
+
+**As a** system
+**I want** to log all session activity
 **So that** sessions can be audited and analyzed
 
 **Acceptance Criteria:**
+
 - Create timestamped log files
 - Log all significant events:
   - User inputs
@@ -136,6 +152,7 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 - Ensure logs are searchable
 
 **Technical Notes:**
+
 - Use structured logging
 - Consider log compression
 - Implement log privacy controls
@@ -143,11 +160,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ---
 
 ### Story 8.6: Report Metadata and Analytics
-**As a** system  
-**I want** to generate report metadata  
+
+**As a** system
+**I want** to generate report metadata
 **So that** reports include context and statistics
 
 **Acceptance Criteria:**
+
 - Generate metadata including:
   - Session date and duration
   - Participant agents
@@ -161,6 +180,7 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 - Support data visualization
 
 **Technical Notes:**
+
 - Implement metrics collection
 - Design metadata schema
 - Consider JSON/YAML export
@@ -168,11 +188,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ---
 
 ### Story 8.7: Report Quality Assurance
-**As a** system  
-**I want** to ensure report quality  
+
+**As a** system
+**I want** to ensure report quality
 **So that** outputs are professional
 
 **Acceptance Criteria:**
+
 - Validate Markdown syntax
 - Check for completeness:
   - All sections present
@@ -187,6 +209,7 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 - Generate quality report
 
 **Technical Notes:**
+
 - Implement Markdown linting
 - Use readability metrics
 - Consider automated proofreading
@@ -194,11 +217,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ---
 
 ### Story 8.8: Export and Distribution Options
-**As a** user  
-**I want** various export options  
+
+**As a** user
+**I want** various export options
 **So that** I can share reports effectively
 
 **Acceptance Criteria:**
+
 - Support export formats:
   - Combined Markdown file
   - HTML with styling
@@ -211,6 +236,7 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 - Support selective export
 
 **Technical Notes:**
+
 - Use Pandoc for conversions
 - Implement asset bundling
 - Consider cloud upload options
@@ -218,11 +244,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ---
 
 ### Story 8.9: Report Templates and Customization
-**As a** user  
-**I want** to customize report formats  
+
+**As a** user
+**I want** to customize report formats
 **So that** reports match my needs
 
 **Acceptance Criteria:**
+
 - Support report templates
 - Allow style customization:
   - Fonts and colors
@@ -234,6 +262,7 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 - Preview customizations
 
 **Technical Notes:**
+
 - Implement template engine
 - Support CSS styling
 - Consider i18n support
@@ -241,11 +270,13 @@ Implement comprehensive reporting capabilities including per-topic summaries, fi
 ---
 
 ## Dependencies
+
 - Epic 3: Moderator Agent (for summary generation)
 - Epic 6: Discussion Flow (for session data)
 - Epic 1: Core Infrastructure (for file operations)
 
 ## Definition of Done
+
 - Reports generated successfully for test sessions
 - All file operations are atomic and safe
 - Markdown formatting is valid and consistent

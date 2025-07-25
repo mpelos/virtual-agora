@@ -81,7 +81,11 @@ class ModeratorAgent(LLMAgent):
         enable_error_handling: bool = True,
         max_retries: int = 3,
         fallback_llm: Optional[BaseChatModel] = None,
-        tools: Optional[List[BaseTool]] = None
+        tools: Optional[List[BaseTool]] = None,
+        turn_timeout_seconds: int = 300,
+        relevance_threshold: float = 0.7,  # Story 3.4: Minimum relevance score
+        warning_threshold: int = 2,        # Story 3.4: Warnings before muting
+        mute_duration_minutes: int = 5     # Story 3.4: Duration of muting
     ):
         """Initialize the Moderator agent.
         
@@ -94,10 +98,29 @@ class ModeratorAgent(LLMAgent):
             max_retries: Maximum number of retries for failed operations
             fallback_llm: Optional fallback LLM for error recovery
             tools: Optional list of tools the agent can use
+            turn_timeout_seconds: Maximum time to wait for agent response (default: 5 minutes)
+            relevance_threshold: Minimum relevance score (0.0-1.0) for messages (Story 3.4)
+            warning_threshold: Number of warnings before muting an agent (Story 3.4)
+            mute_duration_minutes: How long to mute agents in minutes (Story 3.4)
         """
         self.current_mode = mode
         self.conversation_context: Dict[str, Any] = {}
         self._custom_system_prompt = system_prompt
+        
+        # Story 3.3: Discussion Round Management attributes
+        self.current_round = 0
+        self.turn_timeout_seconds = turn_timeout_seconds
+        self.participation_metrics: Dict[str, Dict[str, Any]] = {}
+        self.speaking_order: List[str] = []
+        self.current_speaker_index = 0
+        
+        # Story 3.4: Relevance Enforcement attributes
+        self.relevance_threshold = relevance_threshold
+        self.warning_threshold = warning_threshold
+        self.mute_duration_minutes = mute_duration_minutes
+        self.relevance_violations: Dict[str, Dict[str, Any]] = {}  # agent_id -> violation data
+        self.muted_agents: Dict[str, datetime] = {}  # agent_id -> mute_end_time
+        self.current_topic_context: Optional[str] = None
         
         # Initialize with moderator-specific system prompt
         mode_prompt = self._get_mode_specific_prompt(mode) if not system_prompt else system_prompt
@@ -115,7 +138,7 @@ class ModeratorAgent(LLMAgent):
         
         logger.info(
             f"Initialized ModeratorAgent {agent_id} with mode={mode}, "
-            f"prompt_version={self.PROMPT_VERSION}"
+            f"prompt_version={self.PROMPT_VERSION}, relevance_threshold={relevance_threshold}"
         )
     
     def set_mode(self, mode: ModeratorMode) -> None:
@@ -849,6 +872,1542 @@ class ModeratorAgent(LLMAgent):
             # or implement more sophisticated handling
         
         return response
+
+    # Story 3.3: Discussion Round Management methods
+    
+    def announce_topic(self, topic: str, round_number: int) -> str:
+        """Announce the current topic and round to participants.
+        
+        Args:
+            topic: Current discussion topic
+            round_number: Current round number
+            
+        Returns:
+            Announcement message
+        """
+        announcement = (
+            f"📍 **Round {round_number}: {topic}**\n\n"
+            f"We are now beginning Round {round_number} of our discussion on '{topic}'. "
+            f"Please stay focused on this specific topic and await your turn to speak. "
+            f"The current speaking order is: {' → '.join(self.speaking_order)}"
+        )
+        
+        logger.info(f"ModeratorAgent {self.agent_id} announced topic '{topic}' for round {round_number}")
+        return announcement
+    
+    def manage_turn_order(self, agent_ids: List[str], randomize: bool = False) -> None:
+        """Set up and manage the turn order for discussion rounds.
+        
+        Args:
+            agent_ids: List of participating agent IDs
+            randomize: Whether to randomize the initial order (default: False)
+        """
+        import random
+        
+        if not agent_ids:
+            logger.warning(f"ModeratorAgent {self.agent_id} received empty agent list for turn order")
+            return
+        
+        self.speaking_order = agent_ids.copy()
+        
+        if randomize:
+            random.shuffle(self.speaking_order)
+        
+        self.current_speaker_index = 0
+        
+        # Initialize participation metrics for all agents
+        for agent_id in agent_ids:
+            if agent_id not in self.participation_metrics:
+                self.participation_metrics[agent_id] = {
+                    "turns_taken": 0,
+                    "total_response_time": 0.0,
+                    "average_response_time": 0.0,
+                    "timeouts": 0,
+                    "words_contributed": 0,
+                    "last_activity": datetime.now()
+                }
+        
+        logger.info(
+            f"ModeratorAgent {self.agent_id} set turn order: {self.speaking_order}, "
+            f"randomized={randomize}"
+        )
+    
+    def get_next_speaker(self) -> Optional[str]:
+        """Get the next speaker in the rotation.
+        
+        Returns:
+            Agent ID of next speaker, or None if no speakers available
+        """
+        if not self.speaking_order:
+            logger.warning(f"ModeratorAgent {self.agent_id} has no speaking order defined")
+            return None
+        
+        next_speaker = self.speaking_order[self.current_speaker_index]
+        self.current_speaker_index = (self.current_speaker_index + 1) % len(self.speaking_order)
+        
+        logger.debug(f"ModeratorAgent {self.agent_id} selected next speaker: {next_speaker}")
+        return next_speaker
+    
+    def track_participation(
+        self, 
+        agent_id: str, 
+        response_content: str, 
+        response_time_seconds: float
+    ) -> None:
+        """Track participation metrics for an agent.
+        
+        Args:
+            agent_id: ID of the participating agent
+            response_content: Content of the agent's response
+            response_time_seconds: Time taken to respond in seconds
+        """
+        if agent_id not in self.participation_metrics:
+            self.participation_metrics[agent_id] = {
+                "turns_taken": 0,
+                "total_response_time": 0.0,
+                "average_response_time": 0.0,
+                "timeouts": 0,
+                "words_contributed": 0,
+                "last_activity": datetime.now()
+            }
+        
+        metrics = self.participation_metrics[agent_id]
+        
+        # Update metrics
+        metrics["turns_taken"] += 1
+        metrics["total_response_time"] += response_time_seconds
+        metrics["average_response_time"] = metrics["total_response_time"] / metrics["turns_taken"]
+        metrics["words_contributed"] += len(response_content.split())
+        metrics["last_activity"] = datetime.now()
+        
+        logger.debug(
+            f"ModeratorAgent {self.agent_id} tracked participation for {agent_id}: "
+            f"turns={metrics['turns_taken']}, avg_time={metrics['average_response_time']:.1f}s, "
+            f"words={metrics['words_contributed']}"
+        )
+    
+    def handle_agent_timeout(self, agent_id: str) -> str:
+        """Handle when an agent times out during their turn.
+        
+        Args:
+            agent_id: ID of the agent that timed out
+            
+        Returns:
+            Timeout handling message
+        """
+        if agent_id in self.participation_metrics:
+            self.participation_metrics[agent_id]["timeouts"] += 1
+        
+        timeout_message = (
+            f"⏰ Agent {agent_id} did not respond within the allocated time "
+            f"({self.turn_timeout_seconds} seconds). We will continue to the next participant. "
+            f"The discussion remains open for {agent_id} to contribute when ready."
+        )
+        
+        logger.warning(
+            f"ModeratorAgent {self.agent_id} handled timeout for {agent_id} "
+            f"(timeout #{self.participation_metrics.get(agent_id, {}).get('timeouts', 1)})"
+        )
+        
+        return timeout_message
+    
+    def signal_round_completion(self, round_number: int, topic: str) -> str:
+        """Signal that a discussion round has been completed.
+        
+        Args:
+            round_number: The completed round number
+            topic: The topic that was discussed
+            
+        Returns:
+            Round completion message
+        """
+        # Generate participation summary
+        total_participants = len(self.speaking_order)
+        active_participants = sum(
+            1 for agent_id in self.speaking_order 
+            if self.participation_metrics.get(agent_id, {}).get("turns_taken", 0) > 0
+        )
+        
+        completion_message = (
+            f"✅ **Round {round_number} Complete: {topic}**\n\n"
+            f"Participation Summary:\n"
+            f"• Total participants: {total_participants}\n"
+            f"• Active participants: {active_participants}\n"
+            f"• Participation rate: {(active_participants/total_participants*100):.1f}%\n\n"
+            f"Moving to next phase of discussion..."
+        )
+        
+        self.current_round += 1
+        
+        logger.info(
+            f"ModeratorAgent {self.agent_id} completed round {round_number} for topic '{topic}' "
+            f"with {active_participants}/{total_participants} participation"
+        )
+        
+        return completion_message
+    
+    def get_participation_summary(self) -> Dict[str, Any]:
+        """Get a summary of current participation metrics.
+        
+        Returns:
+            Dictionary containing participation statistics
+        """
+        if not self.participation_metrics:
+            return {
+                "total_agents": 0,
+                "active_agents": 0,
+                "average_response_time": 0.0,
+                "total_words": 0,
+                "timeout_rate": 0.0
+            }
+        
+        total_agents = len(self.participation_metrics)
+        active_agents = sum(
+            1 for metrics in self.participation_metrics.values()
+            if metrics["turns_taken"] > 0
+        )
+        
+        if active_agents > 0:
+            avg_response_time = sum(
+                metrics["average_response_time"] 
+                for metrics in self.participation_metrics.values()
+                if metrics["turns_taken"] > 0
+            ) / active_agents
+            
+            total_words = sum(
+                metrics["words_contributed"] 
+                for metrics in self.participation_metrics.values()
+            )
+            
+            total_timeouts = sum(
+                metrics["timeouts"] 
+                for metrics in self.participation_metrics.values()
+            )
+            total_turns = sum(
+                metrics["turns_taken"] 
+                for metrics in self.participation_metrics.values()
+            )
+            timeout_rate = (total_timeouts / max(total_turns, 1)) * 100
+        else:
+            avg_response_time = 0.0
+            total_words = 0
+            timeout_rate = 0.0
+        
+        return {
+            "total_agents": total_agents,
+            "active_agents": active_agents,
+            "participation_rate": (active_agents / max(total_agents, 1)) * 100,
+            "average_response_time": avg_response_time,
+            "total_words": total_words,
+            "timeout_rate": timeout_rate,
+            "current_round": self.current_round,
+            "detailed_metrics": self.participation_metrics.copy()
+        }
+
+    # Story 3.5: Round and Topic Summarization methods
+    
+    def generate_round_summary(
+        self, 
+        round_number: int, 
+        topic: str, 
+        messages: List[Message],
+        participation_summary: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Generate a summary of a completed discussion round.
+        
+        Args:
+            round_number: The round number that was completed
+            topic: The topic that was discussed in this round
+            messages: List of messages from this round
+            participation_summary: Optional participation metrics for the round
+            
+        Returns:
+            Generated round summary
+        """
+        # Switch to synthesis mode for summarization
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            # Filter messages for this specific round and topic
+            round_messages = [
+                msg for msg in messages 
+                if msg.get("topic") == topic and msg.get("round", 0) == round_number
+            ]
+            
+            if not round_messages:
+                logger.warning(
+                    f"ModeratorAgent {self.agent_id} found no messages for round {round_number} on topic '{topic}'"
+                )
+                return f"Round {round_number} on '{topic}' had no recorded contributions."
+            
+            # Construct context from messages
+            messages_context = "\n\n".join([
+                f"Agent {msg['speaker_id']}: {msg['content']}"
+                for msg in round_messages
+            ])
+            
+            # Add participation context if available
+            participation_context = ""
+            if participation_summary:
+                participation_context = (
+                    f"\n\nParticipation Summary:\n"
+                    f"- Active participants: {participation_summary.get('active_agents', 'N/A')}\n"
+                    f"- Total contributions: {len(round_messages)}\n"
+                    f"- Average response time: {participation_summary.get('average_response_time', 0):.1f}s"
+                )
+            
+            prompt = (
+                f"Create a concise summary of Round {round_number} discussion on '{topic}'. "
+                f"Focus on key insights, main points raised, areas of agreement or disagreement, "
+                f"and significant contributions. Do not attribute specific ideas to individual agents - "
+                f"present ideas as collective insights from the discussion.\n\n"
+                f"Discussion Content:\n{messages_context}"
+                f"{participation_context}\n\n"
+                f"Please provide a structured summary that captures the essence of this round's discussion."
+            )
+            
+            summary = self.generate_response(prompt)
+            
+            logger.info(
+                f"ModeratorAgent {self.agent_id} generated summary for round {round_number} "
+                f"on topic '{topic}' with {len(round_messages)} messages"
+            )
+            
+            return summary
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    def generate_topic_summary(
+        self, 
+        topic: str, 
+        all_messages: List[Message],
+        round_summaries: Optional[List[str]] = None
+    ) -> str:
+        """Generate a comprehensive summary of all discussion on a specific topic.
+        
+        Args:
+            topic: The topic to summarize
+            all_messages: All messages from the entire discussion
+            round_summaries: Optional list of round summaries for this topic
+            
+        Returns:
+            Generated topic summary
+        """
+        # Switch to synthesis mode for summarization
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            # Filter messages for this specific topic
+            topic_messages = [
+                msg for msg in all_messages 
+                if msg.get("topic") == topic
+            ]
+            
+            if not topic_messages:
+                logger.warning(
+                    f"ModeratorAgent {self.agent_id} found no messages for topic '{topic}'"
+                )
+                return f"No discussion recorded for topic '{topic}'."
+            
+            # Use round summaries if available, otherwise use raw messages
+            if round_summaries:
+                content_context = "\n\n".join([
+                    f"Round Summary {i+1}: {summary}" 
+                    for i, summary in enumerate(round_summaries)
+                ])
+                context_type = "round summaries"
+            else:
+                # Use map-reduce approach for large message sets
+                if len(topic_messages) > 10:  # Threshold for map-reduce
+                    return self._generate_topic_summary_map_reduce(topic, topic_messages)
+                else:
+                    content_context = "\n\n".join([
+                        f"Agent {msg['speaker_id']}: {msg['content']}"
+                        for msg in topic_messages
+                    ])
+                    context_type = "individual messages"
+            
+            # Generate comprehensive topic statistics
+            unique_contributors = len(set(msg['speaker_id'] for msg in topic_messages))
+            total_contributions = len(topic_messages)
+            
+            prompt = (
+                f"Create a comprehensive summary of the entire discussion on '{topic}'. "
+                f"This summary should synthesize all insights, identify key themes, "
+                f"highlight areas of consensus and disagreement, and extract the most "
+                f"significant conclusions reached. Present ideas as collective insights "
+                f"without attributing them to specific agents.\n\n"
+                f"Discussion Overview:\n"
+                f"- Topic: {topic}\n"
+                f"- Total contributions: {total_contributions}\n"
+                f"- Unique contributors: {unique_contributors}\n"
+                f"- Content source: {context_type}\n\n"
+                f"Discussion Content:\n{content_context}\n\n"
+                f"Please provide a well-structured summary that captures the full scope "
+                f"and depth of the discussion on this topic."
+            )
+            
+            summary = self.generate_response(prompt)
+            
+            logger.info(
+                f"ModeratorAgent {self.agent_id} generated topic summary for '{topic}' "
+                f"with {total_contributions} messages from {unique_contributors} contributors"
+            )
+            
+            return summary
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    def _generate_topic_summary_map_reduce(
+        self, 
+        topic: str, 
+        messages: List[Message]
+    ) -> str:
+        """Generate topic summary using map-reduce approach for large message sets.
+        
+        Args:
+            topic: The topic being summarized
+            messages: List of messages to summarize
+            
+        Returns:
+            Generated summary using map-reduce approach
+        """
+        # Chunk messages into groups for map phase
+        chunk_size = 5  # Messages per chunk
+        message_chunks = [
+            messages[i:i + chunk_size] 
+            for i in range(0, len(messages), chunk_size)
+        ]
+        
+        # Map phase: Generate summary for each chunk
+        chunk_summaries = []
+        for i, chunk in enumerate(message_chunks):
+            chunk_content = "\n\n".join([
+                f"Agent {msg['speaker_id']}: {msg['content']}"
+                for msg in chunk
+            ])
+            
+            map_prompt = (
+                f"Write a concise summary of the following discussion segment on '{topic}'. "
+                f"Focus on key points and insights:\n\n{chunk_content}"
+            )
+            
+            chunk_summary = self.generate_response(map_prompt)
+            chunk_summaries.append(chunk_summary)
+            
+            logger.debug(
+                f"ModeratorAgent {self.agent_id} generated map summary {i+1}/{len(message_chunks)} "
+                f"for topic '{topic}'"
+            )
+        
+        # Reduce phase: Combine chunk summaries into final summary
+        combined_summaries = "\n\n".join([
+            f"Segment {i+1}: {summary}" 
+            for i, summary in enumerate(chunk_summaries)
+        ])
+        
+        reduce_prompt = (
+            f"The following are summaries of different segments of discussion on '{topic}'. "
+            f"Distill these into a single, comprehensive summary that captures the main themes "
+            f"and key insights:\n\n{combined_summaries}"
+        )
+        
+        final_summary = self.generate_response(reduce_prompt)
+        
+        logger.info(
+            f"ModeratorAgent {self.agent_id} completed map-reduce summary for topic '{topic}' "
+            f"with {len(message_chunks)} chunks"
+        )
+        
+        return final_summary
+    
+    def extract_key_insights(
+        self, 
+        topic_summaries: List[str], 
+        session_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, List[str]]:
+        """Extract key insights from topic summaries for the final report.
+        
+        Args:
+            topic_summaries: List of topic summary texts
+            session_context: Optional session metadata and statistics
+            
+        Returns:
+            Dictionary containing categorized key insights
+        """
+        # Switch to synthesis mode for analysis
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            if not topic_summaries:
+                logger.warning(f"ModeratorAgent {self.agent_id} received empty topic summaries list")
+                return {
+                    "main_themes": [],
+                    "areas_of_consensus": [],
+                    "points_of_disagreement": [],
+                    "action_items": [],
+                    "future_considerations": []
+                }
+            
+            # Combine all topic summaries
+            combined_summaries = "\n\n".join([
+                f"Topic Summary {i+1}: {summary}" 
+                for i, summary in enumerate(topic_summaries)
+            ])
+            
+            # Add session context if available
+            context_info = ""
+            if session_context:
+                context_info = (
+                    f"\nSession Context:\n"
+                    f"- Total topics discussed: {len(topic_summaries)}\n"
+                    f"- Session duration: {session_context.get('duration', 'N/A')}\n"
+                    f"- Total participants: {session_context.get('participants', 'N/A')}\n"
+                )
+            
+            # Use structured JSON output for key insights
+            insights_schema = {
+                "type": "object",
+                "properties": {
+                    "key_insights": {
+                        "type": "object",
+                        "properties": {
+                            "main_themes": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Primary themes that emerged across topics"
+                            },
+                            "areas_of_consensus": {
+                                "type": "array", 
+                                "items": {"type": "string"},
+                                "description": "Points where participants generally agreed"
+                            },
+                            "points_of_disagreement": {
+                                "type": "array",
+                                "items": {"type": "string"}, 
+                                "description": "Issues where significant disagreement emerged"
+                            },
+                            "action_items": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Concrete next steps or actions identified"
+                            },
+                            "future_considerations": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Topics or issues to address in future discussions"
+                            }
+                        },
+                        "required": ["main_themes", "areas_of_consensus", "points_of_disagreement", 
+                                   "action_items", "future_considerations"]
+                    }
+                },
+                "required": ["key_insights"]
+            }
+            
+            prompt = (
+                f"Analyze the following topic summaries from our Virtual Agora session and extract "
+                f"key insights organized into the specified categories. Focus on patterns, themes, "
+                f"and significant points that emerged across the discussion.\n\n"
+                f"Topic Summaries:\n{combined_summaries}"
+                f"{context_info}\n\n"
+                f"Please extract and categorize the key insights as requested in the JSON format."
+            )
+            
+            insights_json = self.generate_json_response(
+                prompt, 
+                expected_schema=insights_schema
+            )
+            
+            key_insights = insights_json["key_insights"]
+            
+            logger.info(
+                f"ModeratorAgent {self.agent_id} extracted key insights from {len(topic_summaries)} "
+                f"topic summaries: {sum(len(v) for v in key_insights.values())} total insights"
+            )
+            
+            return key_insights
+            
+        except Exception as e:
+            logger.error(
+                f"ModeratorAgent {self.agent_id} failed to extract key insights: {e}"
+            )
+            # Return empty structure on failure
+            return {
+                "main_themes": [],
+                "areas_of_consensus": [],
+                "points_of_disagreement": [],
+                "action_items": [],
+                "future_considerations": []
+            }
+        
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    def generate_progressive_summary(
+        self, 
+        new_messages: List[Message],
+        existing_summary: Optional[str] = None,
+        topic: Optional[str] = None
+    ) -> str:
+        """Generate or update a summary progressively as new content arrives.
+        
+        This implements a "refine" approach where an existing summary is updated
+        with new information, similar to LangChain's refine summarization.
+        
+        Args:
+            new_messages: New messages to incorporate into the summary
+            existing_summary: Existing summary to refine (None for initial summary)
+            topic: Optional topic context for focused summarization
+            
+        Returns:
+            Updated summary incorporating new messages
+        """
+        # Switch to synthesis mode for summarization
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            if not new_messages:
+                logger.debug(f"ModeratorAgent {self.agent_id} received no new messages for progressive summary")
+                return existing_summary or "No discussion content available."
+            
+            # Format new messages context
+            new_content = "\n\n".join([
+                f"Agent {msg['speaker_id']}: {msg['content']}"
+                for msg in new_messages
+            ])
+            
+            topic_context = f" on '{topic}'" if topic else ""
+            
+            if existing_summary:
+                # Refine existing summary with new content
+                refine_prompt = (
+                    f"Update and refine the existing summary with the new discussion content{topic_context}. "
+                    f"Integrate new insights while maintaining the coherence of the original summary. "
+                    f"Do not attribute ideas to specific agents.\n\n"
+                    f"Existing Summary:\n{existing_summary}\n\n"
+                    f"New Discussion Content:\n{new_content}\n\n"
+                    f"Please provide an updated summary that incorporates the new information."
+                )
+            else:
+                # Generate initial summary
+                refine_prompt = (
+                    f"Create a concise summary of the following discussion{topic_context}. "
+                    f"Focus on key points, insights, and significant contributions. "
+                    f"Do not attribute ideas to specific agents.\n\n"
+                    f"Discussion Content:\n{new_content}"
+                )
+            
+            updated_summary = self.generate_response(refine_prompt)
+            
+            logger.debug(
+                f"ModeratorAgent {self.agent_id} generated progressive summary "
+                f"({len(new_messages)} new messages, existing_summary={'yes' if existing_summary else 'no'})"
+            )
+            
+            return updated_summary
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+
+    # Story 3.4: Relevance Enforcement System methods
+    
+    def set_topic_context(self, topic: str, description: Optional[str] = None) -> None:
+        """Set the current topic context for relevance enforcement.
+        
+        Args:
+            topic: The current discussion topic
+            description: Optional detailed description of the topic scope
+        """
+        if description:
+            self.current_topic_context = f"{topic}: {description}"
+        else:
+            self.current_topic_context = topic
+        
+        logger.info(f"ModeratorAgent {self.agent_id} set topic context: '{self.current_topic_context}'")
+    
+    def evaluate_message_relevance(
+        self, 
+        message_content: str, 
+        agent_id: str
+    ) -> Dict[str, Any]:
+        """Evaluate the relevance of a message to the current topic.
+        
+        Args:
+            message_content: The content of the message to evaluate
+            agent_id: ID of the agent who sent the message
+            
+        Returns:
+            Dictionary containing relevance score and assessment details
+        """
+        if not self.current_topic_context:
+            logger.warning(f"ModeratorAgent {self.agent_id} has no topic context for relevance evaluation")
+            return {
+                "relevance_score": 1.0,  # No topic context = assume relevant
+                "is_relevant": True,
+                "reason": "No topic context available for evaluation",
+                "topic": None
+            }
+        
+        # Switch to synthesis mode for relevance analysis
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            # Create a structured prompt for relevance evaluation
+            evaluation_prompt = (
+                f"Evaluate the relevance of the following message to the current discussion topic. "
+                f"Provide a detailed assessment including a relevance score from 0.0 (completely irrelevant) "
+                f"to 1.0 (highly relevant).\n\n"
+                f"Current Topic: {self.current_topic_context}\n\n"
+                f"Message to Evaluate: \"{message_content}\"\n\n"
+                f"Consider:\n"
+                f"- Does the message directly address the topic?\n"
+                f"- Does it provide relevant insights, examples, or perspectives?\n"
+                f"- Is it a constructive contribution to the discussion?\n"
+                f"- Are any tangential points still meaningfully connected?\n\n"
+                f"Respond with a JSON object containing your assessment."
+            )
+            
+            # Define schema for relevance evaluation
+            relevance_schema = {
+                "type": "object",
+                "properties": {
+                    "relevance_assessment": {
+                        "type": "object",
+                        "properties": {
+                            "relevance_score": {
+                                "type": "number",
+                                "minimum": 0.0,
+                                "maximum": 1.0,
+                                "description": "Score from 0.0 (irrelevant) to 1.0 (highly relevant)"
+                            },
+                            "is_relevant": {
+                                "type": "boolean",
+                                "description": "Whether the message meets the relevance threshold"
+                            },
+                            "key_points": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Main points that connect to the topic"
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "Explanation of the relevance assessment"
+                            },
+                            "suggestions": {
+                                "type": "string",
+                                "description": "Optional suggestions for staying on topic"
+                            }
+                        },
+                        "required": ["relevance_score", "is_relevant", "key_points", "reason"]
+                    }
+                },
+                "required": ["relevance_assessment"]
+            }
+            
+            assessment_json = self.generate_json_response(
+                evaluation_prompt,
+                expected_schema=relevance_schema
+            )
+            
+            assessment = assessment_json["relevance_assessment"]
+            assessment["topic"] = self.current_topic_context
+            
+            # Override is_relevant based on threshold
+            assessment["is_relevant"] = assessment["relevance_score"] >= self.relevance_threshold
+            
+            logger.debug(
+                f"ModeratorAgent {self.agent_id} evaluated message relevance for {agent_id}: "
+                f"score={assessment['relevance_score']:.2f}, relevant={assessment['is_relevant']}"
+            )
+            
+            return assessment
+            
+        except Exception as e:
+            logger.error(
+                f"ModeratorAgent {self.agent_id} failed to evaluate message relevance: {e}"
+            )
+            # Return neutral assessment on failure
+            return {
+                "relevance_score": 0.5,
+                "is_relevant": True,  # Err on the side of allowing messages
+                "key_points": [],
+                "reason": f"Assessment failed: {e}",
+                "topic": self.current_topic_context
+            }
+        
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    def track_relevance_violation(
+        self, 
+        agent_id: str, 
+        message_content: str,
+        relevance_assessment: Dict[str, Any]
+    ) -> None:
+        """Track a relevance violation for an agent.
+        
+        Args:
+            agent_id: ID of the agent who violated relevance
+            message_content: The irrelevant message content
+            relevance_assessment: The relevance assessment results
+        """
+        if agent_id not in self.relevance_violations:
+            self.relevance_violations[agent_id] = {
+                "total_violations": 0,
+                "warnings_issued": 0,
+                "violations_history": [],
+                "last_violation": None,
+                "is_muted": False
+            }
+        
+        violation_data = self.relevance_violations[agent_id]
+        
+        # Record the violation
+        violation_record = {
+            "timestamp": datetime.now(),
+            "message_content": message_content[:200] + "..." if len(message_content) > 200 else message_content,
+            "relevance_score": relevance_assessment["relevance_score"],
+            "topic": relevance_assessment["topic"],
+            "reason": relevance_assessment["reason"]
+        }
+        
+        violation_data["total_violations"] += 1
+        violation_data["violations_history"].append(violation_record)
+        violation_data["last_violation"] = datetime.now()
+        
+        logger.info(
+            f"ModeratorAgent {self.agent_id} tracked relevance violation for {agent_id} "
+            f"(total: {violation_data['total_violations']}, score: {relevance_assessment['relevance_score']:.2f})"
+        )
+    
+    def issue_relevance_warning(
+        self, 
+        agent_id: str, 
+        relevance_assessment: Dict[str, Any]
+    ) -> str:
+        """Issue a warning to an agent for irrelevant content.
+        
+        Args:
+            agent_id: ID of the agent to warn
+            relevance_assessment: The relevance assessment that triggered the warning
+            
+        Returns:
+            Warning message to be sent
+        """
+        if agent_id not in self.relevance_violations:
+            logger.error(f"ModeratorAgent {self.agent_id} attempted to warn {agent_id} with no violation record")
+            return ""
+        
+        violation_data = self.relevance_violations[agent_id]
+        violation_data["warnings_issued"] += 1
+        
+        warnings_remaining = self.warning_threshold - violation_data["warnings_issued"]
+        
+        if warnings_remaining > 0:
+            warning_message = (
+                f"⚠️ **Relevance Warning for {agent_id}**\n\n"
+                f"Your recent message appears to be off-topic for our current discussion: "
+                f"'{self.current_topic_context}'\n\n"
+                f"**Assessment:** {relevance_assessment['reason']}\n\n"
+                f"**Suggestions:** {relevance_assessment.get('suggestions', 'Please focus on the current topic.')}\n\n"
+                f"**Warnings remaining:** {warnings_remaining}\n"
+                f"**Note:** After {self.warning_threshold} warnings, you will be temporarily muted "
+                f"for {self.mute_duration_minutes} minutes to allow the discussion to continue on-topic."
+            )
+        else:
+            # Final warning before muting
+            warning_message = (
+                f"🚨 **Final Warning for {agent_id}**\n\n"
+                f"This is your final warning for off-topic contributions. "
+                f"Your next irrelevant message will result in a {self.mute_duration_minutes}-minute "
+                f"mute from the discussion.\n\n"
+                f"**Current Topic:** {self.current_topic_context}\n"
+                f"**Please focus:** {relevance_assessment.get('suggestions', 'Stay focused on the current topic.')}"
+            )
+        
+        logger.info(
+            f"ModeratorAgent {self.agent_id} issued warning #{violation_data['warnings_issued']} "
+            f"to {agent_id} (threshold: {self.warning_threshold})"
+        )
+        
+        return warning_message
+    
+    def mute_agent(
+        self, 
+        agent_id: str, 
+        reason: str = "Multiple relevance violations"
+    ) -> str:
+        """Mute an agent for a specified duration.
+        
+        Args:
+            agent_id: ID of the agent to mute
+            reason: Reason for muting
+            
+        Returns:
+            Muting announcement message
+        """
+        from datetime import timedelta
+        
+        mute_end_time = datetime.now() + timedelta(minutes=self.mute_duration_minutes)
+        self.muted_agents[agent_id] = mute_end_time
+        
+        # Update violation record
+        if agent_id in self.relevance_violations:
+            self.relevance_violations[agent_id]["is_muted"] = True
+        
+        mute_message = (
+            f"🔇 **Agent {agent_id} has been temporarily muted**\n\n"
+            f"**Reason:** {reason}\n"
+            f"**Duration:** {self.mute_duration_minutes} minutes\n"
+            f"**Mute ends at:** {mute_end_time.strftime('%H:%M:%S')}\n\n"
+            f"During this time, {agent_id} will not be able to participate in the discussion. "
+            f"This allows the conversation to continue focused on: '{self.current_topic_context}'\n\n"
+            f"**{agent_id}:** Please use this time to review the current topic and prepare "
+            f"relevant contributions for when your mute expires."
+        )
+        
+        logger.warning(
+            f"ModeratorAgent {self.agent_id} muted {agent_id} for {self.mute_duration_minutes} minutes. "
+            f"Reason: {reason}"
+        )
+        
+        return mute_message
+    
+    def check_agent_mute_status(self, agent_id: str) -> Dict[str, Any]:
+        """Check if an agent is currently muted.
+        
+        Args:
+            agent_id: ID of the agent to check
+            
+        Returns:
+            Dictionary containing mute status information
+        """
+        current_time = datetime.now()
+        
+        if agent_id not in self.muted_agents:
+            return {
+                "is_muted": False,
+                "mute_end_time": None,
+                "time_remaining_minutes": 0
+            }
+        
+        mute_end_time = self.muted_agents[agent_id]
+        
+        if current_time >= mute_end_time:
+            # Mute has expired, remove from muted agents
+            del self.muted_agents[agent_id]
+            
+            # Update violation record
+            if agent_id in self.relevance_violations:
+                self.relevance_violations[agent_id]["is_muted"] = False
+            
+            logger.info(f"ModeratorAgent {self.agent_id} unmuted {agent_id} (mute expired)")
+            
+            return {
+                "is_muted": False,
+                "mute_end_time": None,
+                "time_remaining_minutes": 0
+            }
+        
+        time_remaining = mute_end_time - current_time
+        time_remaining_minutes = time_remaining.total_seconds() / 60
+        
+        return {
+            "is_muted": True,
+            "mute_end_time": mute_end_time,
+            "time_remaining_minutes": time_remaining_minutes
+        }
+    
+    def process_message_for_relevance(
+        self, 
+        message_content: str, 
+        agent_id: str
+    ) -> Dict[str, Any]:
+        """Process a message through the complete relevance enforcement pipeline.
+        
+        Args:
+            message_content: The message content to process
+            agent_id: ID of the agent who sent the message
+            
+        Returns:
+            Dictionary containing processing results and any actions taken
+        """
+        # Check if agent is currently muted
+        mute_status = self.check_agent_mute_status(agent_id)
+        if mute_status["is_muted"]:
+            return {
+                "action": "blocked",
+                "reason": "agent_muted",
+                "message": f"Message blocked: {agent_id} is muted for {mute_status['time_remaining_minutes']:.1f} more minutes",
+                "mute_status": mute_status,
+                "relevance_assessment": None
+            }
+        
+        # Evaluate message relevance
+        relevance_assessment = self.evaluate_message_relevance(message_content, agent_id)
+        
+        if relevance_assessment["is_relevant"]:
+            # Message is relevant, allow it
+            return {
+                "action": "allowed",
+                "reason": "relevant_content",
+                "message": None,
+                "mute_status": mute_status,
+                "relevance_assessment": relevance_assessment
+            }
+        
+        # Message is not relevant, track violation
+        self.track_relevance_violation(agent_id, message_content, relevance_assessment)
+        
+        violation_data = self.relevance_violations[agent_id]
+        warnings_issued = violation_data["warnings_issued"]
+        
+        if warnings_issued < self.warning_threshold:
+            # Issue warning
+            warning_message = self.issue_relevance_warning(agent_id, relevance_assessment)
+            return {
+                "action": "warned",
+                "reason": "irrelevant_content", 
+                "message": warning_message,
+                "mute_status": mute_status,
+                "relevance_assessment": relevance_assessment,
+                "warnings_issued": warnings_issued + 1,
+                "warnings_remaining": self.warning_threshold - (warnings_issued + 1)
+            }
+        else:
+            # Mute the agent
+            mute_message = self.mute_agent(
+                agent_id, 
+                f"Exceeded {self.warning_threshold} relevance warnings"
+            )
+            return {
+                "action": "muted",
+                "reason": "excessive_violations",
+                "message": mute_message,
+                "mute_status": self.check_agent_mute_status(agent_id),
+                "relevance_assessment": relevance_assessment,
+                "total_violations": violation_data["total_violations"]
+            }
+    
+    def get_relevance_enforcement_summary(self) -> Dict[str, Any]:
+        """Get a summary of relevance enforcement activity.
+        
+        Returns:
+            Dictionary containing enforcement statistics and status
+        """
+        total_violations = sum(
+            data["total_violations"] 
+            for data in self.relevance_violations.values()
+        )
+        
+        total_warnings = sum(
+            data["warnings_issued"] 
+            for data in self.relevance_violations.values()
+        )
+        
+        currently_muted = len(self.muted_agents)
+        
+        agents_with_violations = len(self.relevance_violations)
+        
+        return {
+            "current_topic": self.current_topic_context,
+            "relevance_threshold": self.relevance_threshold,
+            "warning_threshold": self.warning_threshold,
+            "mute_duration_minutes": self.mute_duration_minutes,
+            "total_violations": total_violations,
+            "total_warnings_issued": total_warnings,
+            "agents_with_violations": agents_with_violations,
+            "currently_muted_agents": currently_muted,
+            "muted_agents_list": list(self.muted_agents.keys()),
+            "violation_details": self.relevance_violations.copy()
+        }
+
+    # Story 3.6: Topic Conclusion Polling methods
+    
+    def initiate_conclusion_poll(
+        self, 
+        topic: str, 
+        eligible_voters: List[str],
+        poll_duration_minutes: int = 5
+    ) -> Dict[str, Any]:
+        """Initiate a democratic poll to determine if a topic discussion should conclude.
+        
+        Args:
+            topic: The topic being voted on for conclusion
+            eligible_voters: List of agent IDs eligible to vote
+            poll_duration_minutes: How long the poll should remain open
+            
+        Returns:
+            Dictionary containing poll details and instructions
+        """
+        from datetime import timedelta
+        import uuid
+        
+        poll_id = f"poll_{uuid.uuid4().hex[:8]}"
+        poll_end_time = datetime.now() + timedelta(minutes=poll_duration_minutes)
+        
+        poll_data = {
+            "poll_id": poll_id,
+            "topic": topic,
+            "poll_type": "topic_conclusion",
+            "start_time": datetime.now(),
+            "end_time": poll_end_time,
+            "eligible_voters": eligible_voters.copy(),
+            "votes_cast": {},  # voter_id -> vote_data
+            "status": "active",
+            "required_votes": len(eligible_voters),
+            "options": ["continue", "conclude"]
+        }
+        
+        # Store poll in conversation context
+        self.update_conversation_context(f"active_poll_{poll_id}", poll_data)
+        
+        # Switch to facilitation mode for polling
+        original_mode = self.current_mode
+        self.set_mode("facilitation")
+        
+        try:
+            poll_announcement = (
+                f"📊 **Topic Conclusion Poll Initiated**\n\n"
+                f"**Topic:** {topic}\n"
+                f"**Poll ID:** {poll_id}\n"
+                f"**Duration:** {poll_duration_minutes} minutes (ends at {poll_end_time.strftime('%H:%M:%S')})\n"
+                f"**Eligible Voters:** {', '.join(eligible_voters)}\n\n"
+                f"**Question:** Should we conclude the discussion on '{topic}' and move to the next topic?\n\n"
+                f"**Voting Options:**\n"
+                f"• **continue** - Continue discussing this topic\n"
+                f"• **conclude** - Conclude this topic and move forward\n\n"
+                f"**Instructions:** Please respond with your vote and brief reasoning. "
+                f"Each participant gets one vote. The poll will close automatically when the time expires "
+                f"or when all eligible voters have participated.\n\n"
+                f"**Vote Format:** 'I vote [continue/conclude] because [your reasoning]'"
+            )
+            
+            logger.info(
+                f"ModeratorAgent {self.agent_id} initiated conclusion poll for topic '{topic}' "
+                f"with {len(eligible_voters)} eligible voters"
+            )
+            
+            return {
+                "poll_id": poll_id,
+                "announcement": poll_announcement,
+                "poll_data": poll_data,
+                "status": "initiated"
+            }
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    def cast_vote(
+        self, 
+        poll_id: str, 
+        voter_id: str, 
+        vote_choice: str, 
+        reasoning: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Cast a vote in an active conclusion poll.
+        
+        Args:
+            poll_id: ID of the poll to vote in
+            voter_id: ID of the agent casting the vote
+            vote_choice: The vote choice ('continue' or 'conclude')
+            reasoning: Optional reasoning for the vote
+            
+        Returns:
+            Dictionary containing vote result and updated poll status
+        """
+        poll_key = f"active_poll_{poll_id}"
+        poll_data = self.get_conversation_context(poll_key)
+        
+        if not poll_data:
+            return {
+                "success": False,
+                "error": f"Poll {poll_id} not found",
+                "message": f"❌ Poll {poll_id} does not exist or has expired."
+            }
+        
+        # Check if poll is still active
+        current_time = datetime.now()
+        if current_time > poll_data["end_time"]:
+            poll_data["status"] = "expired"
+            self.update_conversation_context(poll_key, poll_data)
+            return {
+                "success": False,
+                "error": "poll_expired",
+                "message": f"❌ Poll {poll_id} has expired. Voting is no longer allowed."
+            }
+        
+        # Check if voter is eligible
+        if voter_id not in poll_data["eligible_voters"]:
+            return {
+                "success": False,
+                "error": "voter_not_eligible",
+                "message": f"❌ {voter_id} is not eligible to vote in this poll."
+            }
+        
+        # Check if voter has already voted
+        if voter_id in poll_data["votes_cast"]:
+            return {
+                "success": False,
+                "error": "already_voted",
+                "message": f"❌ {voter_id} has already voted in this poll. Only one vote per participant is allowed."
+            }
+        
+        # Validate vote choice
+        valid_choices = poll_data["options"]
+        if vote_choice.lower() not in valid_choices:
+            return {
+                "success": False,
+                "error": "invalid_choice",
+                "message": f"❌ Invalid vote choice '{vote_choice}'. Valid options are: {', '.join(valid_choices)}."
+            }
+        
+        # Cast the vote
+        vote_data = {
+            "choice": vote_choice.lower(),
+            "reasoning": reasoning or "No reasoning provided",
+            "timestamp": current_time,
+            "voter_id": voter_id
+        }
+        
+        poll_data["votes_cast"][voter_id] = vote_data
+        votes_received = len(poll_data["votes_cast"])
+        
+        # Update poll data
+        self.update_conversation_context(poll_key, poll_data)
+        
+        # Check if poll should close (all votes received)
+        poll_complete = votes_received >= poll_data["required_votes"]
+        
+        vote_confirmation = (
+            f"✅ **Vote Recorded**\n\n"
+            f"**Voter:** {voter_id}\n"
+            f"**Choice:** {vote_choice.lower()}\n"
+            f"**Reasoning:** {reasoning or 'No reasoning provided'}\n"
+            f"**Votes Received:** {votes_received}/{poll_data['required_votes']}\n\n"
+        )
+        
+        if poll_complete:
+            vote_confirmation += "📊 All votes have been received. The poll will now be tallied."
+        else:
+            remaining_voters = [v for v in poll_data["eligible_voters"] if v not in poll_data["votes_cast"]]
+            vote_confirmation += f"⏳ Still waiting for votes from: {', '.join(remaining_voters)}"
+        
+        logger.info(
+            f"ModeratorAgent {self.agent_id} recorded vote from {voter_id} in poll {poll_id}: "
+            f"{vote_choice} ({votes_received}/{poll_data['required_votes']} votes)"
+        )
+        
+        return {
+            "success": True,
+            "message": vote_confirmation,
+            "poll_complete": poll_complete,
+            "votes_received": votes_received,
+            "votes_required": poll_data["required_votes"]
+        }
+    
+    def tally_poll_results(self, poll_id: str) -> Dict[str, Any]:
+        """Tally the results of a conclusion poll and determine the outcome.
+        
+        Args:
+            poll_id: ID of the poll to tally
+            
+        Returns:
+            Dictionary containing poll results and decision
+        """
+        poll_key = f"active_poll_{poll_id}"
+        poll_data = self.get_conversation_context(poll_key)
+        
+        if not poll_data:
+            return {
+                "success": False,
+                "error": f"Poll {poll_id} not found"
+            }
+        
+        # Switch to synthesis mode for result analysis
+        original_mode = self.current_mode
+        self.set_mode("synthesis")
+        
+        try:
+            votes_cast = poll_data["votes_cast"]
+            total_votes = len(votes_cast)
+            
+            if total_votes == 0:
+                return {
+                    "success": False,
+                    "error": "no_votes",
+                    "message": "❌ No votes were cast in this poll."
+                }
+            
+            # Count votes
+            vote_counts = {}
+            for option in poll_data["options"]:
+                vote_counts[option] = 0
+            
+            for vote_data in votes_cast.values():
+                choice = vote_data["choice"]
+                if choice in vote_counts:
+                    vote_counts[choice] += 1
+            
+            # Determine winner (simple majority)
+            conclude_votes = vote_counts.get("conclude", 0)
+            continue_votes = vote_counts.get("continue", 0)
+            
+            # Calculate percentages
+            conclude_percentage = (conclude_votes / total_votes) * 100
+            continue_percentage = (continue_votes / total_votes) * 100
+            
+            # Determine decision
+            if conclude_votes > continue_votes:
+                decision = "conclude"
+                winning_percentage = conclude_percentage
+                margin = conclude_votes - continue_votes
+            elif continue_votes > conclude_votes:
+                decision = "continue"
+                winning_percentage = continue_percentage
+                margin = continue_votes - conclude_votes
+            else:
+                # Tie - default to continue discussion
+                decision = "continue"
+                winning_percentage = continue_percentage
+                margin = 0
+            
+            # Mark poll as completed
+            poll_data["status"] = "completed"
+            poll_data["results"] = {
+                "decision": decision,
+                "vote_counts": vote_counts,
+                "total_votes": total_votes,
+                "winning_percentage": winning_percentage,
+                "margin": margin,
+                "tally_time": datetime.now()
+            }
+            
+            self.update_conversation_context(poll_key, poll_data)
+            
+            # Generate detailed results message
+            results_message = (
+                f"📊 **Poll Results: {poll_data['topic']}**\n\n"
+                f"**Poll ID:** {poll_id}\n"
+                f"**Total Votes:** {total_votes}/{poll_data['required_votes']}\n\n"
+                f"**Vote Breakdown:**\n"
+                f"• **Conclude:** {conclude_votes} votes ({conclude_percentage:.1f}%)\n"
+                f"• **Continue:** {continue_votes} votes ({continue_percentage:.1f}%)\n\n"
+                f"**Decision:** {decision.upper()}\n"
+                f"**Margin:** {margin} vote{'s' if margin != 1 else ''}\n\n"
+            )
+            
+            # Add reasoning summary
+            if votes_cast:
+                results_message += "**Voting Reasoning Summary:**\n"
+                for voter_id, vote_data in votes_cast.items():
+                    results_message += f"• **{voter_id}** ({vote_data['choice']}): {vote_data['reasoning']}\n"
+                results_message += "\n"
+            
+            # Add decision explanation
+            if decision == "conclude":
+                if margin == 0:
+                    results_message += (
+                        "**Next Steps:** Despite the tie, the default decision is to continue discussion. "
+                        "However, given the split opinion, we will conclude this topic to maintain "
+                        "progress while ensuring all perspectives have been heard.\n\n"
+                    )
+                else:
+                    results_message += (
+                        f"**Next Steps:** The majority has voted to conclude discussion on '{poll_data['topic']}'. "
+                        f"We will now move to topic summarization and transition to the next agenda item.\n\n"
+                    )
+            else:
+                if margin == 0:
+                    results_message += (
+                        "**Next Steps:** With a tied vote, we will continue the discussion to allow "
+                        "for further exploration of the topic and potential consensus building.\n\n"
+                    )
+                else:
+                    results_message += (
+                        f"**Next Steps:** The majority has voted to continue discussion on '{poll_data['topic']}'. "
+                        f"The discussion will proceed with consideration of the points raised in the voting.\n\n"
+                    )
+            
+            logger.info(
+                f"ModeratorAgent {self.agent_id} tallied poll {poll_id}: "
+                f"{decision} ({conclude_votes} conclude, {continue_votes} continue)"
+            )
+            
+            return {
+                "success": True,
+                "decision": decision,
+                "vote_counts": vote_counts,
+                "total_votes": total_votes,
+                "winning_percentage": winning_percentage,
+                "margin": margin,
+                "message": results_message,
+                "poll_data": poll_data
+            }
+            
+        finally:
+            # Restore original mode
+            self.set_mode(original_mode)
+    
+    def handle_minority_considerations(
+        self, 
+        poll_results: Dict[str, Any], 
+        topic: str
+    ) -> str:
+        """Handle minority considerations after a conclusion poll.
+        
+        Args:
+            poll_results: Results from the concluded poll
+            topic: The topic that was voted on
+            
+        Returns:
+            Message offering minority final considerations
+        """
+        if not poll_results.get("success") or poll_results.get("margin", 0) == 0:
+            # No minority if poll failed or was tied
+            return ""
+        
+        decision = poll_results["decision"]
+        vote_counts = poll_results["vote_counts"]
+        
+        if decision == "conclude":
+            # Those who voted to continue are the minority
+            minority_choice = "continue"
+            minority_count = vote_counts.get("continue", 0)
+        else:
+            # Those who voted to conclude are the minority
+            minority_choice = "conclude"
+            minority_count = vote_counts.get("conclude", 0)
+        
+        if minority_count == 0:
+            # No minority voters
+            return ""
+        
+        # Find minority voters
+        poll_data = poll_results.get("poll_data", {})
+        votes_cast = poll_data.get("votes_cast", {})
+        minority_voters = [
+            voter_id for voter_id, vote_data in votes_cast.items()
+            if vote_data["choice"] == minority_choice
+        ]
+        
+        if not minority_voters:
+            return ""
+        
+        minority_message = (
+            f"🗣️ **Minority Final Considerations**\n\n"
+            f"**Topic:** {topic}\n"
+            f"**Poll Decision:** {decision.upper()}\n\n"
+            f"The following participants voted for '{minority_choice}' and are invited to share "
+            f"any final thoughts or concerns before we proceed:\n\n"
+            f"**Minority Voters:** {', '.join(minority_voters)}\n\n"
+            f"**Instructions:** You have 3 minutes to provide any final considerations, "
+            f"alternative perspectives, or important points that should be noted before we "
+            f"{'conclude this topic' if decision == 'conclude' else 'continue the discussion'}. "
+            f"This ensures all viewpoints are properly represented in our final decision.\n\n"
+            f"**Note:** This is not a re-vote, but an opportunity to voice any critical "
+            f"points that might influence how we proceed or should be remembered in our summary."
+        )
+        
+        logger.info(
+            f"ModeratorAgent {self.agent_id} offered minority final considerations to "
+            f"{len(minority_voters)} voters for topic '{topic}'"
+        )
+        
+        return minority_message
+    
+    def check_poll_status(self, poll_id: str) -> Dict[str, Any]:
+        """Check the status of an active or completed poll.
+        
+        Args:
+            poll_id: ID of the poll to check
+            
+        Returns:
+            Dictionary containing current poll status and details
+        """
+        poll_key = f"active_poll_{poll_id}"
+        poll_data = self.get_conversation_context(poll_key)
+        
+        if not poll_data:
+            return {
+                "exists": False,
+                "error": f"Poll {poll_id} not found"
+            }
+        
+        current_time = datetime.now()
+        votes_cast = len(poll_data["votes_cast"])
+        votes_required = poll_data["required_votes"]
+        
+        # Check if poll has expired
+        if current_time > poll_data["end_time"] and poll_data["status"] == "active":
+            poll_data["status"] = "expired"
+            self.update_conversation_context(poll_key, poll_data)
+        
+        # Check if poll should be auto-completed
+        if votes_cast >= votes_required and poll_data["status"] == "active":
+            poll_data["status"] = "ready_for_tally"
+            self.update_conversation_context(poll_key, poll_data)
+        
+        remaining_voters = [
+            voter for voter in poll_data["eligible_voters"] 
+            if voter not in poll_data["votes_cast"]
+        ]
+        
+        time_remaining = max(0, (poll_data["end_time"] - current_time).total_seconds() / 60)
+        
+        return {
+            "exists": True,
+            "poll_id": poll_id,
+            "topic": poll_data["topic"],
+            "status": poll_data["status"],
+            "votes_cast": votes_cast,
+            "votes_required": votes_required,
+            "remaining_voters": remaining_voters,
+            "time_remaining_minutes": time_remaining,
+            "start_time": poll_data["start_time"],
+            "end_time": poll_data["end_time"],
+            "options": poll_data["options"]
+        }
+    
+    def get_active_polls(self) -> List[Dict[str, Any]]:
+        """Get all currently active polls.
+        
+        Returns:
+            List of active poll summaries
+        """
+        active_polls = []
+        
+        # Search through conversation context for active polls
+        for key, value in self.conversation_context.items():
+            if key.startswith("active_poll_") and isinstance(value, dict):
+                poll_id = key.replace("active_poll_", "")
+                poll_status = self.check_poll_status(poll_id)
+                
+                if poll_status["exists"] and poll_status["status"] in ["active", "ready_for_tally"]:
+                    active_polls.append({
+                        "poll_id": poll_id,
+                        "topic": poll_status["topic"],
+                        "status": poll_status["status"],
+                        "votes_progress": f"{poll_status['votes_cast']}/{poll_status['votes_required']}",
+                        "time_remaining": f"{poll_status['time_remaining_minutes']:.1f} min",
+                        "remaining_voters": poll_status["remaining_voters"]
+                    })
+        
+        return active_polls
 
 
 # Factory functions for common moderator configurations

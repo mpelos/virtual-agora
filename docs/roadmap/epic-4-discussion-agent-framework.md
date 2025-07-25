@@ -1,9 +1,11 @@
 # Epic 4: Discussion Agent Framework
 
 ## Epic Overview
+
 Create the framework for Discussion Agents that participate in structured debates, including agent instantiation, identity management, and interaction protocols.
 
 ## Technical Context
+
 - **Agent Naming:** Based on model + index (e.g., gpt-4o-1, gpt-4o-2)
 - **Core Behavior:** Thoughtful participation, topic proposals, voting
 - **Multiple Instances:** Support multiple agents of same model type
@@ -14,11 +16,13 @@ Create the framework for Discussion Agents that participate in structured debate
 ## User Stories
 
 ### Story 4.1: Base Discussion Agent Implementation
-**As a** developer  
-**I want** a base discussion agent class  
+
+**As a** developer
+**I want** a base discussion agent class
 **So that** all agents share common functionality
 
 **Acceptance Criteria:**
+
 - Create base DiscussionAgent class
 - Implement core prompt from section 5.B
 - Support conversation history management
@@ -30,6 +34,7 @@ Create the framework for Discussion Agents that participate in structured debate
 - Maintain agent state (warnings, mute status)
 
 **Technical Notes:**
+
 - Use composition over inheritance where possible
 - Consider implementing agent memory limits
 - Support future persona extensions
@@ -37,11 +42,13 @@ Create the framework for Discussion Agents that participate in structured debate
 ---
 
 ### Story 4.2: Agent Factory and Instantiation
-**As a** system  
-**I want** to create agents based on configuration  
+
+**As a** system
+**I want** to create agents based on configuration
 **So that** the agent pool matches config.yml specifications
 
 **Acceptance Criteria:**
+
 - Parse agent configuration from config.yml
 - Create correct number of each agent type
 - Generate unique names (model-index format)
@@ -50,6 +57,7 @@ Create the framework for Discussion Agents that participate in structured debate
 - Handle provider initialization failures
 
 **Technical Notes:**
+
 - Implement factory pattern
 - Consider agent pooling for efficiency
 - Support dynamic agent addition (future feature)
@@ -57,11 +65,13 @@ Create the framework for Discussion Agents that participate in structured debate
 ---
 
 ### Story 4.3: Agent Response Generation
-**As a** discussion agent  
-**I want** to generate thoughtful responses  
+
+**As a** discussion agent
+**I want** to generate thoughtful responses
 **So that** I contribute meaningfully to discussions
 
 **Acceptance Criteria:**
+
 - Accept topic and conversation context
 - Generate relevant, substantive responses
 - Stay within token limits
@@ -70,6 +80,7 @@ Create the framework for Discussion Agents that participate in structured debate
 - Handle various discussion phases appropriately
 
 **Technical Notes:**
+
 - Implement response length targets
 - Consider implementing response quality checks
 - Add response timing metrics
@@ -77,11 +88,13 @@ Create the framework for Discussion Agents that participate in structured debate
 ---
 
 ### Story 4.4: Topic Proposal Mechanism
-**As a** discussion agent  
-**I want** to propose discussion topics  
+
+**As a** discussion agent
+**I want** to propose discussion topics
 **So that** the agenda reflects diverse perspectives
 
 **Acceptance Criteria:**
+
 - Generate 3-5 sub-topics based on main topic
 - Ensure proposals are:
   - Specific and actionable
@@ -92,6 +105,7 @@ Create the framework for Discussion Agents that participate in structured debate
 - Consider different angles/perspectives
 
 **Technical Notes:**
+
 - Implement proposal validation
 - Consider proposal quality scoring
 - Track proposal acceptance rates
@@ -99,11 +113,13 @@ Create the framework for Discussion Agents that participate in structured debate
 ---
 
 ### Story 4.5: Voting Behavior Implementation
-**As a** discussion agent  
-**I want** to vote on agendas and topic conclusions  
+
+**As a** discussion agent
+**I want** to vote on agendas and topic conclusions
 **So that** I participate in democratic decisions
 
 **Acceptance Criteria:**
+
 - Parse voting requests from Moderator
 - For agenda voting:
   - Review all proposed topics
@@ -115,6 +131,7 @@ Create the framework for Discussion Agents that participate in structured debate
 - Handle voting edge cases gracefully
 
 **Technical Notes:**
+
 - Implement vote parsing validation
 - Consider implementing strategic voting
 - Track voting patterns for analysis
@@ -122,11 +139,13 @@ Create the framework for Discussion Agents that participate in structured debate
 ---
 
 ### Story 4.6: Context and Memory Management
-**As a** discussion agent  
-**I want** to maintain conversation context  
+
+**As a** discussion agent
+**I want** to maintain conversation context
 **So that** my responses are coherent and build on prior discussion
 
 **Acceptance Criteria:**
+
 - Maintain conversation history within token limits
 - Prioritize recent and relevant context
 - Include:
@@ -138,6 +157,7 @@ Create the framework for Discussion Agents that participate in structured debate
 - Preserve key discussion points
 
 **Technical Notes:**
+
 - Implement sliding window for context
 - Consider implementing importance scoring
 - Balance context size with response quality
@@ -145,11 +165,13 @@ Create the framework for Discussion Agents that participate in structured debate
 ---
 
 ### Story 4.7: Agent State Management
-**As a** system  
-**I want** to track agent state  
+
+**As a** system
+**I want** to track agent state
 **So that** rules can be enforced consistently
 
 **Acceptance Criteria:**
+
 - Track per agent:
   - Warning count per topic
   - Mute status
@@ -160,6 +182,7 @@ Create the framework for Discussion Agents that participate in structured debate
 - Support state inspection for debugging
 
 **Technical Notes:**
+
 - Implement state as separate concern
 - Consider implementing state persistence
 - Add state validation logic
@@ -167,11 +190,13 @@ Create the framework for Discussion Agents that participate in structured debate
 ---
 
 ### Story 4.8: Multi-Agent Coordination
-**As a** system  
-**I want** agents to work together effectively  
+
+**As a** system
+**I want** agents to work together effectively
 **So that** discussions are productive and orderly
 
 **Acceptance Criteria:**
+
 - Implement turn-based coordination
 - Ensure agents wait for their turn
 - Handle agent response timeouts
@@ -180,6 +205,7 @@ Create the framework for Discussion Agents that participate in structured debate
 - Prevent response collisions
 
 **Technical Notes:**
+
 - Consider implementing agent queuing
 - Add concurrency controls where needed
 - Monitor agent performance metrics
@@ -187,11 +213,13 @@ Create the framework for Discussion Agents that participate in structured debate
 ---
 
 ### Story 4.9: Agent Response Validation
-**As a** system  
-**I want** to validate agent outputs  
+
+**As a** system
+**I want** to validate agent outputs
 **So that** the discussion proceeds smoothly
 
 **Acceptance Criteria:**
+
 - Validate response format and content
 - Check response length limits
 - Ensure voting responses are parseable
@@ -200,6 +228,7 @@ Create the framework for Discussion Agents that participate in structured debate
 - Log validation issues
 
 **Technical Notes:**
+
 - Implement validation as middleware
 - Consider implementing response repair
 - Track validation failure patterns
@@ -207,10 +236,12 @@ Create the framework for Discussion Agents that participate in structured debate
 ---
 
 ## Dependencies
+
 - Epic 1: Core Infrastructure (for configuration and state)
 - Epic 2: LLM Provider Integration (for model access)
 
 ## Definition of Done
+
 - Agents successfully participate in mock discussions
 - Multiple agents of same type work correctly
 - Voting mechanisms function reliably

@@ -1,9 +1,11 @@
 # Epic 9: Terminal User Interface
 
 ## Epic Overview
+
 Create a rich, color-coded terminal interface using the `rich` library to provide clear visual distinction between different actors and enhance the user experience.
 
 ## Technical Context
+
 - **Library:** Python rich for terminal formatting
 - **Design Goals:** Clarity, readability, accessibility
 - **Color Scheme:** Distinct colors per agent group
@@ -14,11 +16,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ## User Stories
 
 ### Story 9.1: Terminal UI Framework Setup
-**As a** developer  
-**I want** to establish the UI framework  
+
+**As a** developer
+**I want** to establish the UI framework
 **So that** all output is consistently formatted
 
 **Acceptance Criteria:**
+
 - Initialize rich console properly
 - Configure color themes
 - Set up layout managers
@@ -28,6 +32,7 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 - Configure emoji support
 
 **Technical Notes:**
+
 - Use rich.console.Console
 - Implement singleton pattern
 - Consider terminal capability detection
@@ -35,11 +40,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ---
 
 ### Story 9.2: Color-Coded Agent Display
-**As a** user  
-**I want** agents to have distinct colors  
+
+**As a** user
+**I want** agents to have distinct colors
 **So that** I can easily follow the conversation
 
 **Acceptance Criteria:**
+
 - Assign colors by provider:
   - Moderator: Bold White
   - OpenAI agents: Unique color
@@ -52,6 +59,7 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 - Handle many agents gracefully
 
 **Technical Notes:**
+
 - Implement color assignment algorithm
 - Use rich.style for formatting
 - Consider accessibility standards
@@ -59,11 +67,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ---
 
 ### Story 9.3: System Message Formatting
-**As a** user  
-**I want** clear system messages  
+
+**As a** user
+**I want** clear system messages
 **So that** I understand what's happening
 
 **Acceptance Criteria:**
+
 - Format message types:
   - User prompts: Yellow
   - System info: Default
@@ -76,6 +86,7 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 - Handle multi-line messages
 
 **Technical Notes:**
+
 - Use rich.panel for important messages
 - Implement message type enum
 - Consider message history display
@@ -83,11 +94,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ---
 
 ### Story 9.4: Progress Indicators
-**As a** user  
-**I want** to see operation progress  
+
+**As a** user
+**I want** to see operation progress
 **So that** I know the system is working
 
 **Acceptance Criteria:**
+
 - Show progress for:
   - Agent response generation
   - Voting collection
@@ -101,6 +114,7 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 - Show time estimates
 
 **Technical Notes:**
+
 - Use rich.progress
 - Implement progress context manager
 - Consider progress persistence
@@ -108,11 +122,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ---
 
 ### Story 9.5: Discussion Display Layout
-**As a** user  
-**I want** organized discussion display  
+
+**As a** user
+**I want** organized discussion display
 **So that** conversations are easy to follow
 
 **Acceptance Criteria:**
+
 - Display elements:
   - Agent name and identifier
   - Timestamp
@@ -127,6 +143,7 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 - Show context indicators
 
 **Technical Notes:**
+
 - Use rich.table for structured display
 - Implement smart text wrapping
 - Consider response truncation options
@@ -134,11 +151,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ---
 
 ### Story 9.6: Interactive Menus and Prompts
-**As a** user  
-**I want** intuitive interactive elements  
+
+**As a** user
+**I want** intuitive interactive elements
 **So that** I can easily make choices
 
 **Acceptance Criteria:**
+
 - Implement menu types:
   - Single choice
   - Multiple choice
@@ -151,6 +170,7 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 - Provide input hints
 
 **Technical Notes:**
+
 - Use rich.prompt
 - Implement custom prompt classes
 - Consider menu animations
@@ -158,11 +178,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ---
 
 ### Story 9.7: Status Dashboard
-**As a** user  
-**I want** a status dashboard  
+
+**As a** user
+**I want** a status dashboard
 **So that** I can monitor session state
 
 **Acceptance Criteria:**
+
 - Display components:
   - Current phase
   - Active topic
@@ -176,6 +198,7 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 - Handle terminal constraints
 
 **Technical Notes:**
+
 - Use rich.live
 - Implement dashboard layout
 - Consider split-screen display
@@ -183,11 +206,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ---
 
 ### Story 9.8: Output Formatting Utilities
-**As a** developer  
-**I want** formatting utilities  
+
+**As a** developer
+**I want** formatting utilities
 **So that** output is consistent
 
 **Acceptance Criteria:**
+
 - Implement formatters for:
   - Agent responses
   - Voting results
@@ -201,6 +226,7 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 - Support export formatting
 
 **Technical Notes:**
+
 - Create formatting module
 - Use rich.markdown
 - Implement formatter registry
@@ -208,11 +234,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ---
 
 ### Story 9.9: Accessibility Features
-**As a** user with accessibility needs  
-**I want** accessible output options  
+
+**As a** user with accessibility needs
+**I want** accessible output options
 **So that** I can use the system effectively
 
 **Acceptance Criteria:**
+
 - Support features:
   - High contrast mode
   - Screen reader friendly output
@@ -225,6 +253,7 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 - Follow WCAG guidelines
 
 **Technical Notes:**
+
 - Implement accessibility mode
 - Use semantic markup
 - Test with accessibility tools
@@ -232,11 +261,13 @@ Create a rich, color-coded terminal interface using the `rich` library to provid
 ---
 
 ## Dependencies
+
 - Epic 1: Core Infrastructure (for configuration)
 - Epic 7: HITL Controls (for user interaction)
 - All other epics (for display requirements)
 
 ## Definition of Done
+
 - UI displays correctly on various terminals
 - Colors are distinct and accessible
 - All text is properly formatted

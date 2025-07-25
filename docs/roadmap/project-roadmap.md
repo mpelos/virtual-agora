@@ -20,62 +20,72 @@ The Virtual Agora project has been decomposed into 10 major epics comprising 89 
 ## Implementation Phases
 
 ### Phase 1: Foundation (Weeks 1-3)
+
 **Goal**: Establish core infrastructure and provider integrations
 
 - **Week 1**: Epic 1 - Core Infrastructure
+
   - Project setup, configuration management, logging
   - State management foundation
-  
+
 - **Week 2-3**: Epic 2 - LLM Provider Integration
   - Abstract interfaces
   - Provider implementations (Google, OpenAI, Anthropic, Grok)
   - Testing with real APIs
 
 ### Phase 2: Agent Systems (Weeks 4-6)
+
 **Goal**: Implement agent framework and moderator
 
 - **Week 4**: Epic 4 - Discussion Agent Framework
+
   - Base agent implementation
   - Agent factory and lifecycle
-  
+
 - **Week 5-6**: Epic 3 - Moderator Agent Implementation
   - Moderator specialization
   - Facilitation capabilities
   - Summary generation
 
 ### Phase 3: Core Workflow (Weeks 7-10)
+
 **Goal**: Implement discussion flow and agenda management
 
 - **Week 7-8**: Epic 6 - Discussion Flow & State Management
+
   - LangGraph implementation
   - Phase transitions
   - State management
-  
+
 - **Week 9-10**: Epic 5 - Agenda Management System
   - Proposal and voting system
   - Agenda state tracking
   - Dynamic modifications
 
 ### Phase 4: User Experience (Weeks 11-13)
+
 **Goal**: Implement UI and user controls
 
 - **Week 11**: Epic 9 - Terminal User Interface
+
   - Rich terminal formatting
   - Color coding and layouts
-  
+
 - **Week 12-13**: Epic 7 - Human-in-the-Loop Controls
   - User interaction points
   - Input validation
   - Emergency controls
 
 ### Phase 5: Polish & Resilience (Weeks 14-16)
+
 **Goal**: Add reporting and error handling
 
 - **Week 14-15**: Epic 8 - Reporting & Documentation
+
   - Summary generation
   - Multi-file reports
   - Session logging
-  
+
 - **Week 16**: Epic 10 - Error Handling & Resilience
   - Comprehensive error handling
   - Recovery mechanisms
@@ -95,11 +105,13 @@ The following sequence represents the critical dependencies:
 ## Risk Mitigation
 
 ### Technical Risks
+
 - **LLM API Availability**: Implement robust retry and fallback mechanisms
 - **Token Limits**: Design efficient context management from the start
 - **State Complexity**: Use LangGraph's proven patterns
 
 ### Schedule Risks
+
 - **API Integration Delays**: Start provider integration early
 - **UI Complexity**: Consider simplified UI for MVP
 - **Testing Time**: Allocate 20% of each epic for testing
@@ -107,6 +119,7 @@ The following sequence represents the critical dependencies:
 ## Definition of Done
 
 Each epic is considered complete when:
+
 - All user stories are implemented
 - Unit tests achieve >80% coverage
 - Integration tests pass
@@ -126,6 +139,7 @@ Each epic is considered complete when:
 ## Future Enhancements
 
 As mentioned in the project specification:
+
 - PDF report compilation
 - Web interface (Gradio/Streamlit)
 - Vector database for context

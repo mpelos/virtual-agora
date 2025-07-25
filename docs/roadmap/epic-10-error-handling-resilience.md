@@ -1,9 +1,11 @@
 # Epic 10: Error Handling & Resilience
 
 ## Epic Overview
+
 Implement comprehensive error handling and resilience mechanisms to ensure the Virtual Agora system remains stable and recovers gracefully from various failure scenarios.
 
 ## Technical Context
+
 - **Strategy:** Fail gracefully, log comprehensively, recover automatically
 - **Scope:** API failures, network issues, invalid inputs, state corruption
 - **Goals:** Zero crashes, data preservation, user transparency
@@ -13,11 +15,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ## User Stories
 
 ### Story 10.1: Global Exception Handling
-**As a** system  
-**I want** global exception handling  
+
+**As a** system
+**I want** global exception handling
 **So that** no error crashes the application
 
 **Acceptance Criteria:**
+
 - Implement top-level exception handler
 - Catch all unhandled exceptions
 - Log full stack traces
@@ -27,6 +31,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Generate error reports
 
 **Technical Notes:**
+
 - Use sys.excepthook
 - Implement context preservation
 - Consider error telemetry
@@ -34,11 +39,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ### Story 10.2: API Failure Recovery
-**As a** system  
-**I want** to handle API failures gracefully  
+
+**As a** system
+**I want** to handle API failures gracefully
 **So that** temporary issues don't end sessions
 
 **Acceptance Criteria:**
+
 - Implement retry mechanisms:
   - Exponential backoff
   - Max retry limits
@@ -53,6 +60,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Continue with available agents
 
 **Technical Notes:**
+
 - Use tenacity for retries
 - Implement circuit breakers
 - Track failure patterns
@@ -60,11 +68,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ### Story 10.3: Input Validation Framework
-**As a** system  
-**I want** comprehensive input validation  
+
+**As a** system
+**I want** comprehensive input validation
 **So that** invalid data doesn't cause errors
 
 **Acceptance Criteria:**
+
 - Validate all inputs:
   - User inputs
   - Agent responses
@@ -80,6 +90,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Support input sanitization
 
 **Technical Notes:**
+
 - Use Pydantic for validation
 - Implement validation decorators
 - Create validation test suite
@@ -87,11 +98,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ### Story 10.4: State Corruption Recovery
-**As a** system  
-**I want** to detect and recover from state issues  
+
+**As a** system
+**I want** to detect and recover from state issues
 **So that** sessions can continue despite problems
 
 **Acceptance Criteria:**
+
 - Implement state validation
 - Detect corruption indicators:
   - Missing required fields
@@ -104,6 +117,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Log corruption details
 
 **Technical Notes:**
+
 - Implement state checksums
 - Use immutable state updates
 - Create state repair utilities
@@ -111,11 +125,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ### Story 10.5: Network Resilience
-**As a** system  
-**I want** network failure handling  
+
+**As a** system
+**I want** network failure handling
 **So that** connectivity issues are managed
 
 **Acceptance Criteria:**
+
 - Handle network scenarios:
   - Connection timeouts
   - DNS failures
@@ -128,6 +144,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Show network status
 
 **Technical Notes:**
+
 - Use requests retry adapters
 - Implement connection monitoring
 - Consider offline mode
@@ -135,11 +152,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ### Story 10.6: Resource Management
-**As a** system  
-**I want** resource limit handling  
+
+**As a** system
+**I want** resource limit handling
 **So that** the system doesn't exhaust resources
 
 **Acceptance Criteria:**
+
 - Monitor resources:
   - Memory usage
   - Disk space
@@ -155,6 +174,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Clean up resources
 
 **Technical Notes:**
+
 - Use resource module
 - Implement garbage collection
 - Monitor memory leaks
@@ -162,11 +182,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ### Story 10.7: Timeout Management
-**As a** system  
-**I want** comprehensive timeout handling  
+
+**As a** system
+**I want** comprehensive timeout handling
 **So that** operations don't hang indefinitely
 
 **Acceptance Criteria:**
+
 - Implement timeouts for:
   - API calls
   - User inputs
@@ -179,6 +201,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Log timeout events
 
 **Technical Notes:**
+
 - Use asyncio timeouts
 - Implement timeout context managers
 - Consider adaptive timeouts
@@ -186,11 +209,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ### Story 10.8: Data Integrity Protection
-**As a** system  
-**I want** data integrity safeguards  
+
+**As a** system
+**I want** data integrity safeguards
 **So that** data isn't lost or corrupted
 
 **Acceptance Criteria:**
+
 - Implement safeguards:
   - Atomic file writes
   - Transaction support
@@ -205,6 +230,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Support data recovery
 
 **Technical Notes:**
+
 - Use temporary files for writes
 - Implement file locking
 - Create backup strategies
@@ -212,11 +238,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ### Story 10.9: Error Reporting and Analytics
-**As a** developer  
-**I want** detailed error analytics  
+
+**As a** developer
+**I want** detailed error analytics
 **So that** issues can be diagnosed and fixed
 
 **Acceptance Criteria:**
+
 - Collect error data:
   - Error types
   - Frequency
@@ -232,6 +260,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Maintain error history
 
 **Technical Notes:**
+
 - Implement error categorization
 - Use structured logging
 - Consider error dashboards
@@ -239,11 +268,13 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ### Story 10.10: Graceful Degradation Strategies
-**As a** system  
-**I want** degradation strategies  
+
+**As a** system
+**I want** degradation strategies
 **So that** partial functionality remains available
 
 **Acceptance Criteria:**
+
 - Define degradation levels:
   - Full functionality
   - Reduced agents
@@ -259,6 +290,7 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 - Maintain core features
 
 **Technical Notes:**
+
 - Implement feature flags
 - Design modular architecture
 - Test degradation scenarios
@@ -266,9 +298,11 @@ Implement comprehensive error handling and resilience mechanisms to ensure the V
 ---
 
 ## Dependencies
+
 - All other epics (error handling touches everything)
 
 ## Definition of Done
+
 - No unhandled exceptions possible
 - All API failures handled gracefully
 - Input validation prevents all crashes

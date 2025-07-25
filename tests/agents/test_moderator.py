@@ -1189,3 +1189,1141 @@ class TestModeratorAgendaSynthesis:
             
             # Opinion content should fail
             assert moderator.validate_neutrality("I think this is great.") is False
+
+
+class TestModeratorRoundManagement:
+    """Test Story 3.3: Discussion Round Management functionality."""
+    
+    def setup_method(self):
+        """Set up test method."""
+        self.mock_llm = Mock()
+        self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
+        self.mock_llm.model_name = "gemini-1.5-pro"
+        
+        self.moderator = ModeratorAgent(
+            agent_id="round-moderator",
+            llm=self.mock_llm,
+            mode="facilitation",
+            enable_error_handling=False,
+            turn_timeout_seconds=120
+        )
+    
+    def test_round_management_initialization(self):
+        """Test that round management attributes are properly initialized."""
+        assert self.moderator.current_round == 0
+        assert self.moderator.turn_timeout_seconds == 120
+        assert self.moderator.participation_metrics == {}
+        assert self.moderator.speaking_order == []
+        assert self.moderator.current_speaker_index == 0
+    
+    def test_announce_topic(self):
+        """Test topic announcement functionality."""
+        self.moderator.speaking_order = ["agent1", "agent2", "agent3"]
+        
+        announcement = self.moderator.announce_topic("AI Ethics", 1)
+        
+        assert "Round 1: AI Ethics" in announcement
+        assert "agent1 → agent2 → agent3" in announcement
+    
+    def test_manage_turn_order_basic(self):
+        """Test basic turn order management."""
+        agent_ids = ["agent1", "agent2", "agent3"]
+        
+        self.moderator.manage_turn_order(agent_ids)
+        
+        assert self.moderator.speaking_order == agent_ids
+        assert self.moderator.current_speaker_index == 0
+        
+        # Check participation metrics initialization
+        for agent_id in agent_ids:
+            assert agent_id in self.moderator.participation_metrics
+            metrics = self.moderator.participation_metrics[agent_id]
+            assert metrics["turns_taken"] == 0
+            assert metrics["total_response_time"] == 0.0
+            assert metrics["timeouts"] == 0
+            assert metrics["words_contributed"] == 0
+    
+    def test_manage_turn_order_randomized(self):
+        """Test randomized turn order management."""
+        agent_ids = ["agent1", "agent2", "agent3", "agent4", "agent5"]
+        
+        # Run multiple times to check randomization
+        orders = []
+        for _ in range(10):
+            moderator = ModeratorAgent("test", self.mock_llm, enable_error_handling=False)
+            moderator.manage_turn_order(agent_ids, randomize=True)
+            orders.append(moderator.speaking_order.copy())
+        
+        # Should have some variation (not all identical)
+        unique_orders = set(tuple(order) for order in orders)
+        assert len(unique_orders) > 1  # At least some randomization occurred
+    
+    def test_manage_turn_order_empty_list(self):
+        """Test error handling for empty agent list."""
+        self.moderator.manage_turn_order([])
+        
+        # Should handle gracefully
+        assert self.moderator.speaking_order == []
+        assert self.moderator.current_speaker_index == 0
+    
+    def test_get_next_speaker(self):
+        """Test speaker rotation functionality."""
+        self.moderator.speaking_order = ["agent1", "agent2", "agent3"]
+        self.moderator.current_speaker_index = 0
+        
+        # Test rotation
+        assert self.moderator.get_next_speaker() == "agent1"
+        assert self.moderator.current_speaker_index == 1
+        
+        assert self.moderator.get_next_speaker() == "agent2"
+        assert self.moderator.current_speaker_index == 2
+        
+        assert self.moderator.get_next_speaker() == "agent3"
+        assert self.moderator.current_speaker_index == 0  # Should wrap around
+        
+        assert self.moderator.get_next_speaker() == "agent1"  # Back to first
+    
+    def test_get_next_speaker_empty_order(self):
+        """Test get_next_speaker with no speaking order."""
+        result = self.moderator.get_next_speaker()
+        assert result is None
+    
+    def test_track_participation(self):
+        """Test participation tracking functionality."""
+        agent_id = "agent1"
+        response_content = "This is a test response with ten words in it."
+        response_time = 45.5
+        
+        # Track first participation
+        self.moderator.track_participation(agent_id, response_content, response_time)
+        
+        metrics = self.moderator.participation_metrics[agent_id]
+        assert metrics["turns_taken"] == 1
+        assert metrics["total_response_time"] == 45.5
+        assert metrics["average_response_time"] == 45.5
+        assert metrics["words_contributed"] == 10
+        assert metrics["timeouts"] == 0
+        
+        # Track second participation
+        self.moderator.track_participation(agent_id, "Shorter response.", 30.0)
+        
+        metrics = self.moderator.participation_metrics[agent_id]
+        assert metrics["turns_taken"] == 2
+        assert metrics["total_response_time"] == 75.5
+        assert metrics["average_response_time"] == 37.75
+        assert metrics["words_contributed"] == 12  # 10 + 2
+    
+    def test_handle_agent_timeout(self):
+        """Test agent timeout handling."""
+        agent_id = "agent1"
+        
+        # Initialize participation metrics
+        self.moderator.participation_metrics[agent_id] = {
+            "turns_taken": 2,
+            "total_response_time": 60.0,
+            "average_response_time": 30.0,
+            "timeouts": 0,
+            "words_contributed": 20,
+            "last_activity": datetime.now()
+        }
+        
+        timeout_message = self.moderator.handle_agent_timeout(agent_id)
+        
+        # Check timeout was recorded
+        assert self.moderator.participation_metrics[agent_id]["timeouts"] == 1
+        
+        # Check message content
+        assert "Agent agent1 did not respond" in timeout_message
+        assert "120 seconds" in timeout_message
+        assert "continue to the next participant" in timeout_message
+    
+    def test_signal_round_completion(self):
+        """Test round completion signaling."""
+        # Set up speaking order and metrics
+        self.moderator.speaking_order = ["agent1", "agent2", "agent3"]
+        self.moderator.participation_metrics = {
+            "agent1": {"turns_taken": 2, "words_contributed": 50},
+            "agent2": {"turns_taken": 1, "words_contributed": 25},
+            "agent3": {"turns_taken": 0, "words_contributed": 0}  # Inactive
+        }
+        
+        completion_message = self.moderator.signal_round_completion(1, "AI Ethics")
+        
+        # Check round increment
+        assert self.moderator.current_round == 1
+        
+        # Check message content
+        assert "Round 1 Complete: AI Ethics" in completion_message
+        assert "Total participants: 3" in completion_message
+        assert "Active participants: 2" in completion_message
+        assert "Participation rate: 66.7%" in completion_message
+    
+    def test_get_participation_summary(self):
+        """Test participation summary generation."""
+        # Set up test data
+        self.moderator.participation_metrics = {
+            "agent1": {
+                "turns_taken": 3,
+                "total_response_time": 120.0,
+                "average_response_time": 40.0,
+                "timeouts": 1,
+                "words_contributed": 150
+            },
+            "agent2": {
+                "turns_taken": 2,
+                "total_response_time": 80.0,
+                "average_response_time": 40.0,
+                "timeouts": 0,
+                "words_contributed": 100
+            },
+            "agent3": {
+                "turns_taken": 0,
+                "total_response_time": 0.0,
+                "average_response_time": 0.0,
+                "timeouts": 0,
+                "words_contributed": 0
+            }
+        }
+        self.moderator.current_round = 2
+        
+        summary = self.moderator.get_participation_summary()
+        
+        # Check summary statistics
+        assert summary["total_agents"] == 3
+        assert summary["active_agents"] == 2
+        assert summary["participation_rate"] == pytest.approx(66.67, rel=1e-2)
+        assert summary["average_response_time"] == 40.0
+        assert summary["total_words"] == 250
+        assert summary["timeout_rate"] == 20.0  # 1 timeout out of 5 turns
+        assert summary["current_round"] == 2
+        
+        # Check detailed metrics are included
+        assert "detailed_metrics" in summary
+        assert len(summary["detailed_metrics"]) == 3
+    
+    def test_get_participation_summary_empty(self):
+        """Test participation summary with no participation."""
+        summary = self.moderator.get_participation_summary()
+        
+        assert summary["total_agents"] == 0
+        assert summary["active_agents"] == 0
+        assert summary["average_response_time"] == 0.0
+        assert summary["total_words"] == 0
+        assert summary["timeout_rate"] == 0.0
+
+
+class TestModeratorRelevanceEnforcement:
+    """Test Story 3.4: Relevance Enforcement System functionality."""
+    
+    def setup_method(self):
+        """Set up test method."""
+        self.mock_llm = Mock()
+        self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
+        self.mock_llm.model_name = "gemini-1.5-pro"
+        
+        self.moderator = ModeratorAgent(
+            agent_id="relevance-moderator",
+            llm=self.mock_llm,
+            mode="facilitation",
+            enable_error_handling=False,
+            relevance_threshold=0.7,
+            warning_threshold=2,
+            mute_duration_minutes=5
+        )
+    
+    def test_relevance_enforcement_initialization(self):
+        """Test that relevance enforcement attributes are properly initialized."""
+        assert self.moderator.relevance_threshold == 0.7
+        assert self.moderator.warning_threshold == 2
+        assert self.moderator.mute_duration_minutes == 5
+        assert self.moderator.relevance_violations == {}
+        assert self.moderator.muted_agents == {}
+        assert self.moderator.current_topic_context is None
+    
+    def test_set_topic_context(self):
+        """Test setting topic context for relevance evaluation."""
+        self.moderator.set_topic_context("AI Ethics")
+        assert self.moderator.current_topic_context == "AI Ethics"
+        
+        # Test with description
+        self.moderator.set_topic_context("AI Ethics", "Discussion of ethical considerations in AI development")
+        assert self.moderator.current_topic_context == "AI Ethics: Discussion of ethical considerations in AI development"
+    
+    def test_evaluate_message_relevance_no_context(self):
+        """Test relevance evaluation without topic context."""
+        result = self.moderator.evaluate_message_relevance("Test message", "agent1")
+        
+        # Should assume relevant when no context
+        assert result["relevance_score"] == 1.0
+        assert result["is_relevant"] is True
+        assert result["reason"] == "No topic context available for evaluation"
+        assert result["topic"] is None
+    
+    def test_evaluate_message_relevance_relevant(self):
+        """Test evaluation of relevant message."""
+        self.moderator.set_topic_context("AI Ethics")
+        
+        # Mock relevant assessment
+        mock_response = Mock()
+        mock_response.content = '''
+        {
+            "relevance_assessment": {
+                "relevance_score": 0.9,
+                "is_relevant": true,
+                "key_points": ["ethical considerations", "AI development"],
+                "reason": "Message directly addresses AI ethics concerns"
+            }
+        }
+        '''
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        result = self.moderator.evaluate_message_relevance(
+            "I believe we need stronger ethical guidelines for AI development", 
+            "agent1"
+        )
+        
+        assert result["relevance_score"] == 0.9
+        assert result["is_relevant"] is True
+        assert result["topic"] == "AI Ethics"
+        assert "ethical considerations" in result["key_points"]
+    
+    def test_evaluate_message_relevance_irrelevant(self):
+        """Test evaluation of irrelevant message."""
+        self.moderator.set_topic_context("AI Ethics")
+        
+        # Mock irrelevant assessment
+        mock_response = Mock()
+        mock_response.content = '''
+        {
+            "relevance_assessment": {
+                "relevance_score": 0.3,
+                "is_relevant": false,
+                "key_points": ["weather", "sports"],
+                "reason": "Message about weather is unrelated to AI ethics"
+            }
+        }
+        '''
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        result = self.moderator.evaluate_message_relevance(
+            "The weather is really nice today for a game", 
+            "agent1"
+        )
+        
+        assert result["relevance_score"] == 0.3
+        assert result["is_relevant"] is False  # Below threshold
+        assert "weather" in result["key_points"]
+    
+    def test_track_relevance_violation(self):
+        """Test tracking of relevance violations."""
+        agent_id = "agent1"
+        message_content = "This is an off-topic message"
+        relevance_assessment = {
+            "relevance_score": 0.4,
+            "topic": "AI Ethics",
+            "reason": "Message is unrelated to the topic"
+        }
+        
+        self.moderator.track_relevance_violation(agent_id, message_content, relevance_assessment)
+        
+        # Check violation was recorded
+        assert agent_id in self.moderator.relevance_violations
+        violation_data = self.moderator.relevance_violations[agent_id]
+        
+        assert violation_data["total_violations"] == 1
+        assert violation_data["warnings_issued"] == 0
+        assert len(violation_data["violations_history"]) == 1
+        assert violation_data["is_muted"] is False
+        
+        # Check violation record details
+        violation_record = violation_data["violations_history"][0]
+        assert violation_record["message_content"] == message_content
+        assert violation_record["relevance_score"] == 0.4
+        assert violation_record["topic"] == "AI Ethics"
+    
+    def test_issue_relevance_warning_first_warning(self):
+        """Test issuing first relevance warning."""
+        agent_id = "agent1"
+        self.moderator.relevance_violations[agent_id] = {
+            "total_violations": 1,
+            "warnings_issued": 0,
+            "violations_history": [],
+            "last_violation": datetime.now(),
+            "is_muted": False
+        }
+        
+        relevance_assessment = {
+            "reason": "Message is off-topic",
+            "suggestions": "Please focus on AI ethics"
+        }
+        
+        warning_message = self.moderator.issue_relevance_warning(agent_id, relevance_assessment)
+        
+        # Check warning was recorded
+        assert self.moderator.relevance_violations[agent_id]["warnings_issued"] == 1
+        
+        # Check warning message content
+        assert "Relevance Warning for agent1" in warning_message
+        assert "Message is off-topic" in warning_message
+        assert "Please focus on AI ethics" in warning_message
+        assert "Warnings remaining:** 1" in warning_message
+    
+    def test_issue_relevance_warning_final(self):
+        """Test issuing final warning."""
+        agent_id = "agent1"
+        self.moderator.relevance_violations[agent_id] = {
+            "total_violations": 2,
+            "warnings_issued": 1,
+            "violations_history": [],
+            "last_violation": datetime.now(),
+            "is_muted": False
+        }
+        
+        relevance_assessment = {
+            "reason": "Another off-topic message",
+            "suggestions": "Stay focused on the current topic"
+        }
+        
+        warning_message = self.moderator.issue_relevance_warning(agent_id, relevance_assessment)
+        
+        # Check this was the final warning
+        assert "Final Warning for agent1" in warning_message
+        assert "next irrelevant message will result in" in warning_message
+        assert "5-minute mute" in warning_message
+    
+    def test_mute_agent(self):
+        """Test muting an agent."""
+        agent_id = "agent1"
+        reason = "Excessive relevance violations"
+        
+        # Initialize violation record
+        self.moderator.relevance_violations[agent_id] = {
+            "total_violations": 3,
+            "warnings_issued": 2,
+            "violations_history": [],
+            "last_violation": datetime.now(),
+            "is_muted": False
+        }
+        
+        mute_message = self.moderator.mute_agent(agent_id, reason)
+        
+        # Check agent was muted
+        assert agent_id in self.moderator.muted_agents
+        mute_end_time = self.moderator.muted_agents[agent_id]
+        time_diff = (mute_end_time - datetime.now()).total_seconds()
+        assert 290 <= time_diff <= 305  # Should be about 5 minutes (300 seconds)
+        
+        # Check violation record updated
+        assert self.moderator.relevance_violations[agent_id]["is_muted"] is True
+        
+        # Check mute message
+        assert "Agent agent1 has been temporarily muted" in mute_message
+        assert reason in mute_message
+        assert "Duration:** 5 minutes" in mute_message
+    
+    def test_check_agent_mute_status_not_muted(self):
+        """Test checking mute status for non-muted agent."""
+        status = self.moderator.check_agent_mute_status("agent1")
+        
+        assert status["is_muted"] is False
+        assert status["mute_end_time"] is None
+        assert status["time_remaining_minutes"] == 0
+    
+    def test_check_agent_mute_status_muted(self):
+        """Test checking mute status for muted agent."""
+        from datetime import timedelta
+        
+        agent_id = "agent1"
+        mute_end_time = datetime.now() + timedelta(minutes=3)
+        self.moderator.muted_agents[agent_id] = mute_end_time
+        
+        status = self.moderator.check_agent_mute_status(agent_id)
+        
+        assert status["is_muted"] is True
+        assert status["mute_end_time"] == mute_end_time
+        assert 2.8 <= status["time_remaining_minutes"] <= 3.2
+    
+    def test_check_agent_mute_status_expired(self):
+        """Test checking mute status for expired mute."""
+        from datetime import timedelta
+        
+        agent_id = "agent1"
+        # Set mute to expire 1 minute ago
+        mute_end_time = datetime.now() - timedelta(minutes=1)
+        self.moderator.muted_agents[agent_id] = mute_end_time
+        
+        # Initialize violation record
+        self.moderator.relevance_violations[agent_id] = {"is_muted": True}
+        
+        status = self.moderator.check_agent_mute_status(agent_id)
+        
+        # Should have been automatically unmuted
+        assert status["is_muted"] is False
+        assert agent_id not in self.moderator.muted_agents
+        assert self.moderator.relevance_violations[agent_id]["is_muted"] is False
+    
+    def test_process_message_for_relevance_allowed(self):
+        """Test processing relevant message."""
+        self.moderator.set_topic_context("AI Ethics")
+        
+        # Mock relevant assessment
+        mock_response = Mock()
+        mock_response.content = '''
+        {
+            "relevance_assessment": {
+                "relevance_score": 0.8,
+                "is_relevant": true,
+                "key_points": ["AI ethics"],
+                "reason": "Message is relevant"
+            }
+        }
+        '''
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        result = self.moderator.process_message_for_relevance(
+            "AI ethics is important", 
+            "agent1"
+        )
+        
+        assert result["action"] == "allowed"
+        assert result["reason"] == "relevant_content"
+        assert result["message"] is None
+        assert result["relevance_assessment"]["relevance_score"] == 0.8
+    
+    def test_process_message_for_relevance_warned(self):
+        """Test processing irrelevant message (first warning)."""
+        self.moderator.set_topic_context("AI Ethics")
+        
+        # Mock irrelevant assessment
+        mock_response = Mock()
+        mock_response.content = '''
+        {
+            "relevance_assessment": {
+                "relevance_score": 0.3,
+                "is_relevant": false,
+                "key_points": ["weather"],
+                "reason": "Message is off-topic"
+            }
+        }
+        '''
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        result = self.moderator.process_message_for_relevance(
+            "The weather is nice today", 
+            "agent1"
+        )
+        
+        assert result["action"] == "warned"
+        assert result["reason"] == "irrelevant_content"
+        assert "Relevance Warning" in result["message"]
+        assert result["warnings_issued"] == 1
+        assert result["warnings_remaining"] == 1
+    
+    def test_process_message_for_relevance_muted(self):
+        """Test processing message that results in muting."""
+        self.moderator.set_topic_context("AI Ethics")
+        
+        # Set up agent with warnings at threshold
+        agent_id = "agent1"
+        self.moderator.relevance_violations[agent_id] = {
+            "total_violations": 2,
+            "warnings_issued": 2,  # At threshold
+            "violations_history": [],
+            "last_violation": datetime.now(),
+            "is_muted": False
+        }
+        
+        # Mock irrelevant assessment
+        mock_response = Mock()
+        mock_response.content = '''
+        {
+            "relevance_assessment": {
+                "relevance_score": 0.2,
+                "is_relevant": false,
+                "key_points": ["sports"],
+                "reason": "Message is completely off-topic"
+            }
+        }
+        '''
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        result = self.moderator.process_message_for_relevance(
+            "Who won the game last night?", 
+            agent_id
+        )
+        
+        assert result["action"] == "muted"
+        assert result["reason"] == "excessive_violations"
+        assert "Agent agent1 has been temporarily muted" in result["message"]
+        assert result["total_violations"] == 3
+    
+    def test_process_message_for_relevance_blocked_muted(self):
+        """Test processing message from already muted agent."""
+        from datetime import timedelta
+        
+        agent_id = "agent1"
+        self.moderator.muted_agents[agent_id] = datetime.now() + timedelta(minutes=3)
+        
+        result = self.moderator.process_message_for_relevance(
+            "Any message", 
+            agent_id
+        )
+        
+        assert result["action"] == "blocked"
+        assert result["reason"] == "agent_muted"
+        assert "agent1 is muted for" in result["message"]
+        assert result["relevance_assessment"] is None
+    
+    def test_get_relevance_enforcement_summary(self):
+        """Test getting relevance enforcement summary."""
+        # Set up test data
+        self.moderator.current_topic_context = "AI Ethics"
+        self.moderator.relevance_violations = {
+            "agent1": {
+                "total_violations": 2,
+                "warnings_issued": 1,
+                "violations_history": [],
+                "is_muted": False
+            },
+            "agent2": {
+                "total_violations": 3,
+                "warnings_issued": 2,
+                "violations_history": [],
+                "is_muted": True
+            }
+        }
+        self.moderator.muted_agents = {"agent2": datetime.now()}
+        
+        summary = self.moderator.get_relevance_enforcement_summary()
+        
+        assert summary["current_topic"] == "AI Ethics"
+        assert summary["relevance_threshold"] == 0.7
+        assert summary["warning_threshold"] == 2
+        assert summary["mute_duration_minutes"] == 5
+        assert summary["total_violations"] == 5
+        assert summary["total_warnings_issued"] == 3
+        assert summary["agents_with_violations"] == 2
+        assert summary["currently_muted_agents"] == 1
+        assert summary["muted_agents_list"] == ["agent2"]
+
+
+class TestModeratorSummarization:
+    """Test Story 3.5: Round and Topic Summarization functionality."""
+    
+    def setup_method(self):
+        """Set up test method."""
+        self.mock_llm = Mock()
+        self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
+        self.mock_llm.model_name = "gemini-1.5-pro"
+        
+        self.moderator = ModeratorAgent(
+            agent_id="summary-moderator",
+            llm=self.mock_llm,
+            mode="facilitation",
+            enable_error_handling=False
+        )
+    
+    def test_generate_round_summary(self):
+        """Test round summary generation."""
+        # Mock response
+        mock_response = Mock()
+        mock_response.content = "This round focused on AI safety concerns with key insights about alignment."
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        # Test messages
+        messages = [
+            {
+                "id": "msg1",
+                "speaker_id": "agent1",
+                "content": "AI safety is crucial for future development",
+                "topic": "AI Safety",
+                "round": 1
+            },
+            {
+                "id": "msg2", 
+                "speaker_id": "agent2",
+                "content": "We need better alignment techniques",
+                "topic": "AI Safety",
+                "round": 1
+            }
+        ]
+        
+        participation_summary = {
+            "active_agents": 2,
+            "average_response_time": 30.0
+        }
+        
+        original_mode = self.moderator.current_mode
+        summary = self.moderator.generate_round_summary(1, "AI Safety", messages, participation_summary)
+        
+        assert "AI safety concerns" in summary
+        assert self.moderator.current_mode == original_mode  # Should restore mode
+    
+    def test_generate_round_summary_no_messages(self):
+        """Test round summary with no messages."""
+        summary = self.moderator.generate_round_summary(1, "AI Safety", [])
+        
+        assert "Round 1 on 'AI Safety' had no recorded contributions" in summary
+    
+    def test_generate_topic_summary_with_round_summaries(self):
+        """Test topic summary using round summaries."""
+        mock_response = Mock()
+        mock_response.content = "Comprehensive topic summary based on round summaries."
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        # Create some messages for the topic
+        messages = [
+            Message(
+                id="msg1",
+                speaker_id="agent1",
+                speaker_role="participant",
+                content="Initial thoughts on AI safety",
+                timestamp=datetime.now(),
+                phase=2,
+                topic="AI Safety"
+            )
+        ]
+        
+        round_summaries = [
+            "Round 1 focused on basic AI safety concepts",
+            "Round 2 discussed technical implementation challenges"
+        ]
+        
+        summary = self.moderator.generate_topic_summary("AI Safety", messages, round_summaries)
+        
+        assert "Comprehensive topic summary" in summary
+    
+    def test_generate_topic_summary_map_reduce(self):
+        """Test topic summary using map-reduce for large message sets."""
+        # Mock responses for map phase
+        map_responses = [
+            Mock(content="Summary of chunk 1"),
+            Mock(content="Summary of chunk 2"),
+            Mock(content="Summary of chunk 3")
+        ]
+        # Mock response for reduce phase
+        reduce_response = Mock(content="Final comprehensive summary from map-reduce")
+        
+        # Set up mock to return different responses in sequence
+        self.mock_llm.invoke.side_effect = map_responses + [reduce_response]
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        # Create 15 messages (more than threshold of 10)
+        messages = []
+        for i in range(15):
+            messages.append({
+                "id": f"msg{i}",
+                "speaker_id": f"agent{i%3}",
+                "content": f"Message {i} about AI safety",
+                "topic": "AI Safety"
+            })
+        
+        summary = self.moderator.generate_topic_summary("AI Safety", messages)
+        
+        assert "Final comprehensive summary from map-reduce" in summary
+    
+    def test_extract_key_insights(self):
+        """Test key insights extraction from topic summaries."""
+        # Mock JSON response
+        mock_response = Mock()
+        mock_response.content = '''
+        {
+            "key_insights": {
+                "main_themes": ["AI safety", "Technical challenges"],
+                "areas_of_consensus": ["Need for better alignment"],
+                "points_of_disagreement": ["Timeline for implementation"],
+                "action_items": ["Research alignment techniques"],
+                "future_considerations": ["Long-term safety measures"]
+            }
+        }
+        '''
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        topic_summaries = [
+            "AI safety discussion revealed consensus on alignment importance",
+            "Technical challenges discussion showed disagreement on timelines"
+        ]
+        
+        session_context = {
+            "duration": "2 hours",
+            "participants": 5
+        }
+        
+        insights = self.moderator.extract_key_insights(topic_summaries, session_context)
+        
+        assert insights["main_themes"] == ["AI safety", "Technical challenges"]
+        assert insights["areas_of_consensus"] == ["Need for better alignment"]
+        assert len(insights["action_items"]) == 1
+    
+    def test_extract_key_insights_empty_summaries(self):
+        """Test key insights extraction with empty summaries list."""
+        insights = self.moderator.extract_key_insights([])
+        
+        # Should return empty structure
+        assert insights["main_themes"] == []
+        assert insights["areas_of_consensus"] == []
+        assert insights["points_of_disagreement"] == []
+        assert insights["action_items"] == []
+        assert insights["future_considerations"] == []
+    
+    def test_extract_key_insights_error_handling(self):
+        """Test key insights extraction error handling."""
+        # Mock LLM error
+        self.mock_llm.invoke.side_effect = Exception("LLM error")
+        
+        insights = self.moderator.extract_key_insights(["Test summary"])
+        
+        # Should return empty structure on error
+        assert insights["main_themes"] == []
+        assert insights["areas_of_consensus"] == []
+    
+    def test_generate_progressive_summary_initial(self):
+        """Test progressive summary generation (initial)."""
+        mock_response = Mock()
+        mock_response.content = "Initial summary of the discussion."
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        messages = [
+            {
+                "speaker_id": "agent1",
+                "content": "First message about AI safety"
+            }
+        ]
+        
+        summary = self.moderator.generate_progressive_summary(messages, topic="AI Safety")
+        
+        assert "Initial summary" in summary
+    
+    def test_generate_progressive_summary_refine(self):
+        """Test progressive summary refinement."""
+        mock_response = Mock()
+        mock_response.content = "Updated summary incorporating new insights."
+        self.mock_llm.invoke.return_value = mock_response
+        self.mock_llm.bind.return_value = self.mock_llm
+        
+        existing_summary = "Previous summary of the discussion"
+        new_messages = [
+            {
+                "speaker_id": "agent2",
+                "content": "New insights about technical challenges"
+            }
+        ]
+        
+        summary = self.moderator.generate_progressive_summary(
+            new_messages, 
+            existing_summary=existing_summary,
+            topic="AI Safety"
+        )
+        
+        assert "Updated summary" in summary
+    
+    def test_generate_progressive_summary_no_messages(self):
+        """Test progressive summary with no new messages."""
+        existing_summary = "Existing summary"
+        
+        summary = self.moderator.generate_progressive_summary([], existing_summary)
+        
+        assert summary == existing_summary
+
+
+class TestModeratorPolling:
+    """Test Story 3.6: Topic Conclusion Polling functionality."""
+    
+    def setup_method(self):
+        """Set up test method."""
+        self.mock_llm = Mock()
+        self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
+        self.mock_llm.model_name = "gemini-1.5-pro"
+        
+        self.moderator = ModeratorAgent(
+            agent_id="polling-moderator",
+            llm=self.mock_llm,
+            mode="facilitation",
+            enable_error_handling=False
+        )
+    
+    def test_initiate_conclusion_poll(self):
+        """Test initiating a conclusion poll."""
+        eligible_voters = ["agent1", "agent2", "agent3"]
+        
+        result = self.moderator.initiate_conclusion_poll("AI Ethics", eligible_voters, 10)
+        
+        assert result["status"] == "initiated"
+        assert "poll_id" in result
+        assert "AI Ethics" in result["announcement"]
+        assert "Duration:** 10 minutes" in result["announcement"]
+        assert "agent1, agent2, agent3" in result["announcement"]
+        
+        # Check poll data stored in context
+        poll_data = result["poll_data"]
+        assert poll_data["topic"] == "AI Ethics"
+        assert poll_data["eligible_voters"] == eligible_voters
+        assert poll_data["status"] == "active"
+        assert poll_data["options"] == ["continue", "conclude"]
+    
+    def test_cast_vote_valid(self):
+        """Test casting a valid vote."""
+        # Set up poll
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1", "agent2"])
+        poll_id = poll_result["poll_id"]
+        
+        # Cast vote
+        result = self.moderator.cast_vote(poll_id, "agent1", "conclude", "We've covered the main points")
+        
+        assert result["success"] is True
+        assert "Vote Recorded" in result["message"]
+        assert "agent1" in result["message"]
+        assert "conclude" in result["message"]
+        assert "We've covered the main points" in result["message"]
+        assert result["votes_received"] == 1
+        assert result["votes_required"] == 2
+        assert result["poll_complete"] is False
+    
+    def test_cast_vote_completes_poll(self):
+        """Test that poll completes when all votes are cast."""
+        # Set up poll with 2 voters
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1", "agent2"])
+        poll_id = poll_result["poll_id"]
+        
+        # Cast first vote
+        self.moderator.cast_vote(poll_id, "agent1", "conclude", "Ready to conclude")
+        
+        # Cast second vote (should complete poll)
+        result = self.moderator.cast_vote(poll_id, "agent2", "continue", "Need more discussion")
+        
+        assert result["success"] is True
+        assert result["poll_complete"] is True
+        assert "All votes have been received" in result["message"]
+    
+    def test_cast_vote_poll_not_found(self):
+        """Test casting vote in non-existent poll."""
+        result = self.moderator.cast_vote("nonexistent", "agent1", "conclude")
+        
+        assert result["success"] is False
+        assert result["error"] == "Poll nonexistent not found"
+    
+    def test_cast_vote_voter_not_eligible(self):
+        """Test casting vote by ineligible voter."""
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1"])
+        poll_id = poll_result["poll_id"]
+        
+        result = self.moderator.cast_vote(poll_id, "agent2", "conclude")
+        
+        assert result["success"] is False
+        assert result["error"] == "voter_not_eligible"
+        assert "agent2 is not eligible" in result["message"]
+    
+    def test_cast_vote_already_voted(self):
+        """Test casting vote when already voted."""
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1"])
+        poll_id = poll_result["poll_id"]
+        
+        # Cast first vote
+        self.moderator.cast_vote(poll_id, "agent1", "conclude")
+        
+        # Try to vote again
+        result = self.moderator.cast_vote(poll_id, "agent1", "continue")
+        
+        assert result["success"] is False
+        assert result["error"] == "already_voted"
+        assert "agent1 has already voted" in result["message"]
+    
+    def test_cast_vote_invalid_choice(self):
+        """Test casting vote with invalid choice."""
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1"])
+        poll_id = poll_result["poll_id"]
+        
+        result = self.moderator.cast_vote(poll_id, "agent1", "invalid_choice")
+        
+        assert result["success"] is False
+        assert result["error"] == "invalid_choice"
+        assert "Invalid vote choice 'invalid_choice'" in result["message"]
+    
+    def test_tally_poll_results_conclude_wins(self):
+        """Test tallying poll results where conclude wins."""
+        # Set up poll
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1", "agent2", "agent3"])
+        poll_id = poll_result["poll_id"]
+        
+        # Cast votes
+        self.moderator.cast_vote(poll_id, "agent1", "conclude", "We've covered enough")
+        self.moderator.cast_vote(poll_id, "agent2", "conclude", "Time to move on")
+        self.moderator.cast_vote(poll_id, "agent3", "continue", "Need more time")
+        
+        # Tally results
+        results = self.moderator.tally_poll_results(poll_id)
+        
+        assert results["success"] is True
+        assert results["decision"] == "conclude"
+        assert results["vote_counts"]["conclude"] == 2
+        assert results["vote_counts"]["continue"] == 1
+        assert results["total_votes"] == 3
+        assert results["margin"] == 1
+        assert pytest.approx(results["winning_percentage"], rel=1e-2) == 66.67
+        
+        # Check message content
+        assert "Decision:** CONCLUDE" in results["message"]
+        assert "**Conclude:** 2 votes (66.7%)" in results["message"]
+        assert "**Continue:** 1 votes (33.3%)" in results["message"]
+    
+    def test_tally_poll_results_continue_wins(self):
+        """Test tallying poll results where continue wins."""
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1", "agent2"])
+        poll_id = poll_result["poll_id"]
+        
+        self.moderator.cast_vote(poll_id, "agent1", "continue", "More to discuss")
+        self.moderator.cast_vote(poll_id, "agent2", "continue", "Important points missed")
+        
+        results = self.moderator.tally_poll_results(poll_id)
+        
+        assert results["decision"] == "continue"
+        assert results["vote_counts"]["continue"] == 2
+        assert results["vote_counts"]["conclude"] == 0
+        assert results["margin"] == 2
+    
+    def test_tally_poll_results_tie(self):
+        """Test tallying poll results with tie."""
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1", "agent2"])
+        poll_id = poll_result["poll_id"]
+        
+        self.moderator.cast_vote(poll_id, "agent1", "conclude", "Ready to conclude")
+        self.moderator.cast_vote(poll_id, "agent2", "continue", "Need more time")
+        
+        results = self.moderator.tally_poll_results(poll_id)
+        
+        assert results["decision"] == "continue"  # Tie defaults to continue
+        assert results["margin"] == 0
+        assert "tied vote" in results["message"]
+    
+    def test_tally_poll_results_no_votes(self):
+        """Test tallying poll with no votes."""
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1"])
+        poll_id = poll_result["poll_id"]
+        
+        results = self.moderator.tally_poll_results(poll_id)
+        
+        assert results["success"] is False
+        assert results["error"] == "no_votes"
+    
+    def test_handle_minority_considerations(self):
+        """Test handling minority considerations after poll."""
+        # Create poll results where conclude wins
+        poll_results = {
+            "success": True,
+            "decision": "conclude",
+            "vote_counts": {"conclude": 2, "continue": 1},
+            "margin": 1,
+            "poll_data": {
+                "votes_cast": {
+                    "agent1": {"choice": "conclude", "reasoning": "Ready to move on"},
+                    "agent2": {"choice": "conclude", "reasoning": "Covered enough"},
+                    "agent3": {"choice": "continue", "reasoning": "Need more time"}
+                }
+            }
+        }
+        
+        minority_message = self.moderator.handle_minority_considerations(poll_results, "AI Ethics")
+        
+        assert "Minority Final Considerations" in minority_message
+        assert "agent3" in minority_message  # The minority voter
+        assert "Poll Decision:** CONCLUDE" in minority_message
+        assert "3 minutes to provide any final considerations" in minority_message
+    
+    def test_handle_minority_considerations_no_minority(self):
+        """Test minority considerations when there's no minority."""
+        poll_results = {
+            "success": True,
+            "decision": "conclude",
+            "vote_counts": {"conclude": 3, "continue": 0},
+            "margin": 3
+        }
+        
+        minority_message = self.moderator.handle_minority_considerations(poll_results, "AI Ethics")
+        
+        assert minority_message == ""  # No minority message
+    
+    def test_handle_minority_considerations_tie(self):
+        """Test minority considerations with tied vote."""
+        poll_results = {
+            "success": True,
+            "decision": "continue",
+            "vote_counts": {"conclude": 1, "continue": 1},
+            "margin": 0
+        }
+        
+        minority_message = self.moderator.handle_minority_considerations(poll_results, "AI Ethics")
+        
+        assert minority_message == ""  # No minority when tied
+    
+    def test_check_poll_status_active(self):
+        """Test checking status of active poll."""
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1", "agent2"])
+        poll_id = poll_result["poll_id"]
+        
+        status = self.moderator.check_poll_status(poll_id)
+        
+        assert status["exists"] is True
+        assert status["poll_id"] == poll_id
+        assert status["topic"] == "AI Ethics"
+        assert status["status"] == "active"
+        assert status["votes_cast"] == 0
+        assert status["votes_required"] == 2
+        assert status["remaining_voters"] == ["agent1", "agent2"]
+        assert status["time_remaining_minutes"] > 4.5  # Should be close to 5 minutes
+    
+    def test_check_poll_status_ready_for_tally(self):
+        """Test poll status when ready for tally."""
+        poll_result = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1"])
+        poll_id = poll_result["poll_id"]
+        
+        # Cast the only required vote
+        self.moderator.cast_vote(poll_id, "agent1", "conclude")
+        
+        status = self.moderator.check_poll_status(poll_id)
+        
+        assert status["status"] == "ready_for_tally"
+        assert status["votes_cast"] == 1
+        assert status["remaining_voters"] == []
+    
+    def test_check_poll_status_nonexistent(self):
+        """Test checking status of non-existent poll."""
+        status = self.moderator.check_poll_status("nonexistent")
+        
+        assert status["exists"] is False
+        assert "not found" in status["error"]
+    
+    def test_get_active_polls(self):
+        """Test getting list of active polls."""
+        # Create multiple polls
+        poll1 = self.moderator.initiate_conclusion_poll("AI Ethics", ["agent1"])
+        poll2 = self.moderator.initiate_conclusion_poll("Climate Change", ["agent1", "agent2"])
+        
+        active_polls = self.moderator.get_active_polls()
+        
+        assert len(active_polls) == 2
+        
+        # Check poll details
+        poll_topics = [poll["topic"] for poll in active_polls]
+        assert "AI Ethics" in poll_topics
+        assert "Climate Change" in poll_topics
+        
+        # Check that all are active
+        for poll in active_polls:
+            assert poll["status"] in ["active", "ready_for_tally"]
+            assert "votes_progress" in poll
+            assert "time_remaining" in poll
+    
+    def test_get_active_polls_empty(self):
+        """Test getting active polls when none exist."""
+        active_polls = self.moderator.get_active_polls()
+        
+        assert active_polls == []

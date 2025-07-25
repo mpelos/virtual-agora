@@ -5,6 +5,7 @@ This guide will help you set up the environment variables required to run Virtua
 ## Quick Start
 
 1. Copy the example environment file:
+
    ```bash
    cp .env.example .env
    ```
@@ -23,12 +24,12 @@ Virtual Agora uses environment variables to securely manage API keys and applica
 
 You only need API keys for the providers you plan to use. Each provider requires its own API key:
 
-| Provider | Environment Variable | Required Format |
-|----------|---------------------|-----------------|
-| Google Gemini | `GOOGLE_API_KEY` | Starts with `AIza` (39 chars total) |
-| OpenAI | `OPENAI_API_KEY` | Starts with `sk-` (51 chars total) |
-| Anthropic | `ANTHROPIC_API_KEY` | Starts with `sk-ant-` |
-| Grok | `GROK_API_KEY` | Provider-specific format |
+| Provider      | Environment Variable | Required Format                     |
+| ------------- | -------------------- | ----------------------------------- |
+| Google Gemini | `GOOGLE_API_KEY`     | Starts with `AIza` (39 chars total) |
+| OpenAI        | `OPENAI_API_KEY`     | Starts with `sk-` (51 chars total)  |
+| Anthropic     | `ANTHROPIC_API_KEY`  | Starts with `sk-ant-`               |
+| Grok          | `GROK_API_KEY`       | Provider-specific format            |
 
 ## Obtaining API Keys
 
@@ -77,6 +78,7 @@ You only need API keys for the providers you plan to use. Each provider requires
 ### Grok
 
 Grok API access is currently limited. Check the official Grok documentation for availability and instructions. Once you have a key:
+
 ```
 GROK_API_KEY=your-grok-api-key-here
 ```
@@ -177,6 +179,7 @@ python -c "import os; print('Google Key:', 'Set' if os.getenv('GOOGLE_API_KEY') 
 ### Missing API Keys
 
 If you see an error like:
+
 ```
 Error: Missing API keys for the following providers:
 
@@ -191,6 +194,7 @@ Follow the provided instructions to obtain the missing keys.
 ### Invalid Key Format
 
 If you see a warning like:
+
 ```
 Warning: API key for Google may have incorrect format
 ```
@@ -200,6 +204,7 @@ Double-check that you've copied the complete key without any extra spaces or cha
 ### Permission Denied
 
 If you get permission errors:
+
 ```bash
 # Fix file ownership
 chown $USER:$USER .env
@@ -213,12 +218,14 @@ chmod 600 .env
 If environment variables aren't being loaded:
 
 1. Check file location:
+
    ```bash
    # Should be in project root
    ls -la .env
    ```
 
 2. Verify file format:
+
    ```bash
    # Should show KEY=value pairs
    cat .env | grep -v '^#' | grep -v '^$'
@@ -232,6 +239,7 @@ If environment variables aren't being loaded:
 ### API Rate Limits
 
 If you encounter rate limit errors:
+
 - Check your usage on provider dashboards
 - Consider upgrading your plan
 - Implement request throttling
@@ -242,6 +250,7 @@ If you encounter rate limit errors:
 For different environments (development, staging, production):
 
 1. Create environment-specific files:
+
    ```bash
    .env.development
    .env.staging
@@ -249,6 +258,7 @@ For different environments (development, staging, production):
    ```
 
 2. Load the appropriate file:
+
    ```bash
    # Development
    python -m virtual_agora --env .env.development

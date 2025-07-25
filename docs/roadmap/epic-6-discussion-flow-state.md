@@ -1,9 +1,11 @@
 # Epic 6: Discussion Flow & State Management
 
 ## Epic Overview
+
 Implement the core discussion flow using LangGraph, managing the complex state transitions and multi-phase workflow of the Virtual Agora application.
 
 ## Technical Context
+
 - **Framework:** LangGraph for state machine implementation
 - **Flow:** 5 phases with cycles and conditional transitions
 - **State Complexity:** Multi-level state with discussion history
@@ -14,11 +16,13 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ## User Stories
 
 ### Story 6.1: LangGraph Application Architecture
-**As a** developer  
-**I want** to implement the application using LangGraph  
+
+**As a** developer
+**I want** to implement the application using LangGraph
 **So that** complex workflows are manageable and maintainable
 
 **Acceptance Criteria:**
+
 - Define LangGraph state schema
 - Implement node functions for each phase
 - Configure conditional edges based on state
@@ -28,6 +32,7 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 - Handle graph execution errors
 
 **Technical Notes:**
+
 - Follow LangGraph best practices
 - Consider implementing custom graph nodes
 - Plan for graph testing strategies
@@ -35,11 +40,13 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ---
 
 ### Story 6.2: Phase Flow Implementation
-**As a** system  
-**I want** to implement all 5 phases of discussion  
+
+**As a** system
+**I want** to implement all 5 phases of discussion
 **So that** the complete workflow functions correctly
 
 **Acceptance Criteria:**
+
 - Phase 0: Initialization and setup
 - Phase 1: Agenda setting with voting
 - Phase 2-3: Discussion rounds with conclusion polling
@@ -49,6 +56,7 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 - State consistency across phases
 
 **Technical Notes:**
+
 - Implement phases as graph nodes
 - Use conditional edges for phase transitions
 - Consider phase timeout handling
@@ -56,11 +64,13 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ---
 
 ### Story 6.3: Discussion Round Orchestration
-**As a** system  
-**I want** to orchestrate discussion rounds  
+
+**As a** system
+**I want** to orchestrate discussion rounds
 **So that** agents participate in order
 
 **Acceptance Criteria:**
+
 - Implement rotating turn order algorithm
 - Manage round counter
 - Coordinate agent responses
@@ -70,6 +80,7 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 - Track round metrics
 
 **Technical Notes:**
+
 - Implement efficient turn rotation
 - Consider round parallelization options
 - Plan for round interruption handling
@@ -77,11 +88,13 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ---
 
 ### Story 6.4: State Schema and Management
-**As a** developer  
-**I want** comprehensive state management  
+
+**As a** developer
+**I want** comprehensive state management
 **So that** all application data is tracked properly
 
 **Acceptance Criteria:**
+
 - Define complete state schema:
   - Current phase
   - Agenda (approved and remaining)
@@ -95,6 +108,7 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 - Support state inspection
 
 **Technical Notes:**
+
 - Use TypedDict for state definition
 - Implement state validation middleware
 - Consider state compression for large discussions
@@ -102,11 +116,13 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ---
 
 ### Story 6.5: Conditional Logic Implementation
-**As a** system  
-**I want** to implement conditional transitions  
+
+**As a** system
+**I want** to implement conditional transitions
 **So that** the flow adapts based on decisions
 
 **Acceptance Criteria:**
+
 - Implement conditional edges for:
   - Round number checks (>2 for polling)
   - Vote tallying (majority + 1)
@@ -117,6 +133,7 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 - Handle edge cases in conditions
 
 **Technical Notes:**
+
 - Use LangGraph conditional edges
 - Implement condition functions clearly
 - Test all conditional paths
@@ -124,11 +141,13 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ---
 
 ### Story 6.6: Context Window Management
-**As a** system  
-**I want** to manage context effectively  
+
+**As a** system
+**I want** to manage context effectively
 **So that** discussions stay within token limits
 
 **Acceptance Criteria:**
+
 - Track token usage across rounds
 - Implement context summarization strategy
 - Prioritize recent and relevant context
@@ -138,6 +157,7 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 - Implement context pruning algorithms
 
 **Technical Notes:**
+
 - Calculate tokens accurately per provider
 - Implement sliding window approach
 - Consider implementing context caching
@@ -145,11 +165,13 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ---
 
 ### Story 6.7: Cycle Detection and Prevention
-**As a** system  
-**I want** to prevent infinite cycles  
+
+**As a** system
+**I want** to prevent infinite cycles
 **So that** discussions eventually conclude
 
 **Acceptance Criteria:**
+
 - Detect potential infinite loops:
   - Agenda modification cycles
   - Failed vote cycles
@@ -160,6 +182,7 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 - Log cycle detection events
 
 **Technical Notes:**
+
 - Implement cycle detection algorithms
 - Set reasonable iteration limits
 - Design graceful termination
@@ -167,11 +190,13 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ---
 
 ### Story 6.8: State Persistence and Recovery
-**As a** system  
-**I want** to handle state persistence  
+
+**As a** system
+**I want** to handle state persistence
 **So that** sessions can be analyzed or resumed
 
 **Acceptance Criteria:**
+
 - Serialize state at checkpoints
 - Implement state recovery mechanism
 - Support session pause/resume (future)
@@ -181,6 +206,7 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 - Compress large state objects
 
 **Technical Notes:**
+
 - Choose appropriate serialization format
 - Implement state migration strategy
 - Consider using state snapshots
@@ -188,11 +214,13 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ---
 
 ### Story 6.9: Flow Monitoring and Debugging
-**As a** developer  
-**I want** to monitor flow execution  
+
+**As a** developer
+**I want** to monitor flow execution
 **So that** issues can be diagnosed quickly
 
 **Acceptance Criteria:**
+
 - Log all state transitions
 - Track execution time per node
 - Monitor token usage per phase
@@ -202,6 +230,7 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 - Support flow replay for testing
 
 **Technical Notes:**
+
 - Use LangGraph debugging features
 - Implement custom monitoring hooks
 - Consider implementing flow visualization
@@ -209,12 +238,14 @@ Implement the core discussion flow using LangGraph, managing the complex state t
 ---
 
 ## Dependencies
+
 - Epic 1: Core Infrastructure (for state foundation)
 - Epic 3: Moderator Agent (for phase orchestration)
 - Epic 4: Discussion Agent Framework (for agent coordination)
 - Epic 5: Agenda Management (for agenda state)
 
 ## Definition of Done
+
 - Complete flow executes end-to-end successfully
 - All phase transitions work correctly
 - Conditional logic handles all cases
