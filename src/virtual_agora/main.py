@@ -17,6 +17,9 @@ from rich.traceback import install as install_rich_traceback
 from virtual_agora import __version__
 from virtual_agora.config.loader import ConfigLoader
 from virtual_agora.config.validators import ConfigValidator
+from virtual_agora.config.env_schema import EnvironmentConfig
+from virtual_agora.utils.env_manager import EnvironmentManager
+from virtual_agora.utils.security import create_provider_help_message
 from virtual_agora.utils.logging import setup_logging, get_logger
 from virtual_agora.utils.exceptions import VirtualAgoraError, ConfigurationError
 
@@ -112,25 +115,55 @@ async def run_application(args: argparse.Namespace) -> int:
                 "Please create a .env file with your API keys or specify a different path with --env"
             )
         
-        # Load environment variables
-        from dotenv import load_dotenv
-        if args.env.exists():
-            load_dotenv(args.env)
-            logger.info(f"Loaded environment variables from: {args.env}")
+        # Load and validate environment variables
+        env_manager = EnvironmentManager(env_file=args.env if args.env.exists() else None)
+        env_manager.load()
+        
+        # Get environment status
+        env_status = env_manager.get_status_report()
+        logger.debug(f"Environment status: {env_status}")
         
         # Load and validate configuration
         config_loader = ConfigLoader(args.config)
         config = config_loader.load()
         
-        # Check for missing API keys
-        missing_keys = config_loader.get_missing_api_keys()
-        if missing_keys:
+        # Determine required providers from config
+        required_providers = {config.moderator.provider.value}
+        for agent in config.agents:
+            required_providers.add(agent.provider.value)
+            
+        # Validate API keys
+        missing_providers = env_manager.get_missing_providers(required_providers)
+        if missing_providers:
+            console.print("[red]Error:[/red] Missing API keys for the following providers:\n")
+            
+            for provider in missing_providers:
+                console.print(f"[yellow]Provider:[/yellow] {provider}")
+                console.print(create_provider_help_message(provider))
+                console.print()
+                
             console.print(
-                "[red]Error:[/red] Missing API keys for providers: " +
-                ", ".join(missing_keys) + "\n"
-                "Please set the required environment variables or add them to your .env file."
+                "[dim]After adding the keys to your .env file, run the application again.[/dim]"
             )
             return 1
+            
+        # Try to load environment config with Pydantic for additional validation
+        try:
+            env_config = EnvironmentConfig()
+            env_config.validate_required_keys(required_providers)
+            
+            # Use environment config for application settings
+            if env_config.log_level != args.log_level:
+                logger.info(f"Using log level from environment: {env_config.log_level}")
+                setup_logging(level=env_config.log_level)
+                
+        except ConfigurationError as e:
+            # Already handled above, this shouldn't happen
+            logger.error(f"Environment validation error: {e}")
+            return 1
+        except Exception as e:
+            logger.warning(f"Could not load environment config with Pydantic: {e}")
+            # Continue with basic environment manager
         
         # Validate configuration
         validator = ConfigValidator(config)

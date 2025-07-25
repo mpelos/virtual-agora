@@ -177,6 +177,9 @@ class ConfigLoader:
         
         Returns:
             List of provider names with missing API keys.
+            
+        .. deprecated:: 0.2.0
+            Use EnvironmentManager.get_missing_providers() instead.
         """
         key_status = self.validate_api_keys()
         return [provider for provider, available in key_status.items() if not available]
