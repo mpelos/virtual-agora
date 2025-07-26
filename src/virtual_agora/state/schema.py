@@ -169,6 +169,18 @@ class VirtualAgoraState(TypedDict):
     pending_agenda_modifications: NotRequired[List[str]]  # Proposed changes between topics
     agenda_modification_votes: NotRequired[Dict[str, str]]  # agent_id -> vote/suggestion
     
+    # Epic 5: Agenda Management System state
+    agenda_state_id: NotRequired[str]  # ID of current agenda state
+    agenda_version: NotRequired[int]  # Version number of current agenda
+    proposal_collection_status: NotRequired[str]  # Status of proposal collection
+    proposal_timeouts: NotRequired[List[str]]  # Agents that timed out during proposals
+    vote_collection_status: NotRequired[str]  # Status of vote collection
+    agenda_synthesis_attempts: NotRequired[int]  # Number of synthesis attempts
+    agenda_modifications_count: NotRequired[int]  # Count of modifications made
+    topic_transition_history: NotRequired[Annotated[List[Dict[str, Any]], list.append]]  # Transition records
+    agenda_analytics_data: NotRequired[Dict[str, Any]]  # Analytics summary
+    edge_cases_encountered: NotRequired[Annotated[List[Dict[str, Any]], list.append]]  # Edge case records
+    
     # Runtime statistics
     total_messages: int
     messages_by_phase: Dict[int, int]
