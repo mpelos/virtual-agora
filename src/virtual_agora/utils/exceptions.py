@@ -123,6 +123,33 @@ class WorkflowError(VirtualAgoraError):
         self.state = state
 
 
+class CoordinationError(VirtualAgoraError):
+    """Raised when there's an error in multi-agent coordination.
+    
+    This includes turn management errors, agent communication failures,
+    or coordination protocol violations.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        agent_id: Optional[str] = None,
+        coordination_phase: Optional[str] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        """Initialize coordination error.
+        
+        Args:
+            message: Error message.
+            agent_id: Agent ID involved in the error.
+            coordination_phase: Current coordination phase.
+            details: Additional error details.
+        """
+        super().__init__(message, details)
+        self.agent_id = agent_id
+        self.coordination_phase = coordination_phase
+
+
 class ValidationError(VirtualAgoraError):
     """Raised when validation fails.
     
