@@ -101,7 +101,7 @@ class EnvironmentManager:
                     f"Warning: {self.env_file} is world-readable. "
                     "Consider restricting permissions with: chmod 600 "
                     + str(self.env_file),
-                    SecurityWarning,
+                    UserWarning,
                 )
 
             # Check if .env is in .gitignore
@@ -115,7 +115,7 @@ class EnvironmentManager:
                     warnings.warn(
                         f"Warning: {self.env_file.name} may not be in .gitignore. "
                         "Ensure it's excluded from version control.",
-                        SecurityWarning,
+                        UserWarning,
                     )
         except (ImportError, OSError) as e:
             logger.debug(f"Could not check file permissions: {e}")

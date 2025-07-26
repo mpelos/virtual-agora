@@ -377,6 +377,9 @@ class LLMAgent:
             else:
                 response_text = str(response)
 
+            if not isinstance(response_text, str):
+                response_text = str(response_text)
+
             # Update message count with thread safety
             with self._count_lock:
                 self.message_count += 1
@@ -471,6 +474,9 @@ class LLMAgent:
                 response_text = response.content
             else:
                 response_text = str(response)
+
+            if not isinstance(response_text, str):
+                response_text = str(response_text)
 
             # Update message count with thread safety
             with self._count_lock:

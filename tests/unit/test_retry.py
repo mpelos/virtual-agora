@@ -305,7 +305,7 @@ class TestCircuitBreaker:
         assert breaker.failure_count == 3
 
         # Calls should be rejected
-        with pytest.raises(VirtualAgoraError, match="Circuit breaker is open"):
+        with pytest.raises(VirtualAgoraError, match=r"Circuit breaker .* is open"):
             breaker.call(lambda: "success")
 
     def test_circuit_breaker_recovery(self):
@@ -352,7 +352,7 @@ class TestCircuitBreaker:
         assert breaker.state == CircuitState.OPEN
 
         # Should reject calls
-        with pytest.raises(VirtualAgoraError, match="Circuit breaker is open"):
+        with pytest.raises(VirtualAgoraError, match=r"Circuit breaker .* is open"):
             await breaker.call_async(async_failing)
 
         # Wait and recover
@@ -547,7 +547,7 @@ class TestRetryIntegration:
                 call_flaky_service()
 
         # Circuit should be open, preventing further calls
-        with pytest.raises(VirtualAgoraError, match="Circuit breaker is open"):
+        with pytest.raises(VirtualAgoraError, match=r"Circuit breaker .* is open"):
             call_flaky_service()
 
     def test_different_operation_isolation(self):

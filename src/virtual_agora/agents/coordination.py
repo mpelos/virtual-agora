@@ -237,18 +237,18 @@ class VoteCollector:
         Returns:
             True if vote was accepted, False otherwise
         """
-        if vote.voter_id not in self.agent_ids:
+        if vote["voter_id"] not in self.agent_ids:
             logger.warning(f"Vote from unknown agent {vote.voter_id}")
             return False
 
         if self.vote_deadline and datetime.now() > self.vote_deadline:
-            logger.warning(f"Vote from {vote.voter_id} received after deadline")
+            logger.warning(f"Vote from {vote['voter_id']} received after deadline")
             return False
 
         with self._lock:
-            self.votes[vote.voter_id] = vote
+            self.votes[vote["voter_id"]] = vote
 
-        logger.debug(f"Received vote from {vote.voter_id}")
+        logger.debug(f"Received vote from {vote['voter_id']}")
         return True
 
     def is_voting_complete(self) -> bool:
@@ -295,11 +295,11 @@ class VoteCollector:
 
         with self._lock:
             for vote in self.votes.values():
-                if vote.choice.lower().startswith("yes"):
+                if vote["choice"].lower().startswith("yes"):
                     yes_votes += 1
-                elif vote.choice.lower().startswith("no"):
+                elif vote["choice"].lower().startswith("no"):
                     no_votes += 1
-                    minority_voters.append(vote.voter_id)
+                    minority_voters.append(vote["voter_id"])
 
         return yes_votes, no_votes, minority_voters
 

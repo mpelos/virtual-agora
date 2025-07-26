@@ -239,6 +239,12 @@ class TestAgentFactory:
 class TestAgentFactoryErrorHandling:
     """Test error handling in AgentFactory."""
 
+    def setup_method(self):
+        """Set up test method."""
+        self.mock_llm = Mock(spec=BaseChatModel)
+        self.mock_llm.__class__.__name__ = "ChatOpenAI"
+        self.mock_llm.model_name = "gpt-4"
+
     @patch("virtual_agora.agents.agent_factory.ProviderFactory")
     def test_create_agents_provider_error(self, mock_provider_class, mock_config):
         """Test handling provider creation errors."""
@@ -269,13 +275,12 @@ class TestAgentFactoryErrorHandling:
         mock_provider_instance.create_provider.side_effect = side_effect
 
         factory = AgentFactory(mock_config)
-        agents = factory.create_all_agents()
 
-        # Should create only GPT agents, not Claude
-        assert len(agents) == 2
-        assert "gpt-4-1" in agents
-        assert "gpt-4-2" in agents
-        assert "claude-3-opus-1" not in agents
+        with pytest.raises(ConfigurationError) as exc_info:
+            factory.create_all_agents()
+
+        assert "Agent creation failed" in str(exc_info.value)
+        assert "claude-3-opus" in str(exc_info.value)
 
     @patch("virtual_agora.agents.agent_factory.ProviderFactory")
     def test_create_moderator_error(self, mock_provider_class, mock_config):
@@ -296,20 +301,24 @@ class TestAgentFactoryErrorHandling:
 
     def test_no_agents_created_error(self, mock_config):
         """Test error when no agents are created."""
+        from pydantic_core import ValidationError
+
         # Create config with no agents
-        empty_config = Config(
-            agents=[],
-            moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
-        )
-
-        factory = AgentFactory(empty_config)
-        agents = factory.create_all_agents()
-
-        assert len(agents) == 0
+        with pytest.raises(ValidationError):
+            Config(
+                agents=[],
+                moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
+            )
 
 
 class TestAgentFactoryAdvancedFeatures:
     """Test advanced AgentFactory features."""
+
+    def setup_method(self):
+        """Set up test method."""
+        self.mock_llm = Mock(spec=BaseChatModel)
+        self.mock_llm.__class__.__name__ = "ChatOpenAI"
+        self.mock_llm.model_name = "gpt-4"
 
     @patch("virtual_agora.agents.agent_factory.ProviderFactory")
     def test_create_agent_pool(self, mock_provider_class, mock_config):
@@ -429,27 +438,23 @@ class TestAgentFactoryUtilityFunctions:
 
     def test_validate_agent_requirements_too_few(self):
         """Test validation with too few agents."""
-        config = Config(
-            agents=[AgentConfig(provider=Provider.OPENAI, model="gpt-4", count=1)],
-            moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
-        )
+        from pydantic_core import ValidationError
 
-        results = validate_agent_requirements(config)
-
-        assert results["valid"] is False
-        assert "At least 2 agents required" in results["issues"]
+        with pytest.raises(ValidationError):
+            Config(
+                agents=[AgentConfig(provider=Provider.OPENAI, model="gpt-4", count=1)],
+                moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
+            )
 
     def test_validate_agent_requirements_too_many(self):
         """Test validation with too many agents."""
-        config = Config(
-            agents=[AgentConfig(provider=Provider.OPENAI, model="gpt-4", count=25)],
-            moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
-        )
+        from pydantic_core import ValidationError
 
-        results = validate_agent_requirements(config)
-
-        assert results["valid"] is False
-        assert "Maximum 20 agents allowed" in results["issues"]
+        with pytest.raises(ValidationError):
+            Config(
+                agents=[AgentConfig(provider=Provider.OPENAI, model="gpt-4", count=25)],
+                moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
+            )
 
     def test_validate_agent_requirements_diversity_warnings(self):
         """Test validation warnings for lack of diversity."""
@@ -462,8 +467,11 @@ class TestAgentFactoryUtilityFunctions:
         results = validate_agent_requirements(config)
 
         assert results["valid"] is True
-        assert "diverse models" in results["warnings"]
-        assert "multiple providers" in results["warnings"]
+        assert (
+            "Consider using diverse models for richer discussions"
+            in results["warnings"]
+        )
+        assert "Consider using multiple providers for resilience" in results["warnings"]
 
 
 class TestAgentFactoryIntegration:

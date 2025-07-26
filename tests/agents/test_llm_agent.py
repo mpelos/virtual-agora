@@ -6,7 +6,12 @@ from datetime import datetime
 import uuid
 import asyncio
 
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import (
+    HumanMessage,
+    AIMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import StreamWriter
 

@@ -166,6 +166,14 @@ class FlowControl(TypedDict):
     max_iterations_per_phase: int
 
 
+class Agenda(TypedDict):
+    """Represents the discussion agenda."""
+
+    topics: List[str]
+    current_topic_index: int
+    completed_topics: List[str]
+
+
 class VirtualAgoraState(TypedDict):
     """Complete state for a Virtual Agora session.
 
@@ -210,6 +218,7 @@ class VirtualAgoraState(TypedDict):
         Dict[str, TopicInfo], update_topic_info
     ]  # Detailed info about each topic
     completed_topics: Annotated[List[str], list.append]
+    agenda: NotRequired[Agenda]  # Added Agenda TypedDict
 
     # Agent management
     agents: Annotated[Dict[str, AgentInfo], merge_agent_info]  # agent_id -> info

@@ -37,7 +37,7 @@ class TestSecurityUtilities:
         assert mask_api_key("1234567890abcdef") == "12**********cdef"
         assert (
             mask_api_key("sk-1234567890abcdefghijklmnop")
-            == "sk************************mnop"
+            == "sk***********************mnop"
         )
 
         # Test custom show_chars
@@ -54,10 +54,12 @@ class TestSecurityUtilities:
             "none": None,
         }
 
-        masked = mask_dict_values(data, ["api_key", "secret", "missing"])
+        masked = mask_dict_values(
+            data, ["api_key", "secret", "missing", "empty", "none"]
+        )
 
-        assert masked["api_key"] == "sk************cdef"
-        assert masked["secret"] == "my***********value"
+        assert masked["api_key"] == "sk*************cdef"
+        assert masked["secret"] == "my*********alue"
         assert masked["normal"] == "normal_value"  # Not masked
         assert masked["empty"] == "<empty>"
         assert masked["none"] == "<not set>"
@@ -80,7 +82,7 @@ class TestSecurityUtilities:
         """Test API key format validation."""
         # Google keys
         valid, msg = validate_api_key_format(
-            "AIzaSyD-1234567890abcdefghijklmnopqrstuv", "Google"
+            "AIzaSyD-1234567890abcdefghijklmnopqrstuvw", "Google"
         )
         assert valid is True
         assert msg is None

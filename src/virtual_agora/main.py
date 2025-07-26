@@ -33,6 +33,13 @@ from virtual_agora.utils.error_reporter import ErrorReporter
 from virtual_agora.utils.shutdown import shutdown_handler, graceful_shutdown_context
 from virtual_agora.state.manager import StateManager
 from virtual_agora.state.recovery import StateRecoveryManager
+from virtual_agora.ui.human_in_the_loop import (
+    get_initial_topic,
+    get_agenda_approval,
+    get_continuation_approval,
+    get_agenda_modifications,
+    display_session_status,
+)
 
 
 # Install rich traceback handler for better error messages
@@ -274,8 +281,76 @@ async def run_application(args: argparse.Namespace) -> int:
             console.print("\n[bold cyan]Welcome to Virtual Agora![/bold cyan]")
             console.print("A structured multi-agent discussion platform\n")
 
-            # Placeholder for main application logic
-            console.print("[yellow]Application implementation in progress...[/yellow]")
+            # Get initial topic from user
+            topic = get_initial_topic()
+            state_manager.update_state({"topic": topic})
+            recovery_manager.create_checkpoint(
+                state_manager.get_state(),
+                operation="get_topic",
+                save_to_disk=True,
+            )
+
+            # Placeholder for agenda proposal and voting
+            proposed_agenda = ["Topic A", "Topic B", "Topic C"]
+            state_manager.update_state({"proposed_agenda": proposed_agenda})
+            recovery_manager.create_checkpoint(
+                state_manager.get_state(),
+                operation="propose_agenda",
+                save_to_disk=True,
+            )
+
+            # Get agenda approval from user
+            approved_agenda = get_agenda_approval(proposed_agenda)
+            if not approved_agenda:
+                console.print("[yellow]Agenda rejected. Exiting.[/yellow]")
+                return 0
+
+            state_manager.update_state({"agenda": approved_agenda})
+            recovery_manager.create_checkpoint(
+                state_manager.get_state(),
+                operation="approve_agenda",
+                save_to_disk=True,
+            )
+
+            # Placeholder for discussion rounds
+            completed_topic = "Topic A"
+            remaining_topics = ["Topic B", "Topic C"]
+
+            while True:
+                display_session_status(
+                    {
+                        "Completed Topic": completed_topic,
+                        "Remaining Topics": remaining_topics,
+                    }
+                )
+
+                action = get_continuation_approval(completed_topic, remaining_topics)
+
+                if action == "y":
+                    if not remaining_topics:
+                        console.print(
+                            "[green]All topics discussed. Session complete.[/green]"
+                        )
+                        break
+                    completed_topic = remaining_topics.pop(0)
+                    continue
+                elif action == "n":
+                    console.print("[yellow]Session ended by user.[/yellow]")
+                    break
+                elif action == "m":
+                    new_agenda = get_agenda_modifications(remaining_topics)
+                    remaining_topics = new_agenda
+                    state_manager.update_state(
+                        {"agenda": [completed_topic] + remaining_topics}
+                    )
+                    recovery_manager.create_checkpoint(
+                        state_manager.get_state(),
+                        operation="modify_agenda",
+                        save_to_disk=True,
+                    )
+                    console.print("[green]Agenda modified.[/green]")
+                else:
+                    console.print("[red]Invalid input. Please try again.[/red]")
 
             return 0
 

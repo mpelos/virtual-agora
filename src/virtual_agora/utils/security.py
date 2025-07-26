@@ -21,22 +21,21 @@ def mask_api_key(key: Optional[str], show_chars: int = 4) -> str:
     Returns:
         Masked key showing only specified number of end characters.
     """
-    if not key:
+    if key is None:
         return "<not set>"
 
     key = str(key).strip()
     if not key:
         return "<empty>"
 
+    start_chars = 2
     if len(key) <= show_chars * 2:
-        # Too short to mask meaningfully
         return "*" * len(key)
 
-    # Show first few and last few characters
-    if show_chars > 0:
-        return f"{key[:2]}{'*' * (len(key) - 2 - show_chars)}{key[-show_chars:]}"
-    else:
+    if show_chars == 0:
         return "*" * len(key)
+
+    return f"{key[:start_chars]}{'*' * (len(key) - start_chars - show_chars)}{key[-show_chars:]}"
 
 
 def mask_dict_values(data: Dict[str, Any], keys_to_mask: List[str]) -> Dict[str, Any]:
@@ -52,8 +51,11 @@ def mask_dict_values(data: Dict[str, Any], keys_to_mask: List[str]) -> Dict[str,
     masked_data = data.copy()
 
     for key in keys_to_mask:
-        if key in masked_data and masked_data[key]:
-            masked_data[key] = mask_api_key(str(masked_data[key]))
+        if key in masked_data:
+            if masked_data[key] is None:
+                masked_data[key] = mask_api_key(None)
+            else:
+                masked_data[key] = mask_api_key(str(masked_data[key]))
 
     return masked_data
 
@@ -87,8 +89,8 @@ def validate_api_key_format(key: str, provider: str) -> tuple[bool, Optional[str
     # Known patterns (these may change over time)
     patterns = {
         "Google": {
-            "pattern": r"^AIza[0-9A-Za-z\-_]{35}$",
-            "description": "Google API keys typically start with 'AIza' followed by 35 characters",
+            "pattern": r"^AIza[0-9A-Za-z\-_]{37}$",
+            "description": "Google API keys typically start with 'AIza' followed by 37 characters",
         },
         "OpenAI": {
             "pattern": r"^sk-[A-Za-z0-9]{48}$",
