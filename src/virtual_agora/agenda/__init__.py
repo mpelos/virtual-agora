@@ -24,7 +24,7 @@ from virtual_agora.agenda.models import (
     VoteCollection,
     AgendaModification,
     AgendaAnalytics,
-    TopicTransition
+    TopicTransition,
 )
 from virtual_agora.agenda.voting import VotingOrchestrator
 from virtual_agora.agenda.synthesis import AgendaSynthesizer
@@ -35,7 +35,7 @@ __all__ = [
     "Proposal",
     "Vote",
     "VoteType",
-    "AgendaItem", 
+    "AgendaItem",
     "AgendaState",
     "ProposalCollection",
     "VoteCollection",
@@ -44,5 +44,5 @@ __all__ = [
     "TopicTransition",
     "VotingOrchestrator",
     "AgendaSynthesizer",
-    "AgendaAnalyticsCollector"
+    "AgendaAnalyticsCollector",
 ]

@@ -14,6 +14,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ApplicationState",
-    "WorkflowEngine", 
+    "WorkflowEngine",
     "SessionManager",
 ]

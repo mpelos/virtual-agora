@@ -30,7 +30,7 @@ __all__ = [
     "setup_logging",
     "get_logger",
     "VirtualAgoraError",
-    "ConfigurationError", 
+    "ConfigurationError",
     "ProviderError",
     "AgentError",
     "WorkflowError",
@@ -46,11 +46,14 @@ try:
         create_provider_error_chain,
         with_langgraph_error_handling,
     )
-    __all__.extend([
-        "LangGraphErrorHandler",
-        "create_provider_error_chain", 
-        "with_langgraph_error_handling",
-    ])
+
+    __all__.extend(
+        [
+            "LangGraphErrorHandler",
+            "create_provider_error_chain",
+            "with_langgraph_error_handling",
+        ]
+    )
 except ImportError:
     # LangGraph not available, continue with base exports only
     pass

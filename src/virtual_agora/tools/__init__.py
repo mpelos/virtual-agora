@@ -45,7 +45,7 @@ from virtual_agora.tools.tool_error_handling import (
 __all__ = [
     # Tool classes
     "ProposalTool",
-    "VotingTool", 
+    "VotingTool",
     "SummaryTool",
     # Tool factory functions
     "create_discussion_tools",

@@ -54,12 +54,8 @@ def isolate_tests(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def pytest_configure(config: Config) -> None:
     """Configure pytest with custom markers."""
-    config.addinivalue_line(
-        "markers", "integration: mark test as an integration test"
-    )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
+    config.addinivalue_line("markers", "integration: mark test as an integration test")
+    config.addinivalue_line("markers", "slow: mark test as slow running")
     config.addinivalue_line(
         "markers", "requires_api_keys: mark test as requiring real API keys"
     )

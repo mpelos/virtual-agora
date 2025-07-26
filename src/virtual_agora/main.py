@@ -157,7 +157,9 @@ async def run_application(args: argparse.Namespace) -> int:
                 )
 
             # Load and validate environment variables
-            env_manager = EnvironmentManager(env_file=args.env if args.env.exists() else None)
+            env_manager = EnvironmentManager(
+                env_file=args.env if args.env.exists() else None
+            )
             env_manager.load()
 
             # Get environment status
@@ -176,7 +178,9 @@ async def run_application(args: argparse.Namespace) -> int:
             # Validate API keys
             missing_providers = env_manager.get_missing_providers(required_providers)
             if missing_providers:
-                console.print("[red]Error:[/red] Missing API keys for the following providers:\n")
+                console.print(
+                    "[red]Error:[/red] Missing API keys for the following providers:\n"
+                )
 
                 for provider in missing_providers:
                     console.print(f"[yellow]Provider:[/yellow] {provider}")
@@ -195,7 +199,9 @@ async def run_application(args: argparse.Namespace) -> int:
 
                 # Use environment config for application settings
                 if env_config.log_level != args.log_level:
-                    logger.info(f"Using log level from environment: {env_config.log_level}")
+                    logger.info(
+                        f"Using log level from environment: {env_config.log_level}"
+                    )
                     setup_logging(level=env_config.log_level)
 
             except ConfigurationError as e:
@@ -212,7 +218,9 @@ async def run_application(args: argparse.Namespace) -> int:
 
             # Show configuration summary
             console.print("\n[bold cyan]Configuration Summary:[/bold cyan]")
-            console.print(f"Moderator: {config.moderator.model} ({config.moderator.provider.value})")
+            console.print(
+                f"Moderator: {config.moderator.model} ({config.moderator.provider.value})"
+            )
             console.print(f"Total Agents: {config.get_total_agent_count()}")
 
             # Show agent breakdown

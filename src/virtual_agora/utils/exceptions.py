@@ -9,14 +9,14 @@ from typing import Optional, Any
 
 class VirtualAgoraError(Exception):
     """Base exception for all Virtual Agora errors.
-    
+
     All custom exceptions in the application should inherit from this class
     to allow for easy catching of application-specific errors.
     """
-    
+
     def __init__(self, message: str, details: Optional[dict[str, Any]] = None):
         """Initialize the exception.
-        
+
         Args:
             message: Error message.
             details: Optional dictionary with additional error details.
@@ -24,7 +24,7 @@ class VirtualAgoraError(Exception):
         super().__init__(message)
         self.message = message
         self.details = details or {}
-        
+
     def __str__(self) -> str:
         """Return string representation of the error."""
         if self.details:
@@ -35,20 +35,21 @@ class VirtualAgoraError(Exception):
 
 class ConfigurationError(VirtualAgoraError):
     """Raised when there's an error in configuration.
-    
+
     This includes missing configuration files, invalid YAML syntax,
     missing required fields, or invalid field values.
     """
+
     pass
 
 
 class ProviderError(VirtualAgoraError):
     """Raised when there's an error with an LLM provider.
-    
+
     This includes API errors, authentication failures, rate limiting,
     or unsupported operations.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -57,7 +58,7 @@ class ProviderError(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize provider error.
-        
+
         Args:
             message: Error message.
             provider: Name of the provider that caused the error.
@@ -71,11 +72,11 @@ class ProviderError(VirtualAgoraError):
 
 class AgentError(VirtualAgoraError):
     """Raised when there's an error with an agent.
-    
+
     This includes agent initialization failures, response generation errors,
     or invalid agent states.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -84,7 +85,7 @@ class AgentError(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize agent error.
-        
+
         Args:
             message: Error message.
             agent_name: Name of the agent that caused the error.
@@ -98,11 +99,11 @@ class AgentError(VirtualAgoraError):
 
 class WorkflowError(VirtualAgoraError):
     """Raised when there's an error in the discussion workflow.
-    
+
     This includes state transition errors, phase execution failures,
     or workflow validation errors.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -111,7 +112,7 @@ class WorkflowError(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize workflow error.
-        
+
         Args:
             message: Error message.
             phase: Current workflow phase when error occurred.
@@ -125,11 +126,11 @@ class WorkflowError(VirtualAgoraError):
 
 class CoordinationError(VirtualAgoraError):
     """Raised when there's an error in multi-agent coordination.
-    
+
     This includes turn management errors, agent communication failures,
     or coordination protocol violations.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -138,7 +139,7 @@ class CoordinationError(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize coordination error.
-        
+
         Args:
             message: Error message.
             agent_id: Agent ID involved in the error.
@@ -152,11 +153,11 @@ class CoordinationError(VirtualAgoraError):
 
 class ValidationError(VirtualAgoraError):
     """Raised when validation fails.
-    
+
     This includes input validation, response validation,
     or state validation errors.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -165,7 +166,7 @@ class ValidationError(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize validation error.
-        
+
         Args:
             message: Error message.
             field: Field that failed validation.
@@ -179,11 +180,11 @@ class ValidationError(VirtualAgoraError):
 
 class TimeoutError(VirtualAgoraError):
     """Raised when an operation times out.
-    
+
     This includes agent response timeouts, API call timeouts,
     or user input timeouts.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -192,7 +193,7 @@ class TimeoutError(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize timeout error.
-        
+
         Args:
             message: Error message.
             operation: Operation that timed out.
@@ -206,11 +207,11 @@ class TimeoutError(VirtualAgoraError):
 
 class StateError(VirtualAgoraError):
     """Raised when there's an error with application state.
-    
+
     This includes state initialization errors, invalid state transitions,
     or state corruption issues.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -220,7 +221,7 @@ class StateError(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize state error.
-        
+
         Args:
             message: Error message.
             state_field: State field that caused the error.
@@ -236,11 +237,11 @@ class StateError(VirtualAgoraError):
 
 class RecoverableError(VirtualAgoraError):
     """Base class for errors that can be recovered through retry or other means.
-    
+
     This indicates an error that is temporary and the operation
     can be retried with a reasonable expectation of success.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -249,7 +250,7 @@ class RecoverableError(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize recoverable error.
-        
+
         Args:
             message: Error message.
             retry_after: Suggested delay before retry (seconds).
@@ -263,11 +264,11 @@ class RecoverableError(VirtualAgoraError):
 
 class CriticalError(VirtualAgoraError):
     """Raised when a critical error occurs that requires immediate shutdown.
-    
+
     This indicates an unrecoverable error that compromises the
     integrity or security of the application.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -276,7 +277,7 @@ class CriticalError(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize critical error.
-        
+
         Args:
             message: Error message.
             system_component: Component that failed critically.
@@ -290,11 +291,11 @@ class CriticalError(VirtualAgoraError):
 
 class ProviderRateLimitError(ProviderError, RecoverableError):
     """Raised when a provider rate limit is exceeded.
-    
+
     This is a specific type of provider error that indicates
     the request was rejected due to rate limiting.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -304,7 +305,7 @@ class ProviderRateLimitError(ProviderError, RecoverableError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize rate limit error.
-        
+
         Args:
             message: Error message.
             provider: Provider that returned the rate limit.
@@ -319,11 +320,11 @@ class ProviderRateLimitError(ProviderError, RecoverableError):
 
 class NetworkTransientError(RecoverableError):
     """Raised when a temporary network error occurs.
-    
+
     This includes connection timeouts, DNS failures, and other
     network-related issues that are likely temporary.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -332,7 +333,7 @@ class NetworkTransientError(RecoverableError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize network error.
-        
+
         Args:
             message: Error message.
             operation: Operation that failed.
@@ -346,11 +347,11 @@ class NetworkTransientError(RecoverableError):
 
 class StateCorruptionError(StateError, CriticalError):
     """Raised when application state is corrupted beyond repair.
-    
+
     This indicates that the state has become inconsistent in a way
     that cannot be automatically recovered.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -359,7 +360,7 @@ class StateCorruptionError(StateError, CriticalError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize state corruption error.
-        
+
         Args:
             message: Error message.
             corrupted_fields: List of corrupted state fields.
@@ -380,11 +381,11 @@ class StateCorruptionError(StateError, CriticalError):
 
 class UserInterventionRequired(VirtualAgoraError):
     """Raised when user intervention is required to proceed.
-    
+
     This indicates a situation where the application cannot
     proceed without explicit user input or decision.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -394,7 +395,7 @@ class UserInterventionRequired(VirtualAgoraError):
         details: Optional[dict[str, Any]] = None,
     ):
         """Initialize user intervention error.
-        
+
         Args:
             message: Error message.
             prompt: Prompt to show the user.

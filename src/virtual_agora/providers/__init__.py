@@ -1,7 +1,7 @@
 """LLM provider integrations for Virtual Agora.
 
 This module provides factory functions and configuration for creating
-LangChain chat model instances for various providers (Google, OpenAI, 
+LangChain chat model instances for various providers (Google, OpenAI,
 Anthropic, Grok) using LangChain's init_chat_model pattern with fallback support.
 """
 

@@ -14,6 +14,7 @@ from uuid import uuid4
 
 class VoteType(str, Enum):
     """Types of votes that can be cast."""
+
     INITIAL_AGENDA = "initial_agenda"
     AGENDA_MODIFICATION = "agenda_modification"
     TOPIC_CONCLUSION = "topic_conclusion"
@@ -21,6 +22,7 @@ class VoteType(str, Enum):
 
 class ProposalStatus(str, Enum):
     """Status of a proposal."""
+
     PENDING = "pending"
     COLLECTED = "collected"
     TIMEOUT = "timeout"
@@ -29,6 +31,7 @@ class ProposalStatus(str, Enum):
 
 class VoteStatus(str, Enum):
     """Status of a vote."""
+
     PENDING = "pending"
     SUBMITTED = "submitted"
     INVALID = "invalid"
@@ -37,6 +40,7 @@ class VoteStatus(str, Enum):
 
 class AgendaStatus(str, Enum):
     """Status of agenda operations."""
+
     PENDING = "pending"
     COLLECTING_PROPOSALS = "collecting_proposals"
     COLLECTING_VOTES = "collecting_votes"
@@ -47,6 +51,7 @@ class AgendaStatus(str, Enum):
 
 class Proposal(BaseModel):
     """A topic proposal from an agent."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     agent_id: str
     topic: str
@@ -55,10 +60,10 @@ class Proposal(BaseModel):
     status: ProposalStatus = ProposalStatus.PENDING
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @validator('topic')
+    @validator("topic")
     def topic_not_empty(cls, v):
         if not v or not v.strip():
-            raise ValueError('Topic cannot be empty')
+            raise ValueError("Topic cannot be empty")
         return v.strip()
 
     class Config:
@@ -67,6 +72,7 @@ class Proposal(BaseModel):
 
 class Vote(BaseModel):
     """A vote cast by an agent."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     agent_id: str
     vote_type: VoteType
@@ -77,10 +83,10 @@ class Vote(BaseModel):
     confidence_score: Optional[float] = None  # For analytics
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @validator('vote_content')
+    @validator("vote_content")
     def vote_content_not_empty(cls, v):
         if not v or not v.strip():
-            raise ValueError('Vote content cannot be empty')
+            raise ValueError("Vote content cannot be empty")
         return v.strip()
 
     class Config:
@@ -89,6 +95,7 @@ class Vote(BaseModel):
 
 class AgendaItem(BaseModel):
     """An item in the agenda."""
+
     topic: str
     description: Optional[str] = None
     rank: int
@@ -99,21 +106,22 @@ class AgendaItem(BaseModel):
     status: str = "pending"  # pending, active, completed, skipped
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @validator('topic')
+    @validator("topic")
     def topic_not_empty(cls, v):
         if not v or not v.strip():
-            raise ValueError('Topic cannot be empty')
+            raise ValueError("Topic cannot be empty")
         return v.strip()
 
-    @validator('rank')
+    @validator("rank")
     def rank_positive(cls, v):
         if v < 1:
-            raise ValueError('Rank must be positive')
+            raise ValueError("Rank must be positive")
         return v
 
 
 class ProposalCollection(BaseModel):
     """Collection of proposals from agents."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     session_id: str
     round_number: int = 1
@@ -126,7 +134,7 @@ class ProposalCollection(BaseModel):
     timeout_seconds: int = 300  # 5 minutes default
     status: ProposalStatus = ProposalStatus.PENDING
     error_details: Optional[str] = None
-    
+
     @property
     def completion_rate(self) -> float:
         """Calculate the proposal completion rate."""
@@ -137,6 +145,7 @@ class ProposalCollection(BaseModel):
 
 class VoteCollection(BaseModel):
     """Collection of votes from agents."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     session_id: str
     vote_type: VoteType
@@ -165,6 +174,7 @@ class VoteCollection(BaseModel):
 
 class AgendaState(BaseModel):
     """Current state of the agenda system."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     session_id: str
     version: int = 1
@@ -178,13 +188,16 @@ class AgendaState(BaseModel):
     last_modification: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
-    
+
     @property
     def remaining_topics(self) -> List[str]:
         """Get list of remaining topics."""
-        return [item.topic for item in self.current_agenda 
-                if item.topic not in self.completed_topics]
-    
+        return [
+            item.topic
+            for item in self.current_agenda
+            if item.topic not in self.completed_topics
+        ]
+
     @property
     def current_topic(self) -> Optional[AgendaItem]:
         """Get the current topic being discussed."""
@@ -200,6 +213,7 @@ class AgendaState(BaseModel):
 
 class AgendaModification(BaseModel):
     """A proposed modification to the agenda."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     agent_id: str
     modification_type: str  # "add", "remove", "reorder"
@@ -211,15 +225,16 @@ class AgendaModification(BaseModel):
     applied: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @validator('modification_type')
+    @validator("modification_type")
     def valid_modification_type(cls, v):
-        if v not in ['add', 'remove', 'reorder']:
-            raise ValueError('Modification type must be add, remove, or reorder')
+        if v not in ["add", "remove", "reorder"]:
+            raise ValueError("Modification type must be add, remove, or reorder")
         return v
 
 
 class TopicTransition(BaseModel):
     """Record of a topic transition."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     session_id: str
     from_topic: Optional[str] = None
@@ -233,15 +248,16 @@ class TopicTransition(BaseModel):
     participant_count: int = 0
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @validator('transition_type')
+    @validator("transition_type")
     def valid_transition_type(cls, v):
-        if v not in ['start', 'complete', 'skip', 'error']:
-            raise ValueError('Transition type must be start, complete, skip, or error')
+        if v not in ["start", "complete", "skip", "error"]:
+            raise ValueError("Transition type must be start, complete, skip, or error")
         return v
 
 
 class AgendaAnalytics(BaseModel):
     """Analytics data for agenda performance."""
+
     session_id: str
     total_proposals: int = 0
     unique_topics_proposed: int = 0
@@ -252,7 +268,9 @@ class AgendaAnalytics(BaseModel):
     topics_skipped: int = 0
     average_topic_duration_minutes: float = 0.0
     agent_participation_rates: Dict[str, float] = Field(default_factory=dict)
-    topic_proposal_distribution: Dict[str, int] = Field(default_factory=dict)  # agent_id -> count
+    topic_proposal_distribution: Dict[str, int] = Field(
+        default_factory=dict
+    )  # agent_id -> count
     voting_patterns: Dict[str, Any] = Field(default_factory=dict)
     modification_patterns: Dict[str, int] = Field(default_factory=dict)
     timeline_events: List[Dict[str, Any]] = Field(default_factory=list)
@@ -261,6 +279,7 @@ class AgendaAnalytics(BaseModel):
 
 class AgendaSynthesisResult(BaseModel):
     """Result of agenda synthesis operation."""
+
     proposed_agenda: List[str]  # Ordered list of topics
     synthesis_explanation: Optional[str] = None
     tie_breaks_applied: List[str] = Field(default_factory=list)
@@ -269,15 +288,16 @@ class AgendaSynthesisResult(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @validator('proposed_agenda')
+    @validator("proposed_agenda")
     def agenda_not_empty(cls, v):
         if not v:
-            raise ValueError('Proposed agenda cannot be empty')
+            raise ValueError("Proposed agenda cannot be empty")
         return v
 
 
 class EdgeCaseEvent(BaseModel):
     """Record of an edge case encountered."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     session_id: str
     event_type: str  # "empty_proposals", "all_agents_abstain", "invalid_votes", etc.
