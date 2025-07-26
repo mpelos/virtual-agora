@@ -106,6 +106,27 @@ class StateManager:
             current_phase=0,
             phase_history=[],
             phase_start_time=now,
+            # Epic 6: Round management and orchestration
+            current_round=0,
+            round_history=[],
+            turn_order_history=[],
+            rounds_per_topic={},
+            # Epic 6: Human-in-the-Loop controls
+            hitl_state={
+                "awaiting_approval": False,
+                "approval_type": None,
+                "prompt_message": None,
+                "options": None,
+                "approval_history": [],
+            },
+            # Epic 6: Flow control parameters
+            flow_control={
+                "max_rounds_per_topic": 10,
+                "auto_conclude_threshold": 3,
+                "context_window_limit": 8000,
+                "cycle_detection_enabled": True,
+                "max_iterations_per_phase": 5,
+            },
             # Topic management
             active_topic=None,
             topic_queue=[],
@@ -139,6 +160,19 @@ class StateManager:
             messages_by_agent={aid: 0 for aid in agents},
             messages_by_topic={},
             vote_participation_rate={},
+            # Tool execution tracking
+            tool_calls=[],
+            active_tool_calls={},
+            tool_metrics={
+                "total_calls": 0,
+                "successful_calls": 0,
+                "failed_calls": 0,
+                "average_execution_time_ms": 0.0,
+                "calls_by_tool": {},
+                "calls_by_agent": {},
+                "errors_by_type": {},
+            },
+            tools_enabled_agents=[],
             # Error tracking
             last_error=None,
             error_count=0,
@@ -563,6 +597,70 @@ class StateManager:
             return obj
 
         return convert_dates(snapshot)
+
+    def update_state(self, updates: Dict[str, Any]) -> None:
+        """Update state with arbitrary field updates.
+
+        Args:
+            updates: Dictionary of field updates to apply
+        """
+        if self._state is None:
+            raise StateError("State not initialized")
+
+        # Known NotRequired fields that may not exist yet
+        known_optional_fields = {
+            "main_topic",
+            "report_structure",
+            "report_sections",
+            "report_generation_status",
+            "pending_agenda_modifications",
+            "agenda_modification_votes",
+            "agenda_state_id",
+            "agenda_version",
+            "proposal_collection_status",
+            "proposal_timeouts",
+            "vote_collection_status",
+            "agenda_synthesis_attempts",
+            "agenda_modifications_count",
+            "topic_transition_history",
+            "agenda_analytics_data",
+            "edge_cases_encountered",
+            "minority_voters",
+            "minority_considerations",
+            "context_compressions_count",
+            "last_compression_time",
+            "cycle_interventions_count",
+            "last_intervention_time",
+            "last_intervention_reason",
+            "moderator_decision",
+        }
+
+        for key, value in updates.items():
+            if key in self._state or key in known_optional_fields:
+                self._state[key] = value
+            else:
+                logger.warning(f"Attempting to set unknown state field: {key}")
+
+        logger.debug(f"Updated state with {len(updates)} fields")
+
+    def compress_context_if_needed(self) -> bool:
+        """Compress context if approaching token limit.
+
+        Returns:
+            True if compression was performed
+        """
+        from virtual_agora.flow.context_window import ContextWindowManager
+
+        context_manager = ContextWindowManager()
+
+        if context_manager.needs_compression(self.state):
+            compression_updates = context_manager.compress_context(self.state)
+            if compression_updates:
+                self.update_state(compression_updates)
+                logger.info("Context automatically compressed due to token limit")
+                return True
+
+        return False
 
     def validate_consistency(self) -> List[str]:
         """Run consistency validation on current state.

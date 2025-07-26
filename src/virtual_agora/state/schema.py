@@ -13,6 +13,19 @@ from typing_extensions import NotRequired
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
 
+# Import custom reducers
+from .reducers import (
+    merge_hitl_state,
+    merge_flow_control,
+    update_rounds_per_topic,
+    merge_topic_summaries,
+    merge_phase_summaries,
+    increment_counter,
+    merge_statistics,
+    merge_agent_info,
+    update_topic_info,
+)
+
 
 class AgentInfo(TypedDict):
     """Information about an agent in the discussion."""
@@ -120,6 +133,39 @@ class ToolExecutionMetrics(TypedDict):
     errors_by_type: Dict[str, int]
 
 
+class RoundInfo(TypedDict):
+    """Information about a discussion round."""
+
+    round_id: str
+    round_number: int
+    topic: str
+    start_time: datetime
+    end_time: Optional[datetime]
+    participants: List[str]  # Agent IDs who participated
+    message_count: int
+    summary: Optional[str]  # Moderator's round summary
+
+
+class HITLState(TypedDict):
+    """Human-in-the-Loop state information."""
+
+    awaiting_approval: bool
+    approval_type: Optional[str]  # 'agenda', 'continuation', 'topic_conclusion'
+    prompt_message: Optional[str]
+    options: Optional[List[str]]
+    approval_history: List[Dict[str, Any]]
+
+
+class FlowControl(TypedDict):
+    """Flow control parameters."""
+
+    max_rounds_per_topic: int
+    auto_conclude_threshold: int  # Number of consecutive conclusion votes needed
+    context_window_limit: int  # Token limit for context
+    cycle_detection_enabled: bool
+    max_iterations_per_phase: int
+
+
 class VirtualAgoraState(TypedDict):
     """Complete state for a Virtual Agora session.
 
@@ -133,21 +179,40 @@ class VirtualAgoraState(TypedDict):
     start_time: datetime
     config_hash: str  # Hash of the configuration for validation
 
-    # Phase management (0-4)
-    # 0: Initialization, 1: Agenda Setting, 2: Discussion, 3: Consensus, 4: Summary
+    # Phase management (0-5)
+    # 0: Initialization, 1: Agenda Setting, 2: Discussion, 3: Topic Conclusion, 4: Agenda Re-evaluation, 5: Final Report
     current_phase: int
     phase_history: Annotated[List[PhaseTransition], list.append]
     phase_start_time: datetime
 
+    # Epic 6: Round management and orchestration
+    current_round: int
+    round_history: Annotated[List[RoundInfo], list.append]
+    turn_order_history: Annotated[
+        List[List[str]], list.append
+    ]  # History of turn orders
+    rounds_per_topic: Annotated[
+        Dict[str, int], update_rounds_per_topic
+    ]  # topic -> round count
+
+    # Epic 6: Human-in-the-Loop controls
+    hitl_state: Annotated[HITLState, merge_hitl_state]
+
+    # Epic 6: Flow control parameters
+    flow_control: Annotated[FlowControl, merge_flow_control]
+
     # Topic management
+    main_topic: NotRequired[str]  # Primary discussion topic for the session
     active_topic: Optional[str]
     topic_queue: List[str]  # Topics to be discussed
     proposed_topics: List[str]  # All proposed topics (Phase 1)
-    topics_info: Dict[str, TopicInfo]  # Detailed info about each topic
+    topics_info: Annotated[
+        Dict[str, TopicInfo], update_topic_info
+    ]  # Detailed info about each topic
     completed_topics: Annotated[List[str], list.append]
 
     # Agent management
-    agents: Dict[str, AgentInfo]  # agent_id -> info
+    agents: Annotated[Dict[str, AgentInfo], merge_agent_info]  # agent_id -> info
     moderator_id: str
     current_speaker_id: Optional[str]
     speaking_order: List[str]  # Rotating queue of agent IDs
@@ -167,8 +232,8 @@ class VirtualAgoraState(TypedDict):
     consensus_reached: Dict[str, bool]  # topic -> consensus status
 
     # Generated content
-    phase_summaries: Dict[int, str]
-    topic_summaries: Dict[str, str]
+    phase_summaries: Annotated[Dict[int, str], merge_phase_summaries]
+    topic_summaries: Annotated[Dict[str, str], merge_topic_summaries]
     consensus_summaries: Dict[str, str]  # topic -> consensus summary
     final_report: Optional[str]
 
@@ -204,10 +269,10 @@ class VirtualAgoraState(TypedDict):
     ]  # Edge case records
 
     # Runtime statistics
-    total_messages: int
-    messages_by_phase: Dict[int, int]
-    messages_by_agent: Dict[str, int]
-    messages_by_topic: Dict[str, int]
+    total_messages: Annotated[int, increment_counter]
+    messages_by_phase: Annotated[Dict[int, int], merge_statistics]
+    messages_by_agent: Annotated[Dict[str, int], merge_statistics]
+    messages_by_topic: Annotated[Dict[str, int], merge_statistics]
     vote_participation_rate: Dict[str, float]  # vote_id -> participation %
 
     # Tool execution tracking
@@ -215,6 +280,20 @@ class VirtualAgoraState(TypedDict):
     active_tool_calls: Dict[str, ToolCallInfo]  # tool_call_id -> info
     tool_metrics: ToolExecutionMetrics
     tools_enabled_agents: List[str]  # List of agent IDs with tools enabled
+
+    # Context window management
+    context_compressions_count: NotRequired[
+        int
+    ]  # Number of context compressions performed
+    last_compression_time: NotRequired[datetime]  # Last compression timestamp
+
+    # Cycle detection and intervention
+    cycle_interventions_count: NotRequired[
+        int
+    ]  # Number of cycle interventions performed
+    last_intervention_time: NotRequired[datetime]  # Last intervention timestamp
+    last_intervention_reason: NotRequired[str]  # Reason for last intervention
+    moderator_decision: NotRequired[bool]  # Moderator override decision flag
 
     # Error tracking (for recovery)
     last_error: Optional[str]
