@@ -7,7 +7,10 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from virtual_agora.config.models import Config, ModeratorConfig, AgentConfig, Provider
+from virtual_agora.config.models import (
+    Config, ModeratorConfig, AgentConfig, Provider,
+    SummarizerConfig, TopicReportConfig, EcclesiaReportConfig
+)
 from virtual_agora.config.loader import ConfigLoader
 from virtual_agora.config.validators import ConfigValidator
 from virtual_agora.utils.exceptions import ConfigurationError
@@ -56,6 +59,9 @@ class TestConfigSchema:
         """Test valid complete configuration."""
         config = Config(
             moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
+            summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
+            topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
+            ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(provider="Anthropic", model="claude-3-opus-20240229"),
@@ -69,6 +75,9 @@ class TestConfigSchema:
         with pytest.raises(ValidationError) as exc_info:
             Config(
                 moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
+                summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
+                topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
+                ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
                 agents=[
                     AgentConfig(provider="OpenAI", model="gpt-4o", count=10),
                     AgentConfig(provider="OpenAI", model="gpt-4o", count=10),
@@ -82,6 +91,9 @@ class TestConfigSchema:
         with pytest.raises(ValidationError) as exc_info:
             Config(
                 moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
+                summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
+                topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
+                ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
                 agents=[
                     AgentConfig(provider="OpenAI", model="gpt-4o", count=1),
                 ],
@@ -92,6 +104,9 @@ class TestConfigSchema:
         """Test agent name generation."""
         config = Config(
             moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
+            summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
+            topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
+            ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(
@@ -113,6 +128,12 @@ class TestConfigLoader:
 
         assert config.moderator.provider == Provider.GOOGLE
         assert config.moderator.model == "gemini-2.5-pro"
+        assert config.summarizer.provider == Provider.OPENAI
+        assert config.summarizer.model == "gpt-4o"
+        assert config.topic_report.provider == Provider.ANTHROPIC
+        assert config.topic_report.model == "claude-3-opus-20240229"
+        assert config.ecclesia_report.provider == Provider.GOOGLE
+        assert config.ecclesia_report.model == "gemini-2.5-pro"
         assert len(config.agents) == 1
         assert config.agents[0].provider == Provider.OPENAI
         assert config.agents[0].count == 2
@@ -183,6 +204,7 @@ agents:
         key_status = loader.validate_api_keys()
         assert key_status["Google"] is True
         assert key_status["OpenAI"] is True
+        assert key_status["Anthropic"] is True  # Now required for topic_report
 
     def test_get_missing_api_keys(self, temp_config_file, monkeypatch):
         """Test getting missing API keys."""
@@ -196,6 +218,7 @@ agents:
         missing = loader.get_missing_api_keys()
         assert "Google" in missing
         assert "OpenAI" not in missing
+        assert "Anthropic" in missing  # Required for topic_report
 
 
 class TestConfigValidator:
@@ -205,6 +228,9 @@ class TestConfigValidator:
         """Test validation of a valid configuration."""
         config = Config(
             moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
+            summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
+            topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
+            ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(provider="Anthropic", model="claude-3-opus-20240229"),
@@ -219,6 +245,9 @@ class TestConfigValidator:
         """Test provider diversity validation with warning."""
         config = Config(
             moderator=ModeratorConfig(provider="OpenAI", model="gpt-4o"),
+            summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
+            topic_report=TopicReportConfig(provider="OpenAI", model="gpt-4o"),
+            ecclesia_report=EcclesiaReportConfig(provider="OpenAI", model="gpt-4o"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=3),
                 AgentConfig(provider="OpenAI", model="gpt-3.5-turbo"),
@@ -238,6 +267,9 @@ class TestConfigValidator:
             moderator=ModeratorConfig(
                 provider="OpenAI", model="gpt-3.5-turbo"  # Less capable model
             ),
+            summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
+            topic_report=TopicReportConfig(provider="OpenAI", model="gpt-4o"),
+            ecclesia_report=EcclesiaReportConfig(provider="OpenAI", model="gpt-4o"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
             ],
@@ -253,6 +285,9 @@ class TestConfigValidator:
         """Test generation of validation report."""
         config = Config(
             moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
+            summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
+            topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
+            ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(provider="Anthropic", model="claude-3-opus-20240229"),
@@ -264,7 +299,11 @@ class TestConfigValidator:
         report = validator.get_validation_report()
 
         assert report["valid"] is True
-        assert report["stats"]["total_agents"] == 4
-        assert report["stats"]["providers"]["OpenAI"] == 2
-        assert report["stats"]["providers"]["Anthropic"] == 1
-        assert report["stats"]["providers"]["Google"] == 1
+        assert report["stats"]["total_agents"] == 4  # Only discussing agents
+        # Provider counts now include specialized agents:
+        # - Google: moderator + ecclesia_report + 1 discussing agent = 3
+        # - OpenAI: summarizer + 2 discussing agents = 3
+        # - Anthropic: topic_report + 1 discussing agent = 2
+        assert report["stats"]["providers"]["Google"] == 3
+        assert report["stats"]["providers"]["OpenAI"] == 3
+        assert report["stats"]["providers"]["Anthropic"] == 2

@@ -11,6 +11,9 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from virtual_agora.agents.discussion_agent import DiscussionAgent
 from virtual_agora.agents.moderator import ModeratorAgent
+from virtual_agora.agents.summarizer import SummarizerAgent
+from virtual_agora.agents.topic_report_agent import TopicReportAgent
+from virtual_agora.agents.ecclesia_report_agent import EcclesiaReportAgent
 from virtual_agora.config.models import Config, AgentConfig, ModeratorConfig
 from virtual_agora.providers.factory import ProviderFactory
 from virtual_agora.utils.logging import get_logger
@@ -32,6 +35,9 @@ class AgentFactory:
         self.provider_factory = ProviderFactory()
         self._created_agents: Dict[str, DiscussionAgent] = {}
         self._moderator: Optional[ModeratorAgent] = None
+        self._summarizer: Optional[SummarizerAgent] = None
+        self._topic_report: Optional[TopicReportAgent] = None
+        self._ecclesia_report: Optional[EcclesiaReportAgent] = None
 
     def create_all_agents(self) -> Dict[str, DiscussionAgent]:
         """Create all discussion agents based on configuration.
@@ -93,6 +99,125 @@ class AgentFactory:
         except Exception as e:
             logger.error(f"Failed to create moderator: {e}")
             raise ConfigurationError(f"Moderator creation failed: {e}") from e
+
+    def create_summarizer(self) -> SummarizerAgent:
+        """Create the summarizer agent based on configuration.
+
+        Returns:
+            SummarizerAgent instance
+
+        Raises:
+            ConfigurationError: If summarizer creation fails
+        """
+        if self._summarizer is not None:
+            return self._summarizer
+
+        try:
+            # Create provider configuration for summarizer
+            provider_config = {
+                "provider": self.config.summarizer.provider.value,
+                "model": self.config.summarizer.model,
+            }
+
+            # Create LLM instance
+            llm = self.provider_factory.create_provider(provider_config)
+
+            # Create summarizer agent
+            summarizer_id = "summarizer"
+            self._summarizer = SummarizerAgent(
+                agent_id=summarizer_id,
+                llm=llm,
+                compression_ratio=0.3,
+                max_summary_tokens=self.config.summarizer.max_tokens or 500,
+                enable_error_handling=True
+            )
+
+            logger.info(
+                f"Successfully created summarizer with model {self.config.summarizer.model}"
+            )
+            return self._summarizer
+
+        except Exception as e:
+            logger.error(f"Failed to create summarizer: {e}")
+            raise ConfigurationError(f"Summarizer creation failed: {e}") from e
+
+    def create_topic_report(self) -> TopicReportAgent:
+        """Create the topic report agent based on configuration.
+
+        Returns:
+            TopicReportAgent instance
+
+        Raises:
+            ConfigurationError: If topic report agent creation fails
+        """
+        if self._topic_report is not None:
+            return self._topic_report
+
+        try:
+            # Create provider configuration for topic report
+            provider_config = {
+                "provider": self.config.topic_report.provider.value,
+                "model": self.config.topic_report.model,
+            }
+
+            # Create LLM instance
+            llm = self.provider_factory.create_provider(provider_config)
+
+            # Create topic report agent
+            topic_report_id = "topic_report"
+            self._topic_report = TopicReportAgent(
+                agent_id=topic_report_id,
+                llm=llm,
+                enable_error_handling=True
+            )
+
+            logger.info(
+                f"Successfully created topic report agent with model {self.config.topic_report.model}"
+            )
+            return self._topic_report
+
+        except Exception as e:
+            logger.error(f"Failed to create topic report agent: {e}")
+            raise ConfigurationError(f"Topic report agent creation failed: {e}") from e
+
+    def create_ecclesia_report(self) -> EcclesiaReportAgent:
+        """Create the ecclesia report agent based on configuration.
+
+        Returns:
+            EcclesiaReportAgent instance
+
+        Raises:
+            ConfigurationError: If ecclesia report agent creation fails
+        """
+        if self._ecclesia_report is not None:
+            return self._ecclesia_report
+
+        try:
+            # Create provider configuration for ecclesia report
+            provider_config = {
+                "provider": self.config.ecclesia_report.provider.value,
+                "model": self.config.ecclesia_report.model,
+            }
+
+            # Create LLM instance
+            llm = self.provider_factory.create_provider(provider_config)
+
+            # Create ecclesia report agent
+            ecclesia_report_id = "ecclesia_report"
+            self._ecclesia_report = EcclesiaReportAgent(
+                agent_id=ecclesia_report_id,
+                llm=llm,
+                enable_error_handling=True
+            )
+
+            logger.info(
+                f"Successfully created ecclesia report agent with model {self.config.ecclesia_report.model}"
+            )
+            return self._ecclesia_report
+
+        except Exception as e:
+            logger.error(f"Failed to create ecclesia report agent: {e}")
+            raise ConfigurationError(f"Ecclesia report agent creation failed: {e}") from e
 
     def _create_agents_from_config(
         self, agent_config: AgentConfig
@@ -246,10 +371,10 @@ class AgentFactory:
         return validation_results
 
     def create_agent_pool(self, include_moderator: bool = True) -> Dict[str, Any]:
-        """Create complete agent pool including moderator and discussion agents.
+        """Create complete agent pool including all specialized agents and discussion agents.
 
         Args:
-            include_moderator: Whether to include the moderator in the pool
+            include_moderator: Whether to include specialized agents (kept for backward compatibility)
 
         Returns:
             Dictionary containing all agents and metadata
@@ -257,6 +382,9 @@ class AgentFactory:
         pool = {
             "discussion_agents": {},
             "moderator": None,
+            "summarizer": None,
+            "topic_report": None,
+            "ecclesia_report": None,
             "created_at": datetime.now(),
             "total_agents": 0,
             "validation": {},
@@ -266,14 +394,18 @@ class AgentFactory:
             # Create discussion agents
             pool["discussion_agents"] = self.create_all_agents()
 
-            # Create moderator if requested
+            # Create specialized agents if requested
             if include_moderator:
-                pool["moderator"] = self.create_moderator()
+                specialized = self.create_specialized_agents()
+                pool["moderator"] = specialized["moderator"]
+                pool["summarizer"] = specialized["summarizer"]
+                pool["topic_report"] = specialized["topic_report"]
+                pool["ecclesia_report"] = specialized["ecclesia_report"]
 
             # Update totals
             pool["total_agents"] = len(pool["discussion_agents"])
-            if pool["moderator"]:
-                pool["total_agents"] += 1
+            if include_moderator:
+                pool["total_agents"] += 4  # Four specialized agents
 
             # Add validation results
             pool["validation"] = self.validate_agent_creation()
@@ -328,10 +460,38 @@ class AgentFactory:
 
         return fallback_agents
 
+    def create_specialized_agents(self) -> Dict[str, Any]:
+        """Create all specialized agents based on configuration.
+        
+        Returns:
+            Dictionary mapping agent type to agent instance
+            
+        Raises:
+            ConfigurationError: If any agent creation fails
+        """
+        agents = {}
+        
+        try:
+            # Create all specialized agents
+            agents['moderator'] = self.create_moderator()
+            agents['summarizer'] = self.create_summarizer()
+            agents['topic_report'] = self.create_topic_report()
+            agents['ecclesia_report'] = self.create_ecclesia_report()
+            
+            logger.info(f"Successfully created all {len(agents)} specialized agents")
+            return agents
+            
+        except Exception as e:
+            logger.error(f"Failed to create specialized agents: {e}")
+            raise
+
     def reset_factory(self) -> None:
         """Reset the factory state."""
         self._created_agents.clear()
         self._moderator = None
+        self._summarizer = None
+        self._topic_report = None
+        self._ecclesia_report = None
         logger.info("Agent factory reset")
 
 
@@ -346,6 +506,19 @@ def create_agents_from_config(config: Config) -> Dict[str, Any]:
     """
     factory = AgentFactory(config)
     return factory.create_agent_pool()
+
+
+def create_specialized_agents(config: Config) -> Dict[str, Any]:
+    """Convenience function to create all specialized agents from configuration.
+    
+    Args:
+        config: Virtual Agora configuration
+        
+    Returns:
+        Dictionary mapping agent type to agent instance
+    """
+    factory = AgentFactory(config)
+    return factory.create_specialized_agents()
 
 
 def validate_agent_requirements(config: Config) -> Dict[str, Any]:

@@ -24,6 +24,7 @@ from .reducers import (
     merge_statistics,
     merge_agent_info,
     update_topic_info,
+    merge_specialized_agents,
 )
 
 
@@ -133,6 +134,59 @@ class ToolExecutionMetrics(TypedDict):
     errors_by_type: Dict[str, int]
 
 
+class AgentInvocation(TypedDict):
+    """Track when specialized agents are invoked by graph nodes."""
+    
+    invocation_id: str
+    agent_type: str  # 'moderator', 'summarizer', 'topic_report', 'ecclesia_report'
+    agent_id: str
+    source_node: str  # Which graph node called this agent
+    timestamp: datetime
+    input_context: Dict[str, Any]
+    output: Optional[str]
+    execution_time_ms: float
+    status: str  # 'pending', 'completed', 'failed'
+    error: NotRequired[str]
+
+
+class RoundSummary(TypedDict):
+    """Compacted summary of a discussion round."""
+    
+    round_number: int
+    topic: str
+    summary_text: str
+    created_by: str  # Agent ID of summarizer
+    timestamp: datetime
+    token_count: int
+    compression_ratio: float  # Original tokens / summary tokens
+
+
+class UserStop(TypedDict):
+    """Record of when user was asked to stop (5-round intervals)."""
+    
+    stop_id: str
+    round_number: int
+    topic: str
+    timestamp: datetime
+    user_decision: str  # 'continue', 'end_topic', 'end_session'
+    reason: Optional[str]
+
+
+class AgentContext(TypedDict):
+    """Context provided to a specialized agent."""
+    
+    agent_type: str  # 'summarizer', 'topic_report', etc.
+    input_context: Dict[str, Any]
+    timestamp: datetime
+    source_node: str  # Which graph node called this agent
+    
+    # Context flow tracking
+    round_context: NotRequired[List[str]]  # Current round's messages
+    compacted_summaries: NotRequired[List[str]]  # Previous round summaries
+    active_topic: NotRequired[str]
+    discussion_theme: NotRequired[str]
+
+
 class RoundInfo(TypedDict):
     """Information about a discussion round."""
 
@@ -150,10 +204,21 @@ class HITLState(TypedDict):
     """Human-in-the-Loop state information."""
 
     awaiting_approval: bool
-    approval_type: Optional[str]  # 'agenda', 'continuation', 'topic_conclusion'
+    approval_type: Optional[str]  # Extended set of types for v1.3
+    # - 'agenda': Initial agenda approval
+    # - 'continuation': Continue to next topic
+    # - 'topic_conclusion': Force topic conclusion
+    # - 'periodic_stop': Every 5 rounds check
+    # - 'topic_conclusion_override': User can force topic end
+    # - 'session_continuation': After each topic
+    # - 'final_report_generation': Before final report
     prompt_message: Optional[str]
     options: Optional[List[str]]
     approval_history: List[Dict[str, Any]]
+    
+    # Periodic stop tracking
+    last_periodic_stop_round: Optional[int]
+    periodic_stop_responses: List[Dict[str, Any]]
 
 
 class FlowControl(TypedDict):
@@ -319,6 +384,28 @@ class VirtualAgoraState(TypedDict):
     last_intervention_reason: NotRequired[str]  # Reason for last intervention
     moderator_decision: NotRequired[bool]  # Moderator override decision flag
 
+    # Specialized agent tracking (v1.3)
+    specialized_agents: Annotated[
+        Dict[str, str], merge_specialized_agents
+    ]  # agent_type -> agent_id
+    agent_invocations: Annotated[
+        List[AgentInvocation], list.append
+    ]  # Track which agents were called when
+    
+    # Enhanced context flow (v1.3)
+    round_summaries: Annotated[
+        List[RoundSummary], list.append
+    ]  # Compacted summaries per round
+    agent_contexts: Annotated[
+        List[AgentContext], list.append
+    ]  # Context provided to each agent
+    
+    # Periodic HITL stops (v1.3)
+    periodic_stop_counter: int  # Tracks rounds for 5-round stops
+    user_stop_history: Annotated[
+        List[UserStop], list.append
+    ]  # When user was asked to stop
+    
     # Error tracking (for recovery)
     last_error: Optional[str]
     error_count: int

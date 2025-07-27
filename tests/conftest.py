@@ -24,7 +24,20 @@ def temp_config_file(tmp_path: Path) -> Generator[Path, None, None]:
     """Create a temporary config file for testing."""
     config_file = tmp_path / "test_config.yml"
     config_content = """
+# Virtual Agora Configuration File v1.3
 moderator:
+  provider: Google
+  model: gemini-2.5-pro
+
+summarizer:
+  provider: OpenAI
+  model: gpt-4o
+
+topic_report:
+  provider: Anthropic
+  model: claude-3-opus-20240229
+
+ecclesia_report:
   provider: Google
   model: gemini-2.5-pro
 

@@ -27,12 +27,15 @@ def merge_hitl_state(
             "prompt_message": None,
             "options": None,
             "approval_history": [],
+            # v1.3 additions
+            "last_periodic_stop_round": None,
+            "periodic_stop_responses": [],
         }
 
     if updates is None:
         return existing
 
-    # Merge with special handling for approval_history
+    # Merge with special handling for approval_history and periodic_stop_responses
     merged = existing.copy()
     merged.update(updates)
 
@@ -48,6 +51,19 @@ def merge_hitl_state(
         else:
             # Replace entire history
             merged["approval_history"] = updates["approval_history"]
+    
+    # Handle periodic_stop_responses similarly
+    if "periodic_stop_responses" in updates and isinstance(updates["periodic_stop_responses"], list):
+        if len(updates["periodic_stop_responses"]) == 1 and isinstance(
+            updates["periodic_stop_responses"][0], dict
+        ):
+            # Single new entry - append it
+            merged["periodic_stop_responses"] = (
+                existing.get("periodic_stop_responses", []) + updates["periodic_stop_responses"]
+            )
+        else:
+            # Replace entire list
+            merged["periodic_stop_responses"] = updates["periodic_stop_responses"]
 
     return merged
 
@@ -282,4 +298,28 @@ def update_topic_info(
         else:
             merged[topic] = info
 
+    return merged
+
+
+def merge_specialized_agents(
+    existing: Optional[Dict[str, str]], updates: Optional[Dict[str, str]]
+) -> Dict[str, str]:
+    """Merge specialized agent mappings.
+
+    Args:
+        existing: Current agent type to ID mappings
+        updates: New agent mappings
+
+    Returns:
+        Merged agent mappings
+    """
+    if existing is None:
+        existing = {}
+
+    if updates is None:
+        return existing
+
+    # Simple merge - updates replace existing
+    merged = existing.copy()
+    merged.update(updates)
     return merged

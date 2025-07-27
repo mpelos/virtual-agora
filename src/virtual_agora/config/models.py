@@ -66,6 +66,18 @@ class SummarizerConfig(BaseModel):
         description="Model name/ID for the summarizer (e.g., gpt-4o)",
         min_length=1,
     )
+    # Optional fields for future extensibility
+    temperature: Optional[float] = Field(
+        default=0.3,  # Lower temperature for consistent summarization
+        ge=0.0,
+        le=1.0,
+        description="Temperature for summarization"
+    )
+    max_tokens: Optional[int] = Field(
+        default=500,
+        gt=0,
+        description="Maximum tokens for summaries"
+    )
 
 
 class TopicReportConfig(BaseModel):
@@ -86,6 +98,18 @@ class TopicReportConfig(BaseModel):
         description="Model name/ID for the topic report agent (e.g., claude-3-opus-20240229)",
         min_length=1,
     )
+    # Optional fields for future extensibility
+    temperature: Optional[float] = Field(
+        default=0.5,  # Balanced temperature for comprehensive synthesis
+        ge=0.0,
+        le=1.0,
+        description="Temperature for topic report generation"
+    )
+    max_tokens: Optional[int] = Field(
+        default=1500,
+        gt=0,
+        description="Maximum tokens for topic reports"
+    )
 
 
 class EcclesiaReportConfig(BaseModel):
@@ -105,6 +129,18 @@ class EcclesiaReportConfig(BaseModel):
         ...,
         description="Model name/ID for the ecclesia report agent (e.g., gemini-2.5-pro)",
         min_length=1,
+    )
+    # Optional fields for future extensibility
+    temperature: Optional[float] = Field(
+        default=0.7,  # Higher temperature for creative synthesis
+        ge=0.0,
+        le=1.0,
+        description="Temperature for final report generation"
+    )
+    max_tokens: Optional[int] = Field(
+        default=2000,
+        gt=0,
+        description="Maximum tokens for final report sections"
     )
 
 
