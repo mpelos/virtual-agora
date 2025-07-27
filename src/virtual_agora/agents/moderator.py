@@ -139,21 +139,16 @@ class ModeratorAgent(LLMAgent):
             Default system prompt for the moderator
         """
         return (
-            f"You are a specialized reasoning tool for process facilitation in the Virtual Agora (v{self.PROMPT_VERSION}). "
-            "You are NOT a discussion participant and have NO opinions on topics. "
-            "Your ONLY role is to facilitate the discussion process with precise, analytical outputs.\n\n"
-            "KEY CAPABILITIES:\n"
-            "1. Proposal Compilation: When agents provide topic proposals, create a deduplicated list of unique topics.\n"
-            "2. Vote Synthesis: When agents vote on agenda items, produce a rank-ordered agenda based on their preferences.\n"
-            "   - Break ties using objective criteria (clarity of scope, relevance to theme, logical dependencies)\n"
-            '   - Output must be valid JSON in the format: {"proposed_agenda": ["Topic 1", "Topic 2", "Topic 3"]}\n'
-            "3. Process Facilitation: Manage turn order, announce topics, ensure relevance, and conduct polls.\n\n"
-            "STRICT REQUIREMENTS:\n"
-            "- Remain absolutely neutral and process-oriented at all times\n"
-            "- Never express opinions or preferences on discussion content\n"
-            "- When structured output like JSON is required, adhere to it strictly\n"
-            "- Focus on clear, precise, analytical communication\n"
-            "- If a vote to conclude passes, offer dissenting voters a chance for 'final considerations'"
+            f"**Identity:** You are the Moderator, a specialized, neutral reasoning tool for the Virtual Agora (v{self.PROMPT_VERSION}).\n"
+            "**Core Directive:** Your sole function is to execute specific process-facilitation tasks with precision and objectivity. You are a tool, not a participant. You have no opinions.\n\n"
+            "**Primary Capabilities & Tasks:**\n"
+            "1.  **Proposal Compilation:** Given a set of topic proposals from participants, your task is to create a single, deduplicated list of unique agenda items. You will identify and merge similar concepts to produce a clean list.\n"
+            '2.  **Vote Synthesis:** Given a list of agenda items and a set of natural language votes from participants, your task is to analyze the preferences and produce a final, rank-ordered agenda. You must break any ties based on objective criteria (e.g., logical flow, relevance to the main theme). Your output for this task **MUST** be a valid JSON object in the format: `{{"proposed_agenda": ["Item A", "Item B", "Item C"]}}`.\n'
+            "3.  **Relevance Enforcement:** Given a message from a participant, your task is to evaluate its relevance to the current topic and provide a structured analysis in JSON format.\n\n"
+            "**Strict Constraints:**\n"
+            "- **Absolute Neutrality:** You must never express opinions, preferences, or agreement/disagreement with the content of the discussion.\n"
+            "- **Process-Oriented:** Your responses must be strictly focused on the process task you are given. Do not add conversational filler.\n"
+            "- **Format Adherence:** When a specific output format (e.g., JSON) is required, you must adhere to it precisely. Do not include any explanatory text outside the specified format."
         )
 
     def generate_json_response(
@@ -397,7 +392,11 @@ class ModeratorAgent(LLMAgent):
                 topic = line.split(".", 1)[1].strip()
                 if topic:
                     topics.append(topic)
-            elif line.startswith(("- ", "• ", "* ")):
+            elif (
+                line.startswith(f"- ")
+                or line.startswith(f"• ")
+                or line.startswith(f"* ")
+            ):
                 # Remove bullet point
                 topic = line[2:].strip()
                 if topic:
@@ -425,27 +424,34 @@ class ModeratorAgent(LLMAgent):
             raise ValueError("Cannot synthesize agenda from empty votes")
         try:
             # Construct prompt for vote analysis
-            prompt = (
-                "You are tasked with Vote Synthesis. Analyze the following votes and produce a "
-                "rank-ordered agenda based on the agents' preferences.\n\n"
-                "Votes received:\n"
-            )
+            prompt_parts = [
+                "**Task:** Synthesize Agent Votes into a Final Agenda.",
+                "**Objective:** Analyze the provided natural language votes to determine the collective preference for the discussion order. Produce a single, rank-ordered agenda.",
+                "",
+                "**Input Data:**",
+            ]
 
             for vote_dict in agent_votes:
                 agent_id = vote_dict.get("agent_id", "Unknown")
-                vote_content = vote_dict.get("vote", "")
-                prompt += f"{agent_id}: {vote_content}\n\n"
+                vote_content = vote_dict.get("vote", "No preference stated.")
+                prompt_parts.append(f"- **Agent {agent_id} Vote:** {vote_content}")
 
-            prompt += (
-                "Based on these votes, determine the preferred order of discussion topics. "
-                "If there are ties, break them using objective criteria such as:\n"
-                "- Clarity of scope\n"
-                "- Relevance to the overall theme\n"
-                "- Logical dependencies between topics\n\n"
-                "You MUST output ONLY a valid JSON object in exactly this format:\n"
-                '{"proposed_agenda": ["Topic 1", "Topic 2", "Topic 3", ...]}\n\n'
-                "Do not include any other text or explanation."
+            prompt_parts.extend(
+                [
+                    "",
+                    "**Analysis & Tie-Breaking Criteria:**",
+                    "1.  **Explicit Ranking:** Prioritize clear numerical or ordered preferences.",
+                    "2.  **Implicit Priority:** Infer priority from phrases like 'most importantly' or 'we should start with'.",
+                    "3.  **Logical Dependencies:** If one topic is a prerequisite for another, order it first.",
+                    "4.  **Relevance & Scope:** If still tied, prioritize topics that are most central to the main theme and have a clear, debatable scope.",
+                    "",
+                    "**Output Requirement:**",
+                    "Your response **MUST** be a single, valid JSON object containing the final ranked agenda. Do not include any other text, explanations, or conversational filler.",
+                    '**Format:** `{{"proposed_agenda": ["Final Topic 1", "Final Topic 2", "Final Topic 3", ...]}}`',
+                ]
             )
+
+            prompt = "\n".join(prompt_parts)
 
             # For v1.3, use generate_response which handles LLM invocation properly
             response_text = self.generate_response(prompt)
@@ -888,17 +894,16 @@ class ModeratorAgent(LLMAgent):
         try:
             # Create a structured prompt for relevance evaluation
             evaluation_prompt = (
-                f"Evaluate the relevance of the following message to the current discussion topic. "
-                f"Provide a detailed assessment including a relevance score from 0.0 (completely irrelevant) "
-                f"to 1.0 (highly relevant).\n\n"
-                f"Current Topic: {self.current_topic_context}\n\n"
-                f'Message to Evaluate: "{message_content}"\n\n'
-                f"Consider:\n"
-                f"- Does the message directly address the topic?\n"
-                f"- Does it provide relevant insights, examples, or perspectives?\n"
-                f"- Is it a constructive contribution to the discussion?\n"
-                f"- Are any tangential points still meaningfully connected?\n\n"
-                f"Respond with a JSON object containing your assessment."
+                f"**Task:** Evaluate Message Relevance.\n"
+                f"**Objective:** Analyze the provided message and determine its relevance to the current discussion topic. Your analysis must be objective and strictly based on the provided text.\n\n"
+                f"**Current Discussion Topic:** {self.current_topic_context}\n\n"
+                f"**Message to Evaluate:**\n---\n{message_content}\n---\n\n"
+                f"**Analysis Criteria:**\n"
+                f"1.  **Directness:** Does the message directly address the topic? Or is it a tangent?\n"
+                f"2.  **Contribution:** Does it add value (e.g., new evidence, a counterargument, a clarifying question) to the specific topic?\n"
+                f"3.  **Focus:** Is the core of the message centered on the topic, or is the connection superficial?\n\n"
+                f"**Output Requirement:** Respond with a single, valid JSON object containing your structured analysis. Do not include any other text.\n"
+                f'**JSON Schema:** `{{"relevance_score": float (0.0-1.0), "is_relevant": boolean, "reason": "string (brief explanation)", "suggestions": "string (brief, actionable feedback for the agent)"}}`'
             )
 
             # Define schema for relevance evaluation
@@ -1682,7 +1687,10 @@ class ModeratorAgent(LLMAgent):
             return None
 
     async def collect_agenda_vote(
-        self, agent_id: str, proposed_topics: List[str], state: VirtualAgoraState
+        self,
+        agent_id: str,
+        proposed_topics: List[str],
+        state: VirtualAgoraState,
     ) -> Optional[str]:
         """Collect vote on proposed agenda from an agent.
 

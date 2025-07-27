@@ -98,13 +98,16 @@ class DiscussionAgent(LLMAgent):
     def _get_discussion_system_prompt(self) -> str:
         """Get the discussion-specific system prompt."""
         return (
-            "You are a thoughtful participant in a structured discussion. "
-            "You will be given a topic and context from previous turns. "
-            "Your goal is to provide a well-reasoned, concise comment that builds upon the conversation. "
-            "Stay strictly on the topic provided by the Moderator. "
-            "Be prepared to propose discussion topics, vote on agendas, "
-            "and vote on when to conclude a topic when asked. "
-            "Always provide clear reasoning for your positions and votes."
+            "You are an expert, collaborative participant in a structured, professional discussion. Your name is {self.agent_id}. "
+            "Your purpose is to help the group achieve a deeper understanding of complex topics. "
+            "You are not just a debater; you are a constructive thinker. "
+            "Your primary goal is to elevate the conversation through well-reasoned, insightful, and collaborative contributions.\n\n"
+            "Core Responsibilities:\n"
+            "- **Analyze & Synthesize:** Don't just state your opinion. Analyze the context provided, synthesize different viewpoints, and identify underlying themes or points of contention.\n"
+            "- **Build Upon Ideas:** Actively listen to others. Your comments should build upon, challenge constructively, or offer new perspectives on what has already been said.\n"
+            "- **Ask Incisive Questions:** Pose questions that clarify ambiguities, challenge assumptions, or open new avenues of exploration.\n"
+            "- **Stay On Topic:** All contributions must be strictly relevant to the current agenda item being discussed.\n"
+            "- **Follow Instructions:** You will be asked to perform specific tasks like proposing topics and voting. Follow all instructions precisely and provide clear reasoning for your actions."
         )
 
     def reset_for_new_topic(self, topic: str) -> None:
@@ -204,15 +207,16 @@ class DiscussionAgent(LLMAgent):
             Formatted prompt for topic proposal
         """
         prompt_parts = [
-            f"Based on the main topic '{main_topic}', please propose 3-5 specific sub-topics for structured discussion.",
+            f"**Task:** Propose 3-5 specific sub-topics for a structured discussion based on the main theme: '{main_topic}'.",
             "",
+            "**Objective:** Create an agenda that will lead to a comprehensive and insightful exploration of the main theme.",
             "Your proposals should be:",
-            "- Specific and actionable discussion points",
-            "- Relevant to the main topic",
-            "- Diverse in scope and perspective",
-            "- Suitable for debate among multiple participants",
+            "- **Actionable:** Frame them as questions or clear topics for debate (e.g., 'The Ethical Implications of X' or 'Should Y be implemented?').",
+            "- **Distinct & Diverse:** Each topic should cover a unique angle. Think about technical, ethical, societal, and financial aspects.",
+            "- **Logically Sequenced:** Consider a natural flow. Should foundational topics come first?",
+            "- **Substantive:** Ensure each topic is rich enough for a detailed discussion.",
             "",
-            "Format your response as a numbered list:",
+            "**Format:** Respond with a numbered list. Do not add any other text.",
             "1. [First sub-topic]",
             "2. [Second sub-topic]",
             "3. [Third sub-topic]",
@@ -221,9 +225,7 @@ class DiscussionAgent(LLMAgent):
         ]
 
         if context_messages:
-            prompt_parts.insert(
-                1, "Consider the following context from our discussion:"
-            )
+            prompt_parts.insert(1, "\n**Context from initial thoughts:**")
             for msg in context_messages[-3:]:  # Last 3 messages for context
                 prompt_parts.insert(
                     2, f"- {msg['speaker_id']}: {msg['content'][:100]}..."
@@ -329,9 +331,10 @@ class DiscussionAgent(LLMAgent):
             Formatted prompt for agenda voting
         """
         prompt_parts = [
-            "Please review the following proposed discussion topics and provide your preferred order for discussion.",
+            "**Task:** Vote on the priority and order of the following proposed discussion topics.",
+            "**Objective:** Create the most logical and effective sequence for our discussion.",
             "",
-            "Proposed topics:",
+            "**Proposed Topics:**",
         ]
 
         for i, topic in enumerate(proposed_topics, 1):
@@ -340,12 +343,15 @@ class DiscussionAgent(LLMAgent):
         prompt_parts.extend(
             [
                 "",
-                "Please respond with:",
-                "1. Your preferred order of topics (by number or title)",
-                "2. Brief reasoning for your preferences",
-                "3. Any topics you think should be prioritized or deprioritized",
+                "**Your Response:**",
+                "Please provide your preferred order for these topics in natural language. You MUST justify your ranking.",
                 "",
-                "Format your response in natural language, clearly stating your preferences and reasoning.",
+                "**Considerations for your reasoning:**",
+                "- **Logical Flow:** Does one topic provide a necessary foundation for another?",
+                "- **Priority:** Which topics are most critical to the main theme?",
+                "- **Synergy:** Could discussing two topics back-to-back create a more fruitful conversation?",
+                "",
+                "**Example Response:** 'My preferred order is 3, 1, 2. I believe we must first establish the foundational principles in topic 3 before we can effectively debate the applications in topic 1. Topic 2 can then serve as a concluding case study.'",
             ]
         )
 
@@ -413,9 +419,9 @@ class DiscussionAgent(LLMAgent):
             Formatted prompt for conclusion voting
         """
         prompt_parts = [
-            f"Should we conclude the discussion on '{current_topic}'?",
+            f"**Task:** Vote on whether to conclude the discussion on the current topic: '{current_topic}'.",
             "",
-            "Please respond with 'Yes' or 'No' and provide a short justification.",
+            "**Instruction:** Respond with 'Yes' or 'No', followed by a brief but clear justification for your vote.",
         ]
 
         if context_messages:
@@ -424,7 +430,7 @@ class DiscussionAgent(LLMAgent):
                 prompt_parts.extend(
                     [
                         "",
-                        "Consider the recent discussion:",
+                        "**Recent Context:**",
                     ]
                 )
                 for msg in recent_messages:
@@ -435,13 +441,13 @@ class DiscussionAgent(LLMAgent):
         prompt_parts.extend(
             [
                 "",
-                "Consider factors such as:",
-                "- Have the key aspects of the topic been adequately discussed?",
-                "- Are there important points that still need to be addressed?",
-                "- Has the discussion reached a natural conclusion?",
-                "- Would more discussion be productive?",
+                "**Decision Criteria:**",
+                "- **Depth:** Have we explored the key facets of this topic sufficiently?",
+                "- **Productivity:** Is the conversation still generating new, valuable insights?",
+                "- **Unresolved Questions:** Are there critical, unanswered questions that need addressing before we move on?",
+                "- **Conclusion:** Has the discussion reached a point of natural synthesis or conclusion?",
                 "",
-                "Format your response clearly starting with 'Yes' or 'No', followed by your reasoning.",
+                "**Format:** Start your response with 'Yes.' or 'No.' followed by your reasoning.",
             ]
         )
 
@@ -555,16 +561,16 @@ class DiscussionAgent(LLMAgent):
             Formatted discussion prompt
         """
         prompt_parts = [
-            f"We are currently discussing: {topic}",
+            f"**Current Topic:** {topic}",
             "",
-            "Please provide a thoughtful, well-reasoned comment that contributes to this discussion.",
+            "**Your Task:** Provide a substantive, concise, and constructive comment (2-4 sentences). Your goal is to elevate the discussion.",
         ]
 
         if context_messages:
             prompt_parts.extend(
                 [
                     "",
-                    "Consider the recent discussion context:",
+                    "**Recent Discussion Context:**",
                 ]
             )
             for msg in context_messages:
@@ -572,17 +578,20 @@ class DiscussionAgent(LLMAgent):
                 content_preview = msg["content"][:200]
                 if len(msg["content"]) > 200:
                     content_preview += "..."
-                prompt_parts.append(f"- {msg['speaker_id']}: {content_preview}")
+                prompt_parts.append(f"- **{msg['speaker_id']}**: {content_preview}")
 
         prompt_parts.extend(
             [
                 "",
-                "Your response should:",
-                "- Stay strictly on the topic",
-                "- Build upon previous comments where relevant",
-                "- Provide substantive contribution to the discussion",
-                "- Be concise but thoughtful (aim for 2-4 sentences)",
-                "- Maintain a respectful and constructive tone",
+                "**How to Contribute:**",
+                "Do not just state your opinion. Instead, choose one of the following approaches:",
+                "- **Synthesize & Bridge:** Can you find a connection between two different points made earlier? Summarize the common ground or the core of the disagreement.",
+                "- **Ask a Clarifying Question:** Is there an ambiguity or a term that needs to be defined more clearly? Ask a question that helps focus the conversation.",
+                "- **Offer a Constructive Counterargument:** If you disagree with a point, explain why respectfully and provide an alternative perspective or evidence.",
+                "- **Introduce a New Facet:** Can you bring in a new, relevant angle (e.g., ethical, technical, long-term) that hasn't been considered?",
+                "- **Build Upon an Idea:** Take an existing point and expand on it with a new example, implication, or piece of evidence.",
+                "",
+                "**Crucial:** Your response must be strictly on-topic and directly engage with the discussion's content.",
             ]
         )
 
@@ -635,10 +644,9 @@ class DiscussionAgent(LLMAgent):
             Formatted minority consideration prompt
         """
         prompt_parts = [
-            f"The discussion on '{topic}' has been concluded by majority vote, but you voted to continue.",
+            f"**Task:** Provide your final considerations for the topic '{topic}'.",
             "",
-            "As part of the minority, you have an opportunity to provide your final considerations on this topic.",
-            "Please share any important points, concerns, or perspectives that you feel should be on record before we move on.",
+            "**Context:** The majority has voted to conclude this discussion, but you voted to continue. This is your opportunity to ensure your perspective is recorded before we move on. This is a critical part of our process to avoid groupthink and capture all viewpoints.",
         ]
 
         if context_messages:
@@ -650,7 +658,7 @@ class DiscussionAgent(LLMAgent):
                 prompt_parts.extend(
                     [
                         "",
-                        "Consider the full discussion on this topic:",
+                        "**Review of Discussion:**",
                     ]
                 )
                 for msg in relevant_messages[-8:]:  # Last 8 relevant messages
@@ -662,11 +670,13 @@ class DiscussionAgent(LLMAgent):
         prompt_parts.extend(
             [
                 "",
-                "Your final considerations should:",
-                "- Highlight any overlooked aspects of the topic",
-                "- Express concerns about concluding the discussion",
-                "- Provide valuable insights for the final record",
-                "- Be concise but substantive (2-5 sentences)",
+                "**Your Objective:**",
+                "In a concise but substantive statement (2-5 sentences), please articulate:",
+                "- **The Core Unresolved Issue:** What critical aspect of the topic do you believe was overlooked or left unresolved?",
+                "- **The Risk of Concluding:** What is the potential downside of ending the discussion now?",
+                "- **The Key Takeaway:** What is the single most important point from your perspective that must be included in the final record?",
+                "",
+                "**Be impactful and precise. This is your final word on this topic.**",
             ]
         )
 

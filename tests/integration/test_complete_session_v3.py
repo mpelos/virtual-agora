@@ -30,9 +30,10 @@ class TestCompleteSessionV3:
         create_test_config_file(config_path, version="1.3", num_agents=3)
 
         # Load and return config
-        from virtual_agora.config.loader import load_config
+        from virtual_agora.config.loader import ConfigLoader
 
-        return load_config(str(config_path))
+        loader = ConfigLoader(config_path)
+        return loader.load()
 
     @pytest.fixture
     def mock_agents(self):

@@ -38,15 +38,38 @@ class TopicReportAgent(LLMAgent):
 
     def _get_topic_report_prompt(self) -> str:
         """Get the specialized topic report prompt from v1.3 spec."""
-        return """You are a specialized synthesis tool for Virtual Agora's topic reporting. Your task is to analyze ALL compacted round summaries and final considerations for a concluded agenda item and create a comprehensive, standalone report. Structure your report to include:
-1. Topic overview and key questions addressed
-2. Major themes and arguments that emerged
-3. Points of consensus among participants
-4. Areas of disagreement or ongoing debate
-5. Key insights and novel perspectives
-6. Implications and potential next steps
+        return """You are "The Synthesizer," an expert analyst and writer for Virtual Agora. Your purpose is to distill a complex, multi-agent discussion into a clear, objective, and comprehensive report. You are a master of identifying the signal in the noise.
 
-Your report should be thorough enough that someone who didn't participate in the discussion can understand the full scope of the conversation. Write as an objective analyst, not a participant."""
+You will be given the full context of a discussion on a specific topic, including round-by-round summaries and any final dissenting opinions. Your task is to synthesize this information into a self-contained, analytical report. A person who did not witness the discussion should be able to read your report and have a complete understanding of the topic's exploration.
+
+**Report Structure:**
+
+Your report MUST follow this structure precisely. Use Markdown for formatting.
+
+**1. Executive Summary:**
+   - Start with a brief, one-paragraph overview of the topic.
+   - State the core questions that were explored.
+   - Briefly summarize the key findings and the overall outcome of the discussion (e.g., general consensus, clear division, unresolved complexity).
+
+**2. Narrative of the Discussion:**
+   - Provide a chronological account of the conversation's flow.
+   - How did the arguments evolve? What were the key turning points?
+   - Reference the major themes that emerged and how they were debated over time.
+
+**3. Core Analysis:**
+   - **Points of Consensus:** Clearly list the specific points where most or all agents agreed.
+   - **Points of Contention:** Clearly list the areas of disagreement. For each point, summarize the opposing arguments.
+   - **Key Insights & Novel Perspectives:** Highlight any surprising, innovative, or particularly impactful ideas that were introduced.
+
+**4. Synthesis and Implications:**
+   - What are the broader implications of the discussion?
+   - What are the potential next steps, open questions, or areas for future exploration that the discussion revealed?
+   - If there were dissenting "final considerations," integrate them here as valuable alternative perspectives that challenge the majority view.
+
+**Tone and Style:**
+- **Objective and Neutral:** Do not take sides. Attribute viewpoints neutrally (e.g., "One perspective argued that... while another countered..."). Do not use "I" or "we."
+- **Analytical, not a Transcript:** Do not simply list what was said. Synthesize, compare, and contrast the ideas.
+- **Clarity and Conciseness:** Use clear language. Be thorough but not verbose."""
 
     def synthesize_topic(
         self,
@@ -77,27 +100,21 @@ Your report should be thorough enough that someone who didn't participate in the
         # Include final considerations if any
         considerations_text = ""
         if final_considerations:
-            considerations_text = "\n\nFinal Considerations:\n" + "\n".join(
+            considerations_text = "\n\n**Dissenting Final Considerations:**\n" + "\n".join(
                 [f"- {consideration}" for consideration in final_considerations]
             )
 
         # Generate comprehensive report
-        prompt = f"""Discussion Theme: {discussion_theme}
-Concluded Topic: {topic}
+        prompt = f"""**Discussion Theme:** {discussion_theme}
+**Concluded Topic:** {topic}
 
-Round Summaries:
+**Source Material**
+
+**Round Summaries:**
 {all_summaries}
 {considerations_text}
 
-Create a comprehensive report following this structure:
-1. Topic overview and key questions addressed
-2. Major themes and arguments that emerged
-3. Points of consensus among participants
-4. Areas of disagreement or ongoing debate
-5. Key insights and novel perspectives
-6. Implications and potential next steps
-
-Write as an objective analyst, not a participant. Ensure the report is thorough and self-contained."""
+Please now generate the comprehensive report based on these materials, following the structure and tone defined in your core instructions."""
 
         report = self.generate_response(prompt)
 
@@ -137,26 +154,15 @@ Write as an objective analyst, not a participant. Ensure the report is thorough 
 
         combined_discussion = "\n\n".join(content_list)
 
-        minority_instruction = ""
-        if include_minority_views:
-            minority_instruction = "\nPay special attention to minority viewpoints and dissenting opinions."
+        # The new system prompt implicitly handles minority views.
+        # The main instruction is to generate the report based on the full transcript.
+        prompt = f"""**Discussion Theme:** {theme}
+**Topic for Synthesis:** {topic}
 
-        prompt = f"""Discussion Theme: {theme}
-Topic: {topic}
-
-Full Discussion:
+**Source Material: Full Discussion Transcript**
 {combined_discussion}
 
-Create a comprehensive summary of this topic discussion. Include:
-1. Main arguments and perspectives presented
-2. Points of agreement and consensus
-3. Areas of disagreement or debate
-4. Key insights and discoveries
-5. Unresolved questions
-6. Implications for future discussion
-{minority_instruction}
-
-Write objectively as an analyst reviewing the discussion."""
+Please now generate the comprehensive report based on this transcript, following the structure and tone defined in your core instructions as "The Synthesizer." Pay close attention to the evolution of the dialogue to inform the 'Narrative of the Discussion' section."""
 
         summary = self.generate_response(prompt)
 
@@ -193,21 +199,21 @@ Write objectively as an analyst reviewing the discussion."""
 
         combined_views = "\n\n".join(formatted_views)
 
-        prompt = f"""Topic: {topic}
+        prompt = f"""**Topic:** {topic}
 
-Majority Conclusion:
+**Majority Conclusion Summary:**
 {majority_conclusion}
 
-Dissenting Views from {len(dissenting_agents)} agents:
+**Dissenting Views from {len(dissenting_agents)} agents:**
 {combined_views}
 
-Synthesize these minority viewpoints into a balanced addendum that:
-1. Fairly represents the dissenting perspectives
-2. Explains why these agents disagreed with concluding the topic
-3. Highlights important considerations raised by the minority
-4. Suggests how these views might inform future discussion
+As "The Synthesizer," your task is to create a balanced addendum that integrates these dissenting views. This is not a separate report, but a component to be woven into the final synthesis. Your output should:
 
-Write objectively without taking sides."""
+1.  **Fairly Represent Dissent:** Summarize the core arguments of the dissenting agents.
+2.  **Identify Key Sticking Points:** What fundamental disagreements led them to oppose concluding the topic?
+3.  **Highlight Important Considerations:** What valuable perspectives or warnings did the minority raise that should be considered alongside the majority view?
+
+Write this as a concise, objective analysis that can be integrated into the "Synthesis and Implications" section of the main report."""
 
         minority_synthesis = self.generate_response(prompt)
 
@@ -248,12 +254,12 @@ Write objectively without taking sides."""
                 ]
             )
 
-            prompt = f"""Topic: {topic}
+            prompt = f"""**Topic:** {topic}
 
-Summaries to combine:
+**Source Material: Summaries for Rounds {i+1}-{i+len(chunk)}**
 {chunk_text}
 
-Create a unified summary of these {len(chunk)} rounds, preserving key points and insights."""
+As "The Synthesizer," create a unified summary of this chunk of the discussion. Your goal is to preserve the most critical information, arguments, and turning points from these rounds. This summary will be used in a later step to build the final report."""
 
             chunk_summary = self.generate_response(prompt)
             chunk_summaries.append(chunk_summary)
@@ -277,12 +283,12 @@ Create a unified summary of these {len(chunk)} rounds, preserving key points and
             ]
         )
 
-        prompt = f"""Topic: {topic}
+        prompt = f"""**Topic:** {topic}
 
-Combined chunk summaries:
+**Source Material: Combined Chunk Summaries**
 {combined_chunks}
 
-Create a final, comprehensive summary that integrates all the key points from the entire discussion."""
+You are in the final stage of a map-reduce process. The above text contains summaries of different parts of a long discussion. Your task is to synthesize these chunks into the final, comprehensive report. Follow the full structure and tone defined in your core instructions as "The Synthesizer" to produce the complete, polished analysis."""
 
         final_summary = self.generate_response(prompt)
 

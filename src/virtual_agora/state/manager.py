@@ -102,6 +102,16 @@ class StateManager:
             session_id=session_id,
             start_time=now,
             config_hash=config_hash,
+            # UI state management
+            ui_state={
+                "console_initialized": False,
+                "theme_applied": False,
+                "accessibility_enabled": False,
+                "dashboard_active": False,
+                "current_display_mode": "full",
+                "progress_operations": {},
+                "last_ui_update": now,
+            },
             # Phase management
             current_phase=0,
             phase_history=[],
@@ -177,6 +187,14 @@ class StateManager:
             last_error=None,
             error_count=0,
             warnings=[],
+            # v1.3 specific fields with list.append reducers
+            agent_invocations=[],
+            round_summaries=[],
+            agent_contexts=[],
+            user_stop_history=[],
+            # NotRequired fields with list.append reducers
+            topic_transition_history=[],
+            edge_cases_encountered=[],
         )
 
         logger.info(f"Initialized state for session {session_id}")
@@ -633,6 +651,12 @@ class StateManager:
             "last_intervention_time",
             "last_intervention_reason",
             "moderator_decision",
+            "specialized_agents",
+            "periodic_stop_counter",
+            "user_forced_conclusion",
+            "agents_vote_end_session",
+            "user_approves_continuation",
+            "user_requested_modification",
         }
 
         for key, value in updates.items():

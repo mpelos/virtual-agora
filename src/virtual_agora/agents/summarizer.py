@@ -51,15 +51,20 @@ class SummarizerAgent(LLMAgent):
 
     def _get_summarizer_prompt(self) -> str:
         """Get the specialized summarizer prompt from v1.3 spec."""
-        return """You are a specialized text compression tool for Virtual Agora. Your task is to read all agent comments from a single discussion round and create a concise, agent-agnostic summary that captures the key points, arguments, and insights without attribution to specific agents.
-
-Focus on:
-1. Main arguments presented
-2. Points of agreement and disagreement
-3. New insights or perspectives introduced
-4. Questions raised or areas requiring further exploration
-
-Your summary will be used as context for future rounds, so ensure it preserves essential information while being substantially more concise than the original. Write in third person, avoid agent names, and maintain objectivity."""
+        return (
+            "**Identity:** You are the Summarizer, a specialized text compression and synthesis tool for Virtual Agora.\n"
+            "**Core Directive:** Your sole function is to read the raw text of a discussion round and produce a concise, neutral, and agent-agnostic summary. Your output is critical for maintaining context in future rounds.\n\n"
+            "**Key Synthesis Areas:**\n"
+            "- **Main Arguments:** What were the primary claims or arguments presented?\n"
+            "- **Points of Consensus:** Where did the participants seem to agree?\n"
+            "- **Points of Contention:** What were the key disagreements or debates?\n"
+            "- **New Information & Insights:** Were any new perspectives, evidence, or questions introduced that shifted the conversation?\n\n"
+            "**Strict Constraints:**\n"
+            "- **Agent-Agnostic:** NEVER attribute points to specific agents (e.g., 'Agent A said...'). Summarize the ideas themselves.\n"
+            "- **Neutrality:** Do not inject your own opinions, analysis, or interpretations. Your job is to reflect the content of the discussion, not to comment on it.\n"
+            "- **Third-Person Perspective:** Write the summary in a detached, third-person narrative style (e.g., 'The discussion covered...', 'One viewpoint suggested...').\n"
+            "- **Conciseness:** Preserve the essential information while being substantially more concise than the original text."
+        )
 
     def summarize_round(
         self, messages: List[Dict[str, Any]], topic: str, round_number: int
@@ -76,16 +81,16 @@ Your summary will be used as context for future rounds, so ensure it preserves e
         """
         # Extract message content - filter out empty/whitespace-only content
         content_list = [
-            msg.get("content", "")
+            f"- {msg.get('speaker_id', 'Unknown')}: {msg.get('content', '')}"
             for msg in messages
             if msg.get("content") and msg.get("content").strip()
         ]
 
         # Handle empty messages case
         if not content_list:
-            return "No discussion content to summarize in this round."
+            return "No new discussion content was provided in this round."
 
-        combined_text = "\n\n".join(content_list)
+        combined_text = "\n".join(content_list)
 
         # Calculate target length
         original_tokens = self._estimate_tokens(combined_text)
@@ -93,24 +98,34 @@ Your summary will be used as context for future rounds, so ensure it preserves e
         target_tokens = min(target_tokens, self.max_summary_tokens)
 
         # Create summarization prompt
-        prompt = f"""Topic: {topic}
-Round: {round_number}
-
-Agent Comments:
-{combined_text}
-
-Create a summary of approximately {target_tokens} tokens that captures the essential points while maintaining objectivity. Focus on key arguments, agreements, disagreements, and new insights."""
+        prompt = (
+            f"**Task:** Summarize Discussion Round.\n"
+            f"**Topic:** {topic}\n"
+            f"**Round:** {round_number}\n\n"
+            f"**Raw Discussion Transcript:**\n---\n{combined_text}\n---\n\n"
+            f"**Instructions:**\n"
+            f"1.  Create a concise, neutral, and agent-agnostic summary of the key points from the transcript.\n"
+            f"2.  Synthesize the main arguments, points of consensus, disagreements, and any new insights.\n"
+            f"3.  Write in the third person. Do not attribute comments to specific speakers.\n"
+            f"4.  The target length is approximately {target_tokens} tokens.\n"
+            f"5.  Your response should contain **only the summary text** and nothing else."
+        )
 
         # Generate summary
         summary = self.generate_response(prompt)
 
         # Log compression metrics
         summary_tokens = self._estimate_tokens(summary)
-        logger.info(
-            f"Round {round_number} compressed: "
-            f"{original_tokens} -> {summary_tokens} tokens "
-            f"({summary_tokens/original_tokens:.1%} of original)"
-        )
+        if original_tokens > 0:
+            logger.info(
+                f"Round {round_number} compressed: "
+                f"{original_tokens} -> {summary_tokens} tokens "
+                f"({summary_tokens/original_tokens:.1%} of original)"
+            )
+        else:
+            logger.info(
+                f"Round {round_number} summary generated with {summary_tokens} tokens."
+            )
 
         return summary
 
@@ -131,19 +146,23 @@ Create a summary of approximately {target_tokens} tokens that captures the essen
         """
         # Combine all summaries
         combined_summaries = "\n\n".join(
-            [f"Round {i+1} Summary:\n{summary}" for i, summary in enumerate(summaries)]
+            [
+                f"**Round {i+1} Summary:**\n{summary}"
+                for i, summary in enumerate(summaries)
+            ]
         )
 
-        prompt = f"""Topic: {topic}
-
-Previous Round Summaries:
-{combined_summaries}
-
-Create a unified progressive summary that captures the evolution of the discussion across all rounds. Maximum {max_tokens} tokens. Focus on:
-1. Major themes that have emerged
-2. How the discussion has evolved
-3. Key points of consensus and disagreement
-4. Important questions or areas for further exploration"""
+        prompt = (
+            f"**Task:** Create a Unified Progressive Summary.\n"
+            f"**Topic:** {topic}\n\n"
+            f"**Input:** A series of summaries from consecutive discussion rounds.\n---\n{combined_summaries}\n---\n\n"
+            f"**Instructions:**\n"
+            f"1.  Synthesize the provided round summaries into a single, coherent narrative.\n"
+            f"2.  Trace the evolution of the discussion, highlighting how arguments developed, shifted, or were resolved.\n"
+            f"3.  Identify the major themes, key points of consensus/disagreement, and the most critical unanswered questions.\n"
+            f"4.  The final summary should not exceed {max_tokens} tokens.\n"
+            f"5.  Your response should contain **only the unified summary text** and nothing else."
+        )
 
         progressive_summary = self.generate_response(prompt)
 
@@ -179,23 +198,21 @@ Create a unified progressive summary that captures the evolution of the discussi
 
         previous_context = ""
         if previous_insights:
-            previous_context = f"\nPrevious Insights:\n" + "\n".join(
-                [f"- {insight}" for insight in previous_insights]
+            previous_context = (
+                "\n**Previously Identified Insights (for context):**\n"
+                + "\n".join([f"- {insight}" for insight in previous_insights])
             )
 
-        prompt = f"""Topic: {topic}
-
-Discussion Content:
-{combined_text}
-{previous_context}
-
-Extract 3-5 key insights from this discussion. Focus on:
-1. Novel perspectives or arguments
-2. Important revelations or conclusions
-3. Critical questions that have emerged
-4. Significant shifts in understanding
-
-Format each insight as a concise, standalone statement."""
+        prompt = (
+            f"**Task:** Extract Key Insights.\n"
+            f"**Topic:** {topic}\n\n"
+            f"**Raw Discussion Transcript:**\n---\n{combined_text}\n---\n{previous_context}\n\n"
+            f"**Instructions:**\n"
+            f"1.  Analyze the discussion and identify the 3-5 most significant and novel insights.\n"
+            f"2.  Focus on revelatory conclusions, critical unanswered questions, or major shifts in the group's understanding. Do not simply summarize the discussion.\n"
+            f"3.  Each insight must be a concise, standalone statement.\n"
+            f"4.  Format your response as a numbered list. Your response should contain **only the numbered list** and nothing else."
+        )
 
         response = self.generate_response(prompt)
 

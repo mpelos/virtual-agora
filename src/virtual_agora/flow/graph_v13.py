@@ -438,11 +438,12 @@ class VirtualAgoraV13Flow:
                 "configurable": {"thread_id": self.state_manager.state["session_id"]}
             }
 
-        # Get current state
-        current_state = self.state_manager.get_snapshot()
+        # For a fresh start, we need to pass the current state from state manager
+        # The checkpointer will handle state persistence across the execution
+        input_data = self.state_manager.state
 
-        # Invoke graph
-        result = self.compiled_graph.invoke(current_state, config)
+        # Invoke graph with current state
+        result = self.compiled_graph.invoke(input_data, config)
 
         return result
 
@@ -456,12 +457,27 @@ class VirtualAgoraV13Flow:
                 "configurable": {"thread_id": self.state_manager.state["session_id"]}
             }
 
-        # Get current state
-        current_state = self.state_manager.get_snapshot()
+        logger.info(f"VirtualAgoraV13Flow.stream called with config: {config}")
+        logger.debug(f"State manager session_id: {self.state_manager.state.get('session_id')}")
+        logger.debug(f"Compiled graph type: {type(self.compiled_graph)}")
 
-        # Stream graph execution
-        for update in self.compiled_graph.stream(current_state, config):
-            yield update
+        # For a fresh start, we need to pass the current state from state manager
+        # The checkpointer will handle state persistence across the execution
+        input_data = self.state_manager.state
+        logger.debug(f"Input data for stream: session_id={input_data.get('session_id')}, keys_count={len(input_data.keys())}")
+
+        try:
+            # Stream graph execution with current state
+            logger.info("Starting compiled_graph.stream execution")
+            for update in self.compiled_graph.stream(input_data, config):
+                logger.debug(f"Received stream update: {update}")
+                yield update
+            logger.info("Stream execution completed successfully")
+        except Exception as e:
+            logger.error(f"Error in stream execution: {e}", exc_info=True)
+            logger.error(f"Error occurred with input_data: {input_data}")
+            logger.error(f"Error occurred with config: {config}")
+            raise
 
     def start_monitoring(self, session_id: str):
         """Start monitoring for a session."""

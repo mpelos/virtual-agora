@@ -254,10 +254,17 @@ class ContextWindowManager:
             self.estimate_tokens(summary)
             for summary in state["phase_summaries"].values()
         )
-        topic_summary_tokens = sum(
-            self.estimate_tokens(summary)
-            for summary in state["topic_summaries"].values()
-        )
+        topic_summaries = state.get("topic_summaries", {})
+        if isinstance(topic_summaries, dict):
+            topic_summary_tokens = sum(
+                self.estimate_tokens(summary) for summary in topic_summaries.values()
+            )
+        elif isinstance(topic_summaries, list):
+            topic_summary_tokens = sum(
+                self.estimate_tokens(summary) for summary in topic_summaries
+            )
+        else:
+            topic_summary_tokens = 0
         consensus_tokens = sum(
             self.estimate_tokens(summary)
             for summary in state["consensus_summaries"].values()

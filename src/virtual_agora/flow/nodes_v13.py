@@ -79,16 +79,15 @@ class V13FlowNodes:
         so this node mainly validates the setup.
         """
         logger.info("Node: config_and_keys - Validating configuration")
+        logger.debug(f"Received state with session_id: {state.get('session_id')}")
+        logger.debug(f"State keys: {list(state.keys()) if state else 'No state'}")
 
         # Configuration is already loaded at this point
         # This node validates and confirms readiness
-        updates = {
-            "config_loaded": True,
-            "initialization_timestamp": datetime.now(),
-            "system_status": "ready",
-        }
+        # Update the current phase to indicate configuration is complete
+        logger.info("Configuration validated successfully")
 
-        return updates
+        return {"current_phase": 0}
 
     def agent_instantiation_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """Create all agent instances.
@@ -129,7 +128,6 @@ class V13FlowNodes:
             "specialized_agents": specialized_agent_ids,
             "agents": discussing_agent_info,
             "speaking_order": speaking_order,
-            "agent_count": len(self.discussing_agents),
             "current_phase": 0,
         }
 
@@ -455,7 +453,10 @@ class V13FlowNodes:
         topic_queue = state.get("topic_queue", [])
         if not topic_queue:
             logger.error("No topics in queue")
-            return {"error": "No topics in queue"}
+            return {
+                "last_error": "No topics in queue",
+                "error_count": state.get("error_count", 0) + 1,
+            }
 
         # Set active topic if not already set
         if not state.get("active_topic"):
@@ -476,7 +477,8 @@ class V13FlowNodes:
 
             return updates
 
-        return {}
+        # Topic is already active, just confirm it's still current
+        return {"active_topic": state.get("active_topic")}
 
     def discussion_round_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """Execute one round of discussion.
@@ -673,7 +675,7 @@ class V13FlowNodes:
 
         if not round_messages:
             logger.warning(f"No messages found for round {current_round}")
-            return {}
+            return {"current_round": current_round}  # Return minimal state update
 
         try:
             # Invoke summarizer as a tool

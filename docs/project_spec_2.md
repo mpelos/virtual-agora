@@ -67,13 +67,13 @@ The node-centric architecture enables enhanced capabilities while maintaining th
 
 #### **4. Agent Roles & Architecture**
 
-*   **Core Framework:** LangGraph manages the stateful application flow. The process is driven by transitions between nodes in a graph.
-*   **Agents as Tools:** LLMs are instantiated with specific prompts to act as specialized agents. They do not control the flow; they are invoked by graph nodes to execute tasks.
-    *   **Discussing Agents:** The primary participants who propose agenda items, debate, and vote.
-    *   **Moderator Agent:** A specialized reasoning tool invoked to perform process-oriented tasks that require complex understanding, such as compiling unique lists from agent proposals and synthesizing votes to produce a final, ordered agenda.
-    *   **Summarizer Agent:** Invoked after each discussion round to create a concise, agent-agnostic summary of the key points.
-    *   **Topic Report Agent:** Invoked after an agenda item is concluded. It synthesizes all round summaries and final considerations into a comprehensive report for that specific item.
-    *   **Ecclesia Report Agent:** Invoked at the end of the entire session. It analyzes all individual topic reports to scope and write a final, multi-part summary of the whole discussion.
+- **Core Framework:** LangGraph manages the stateful application flow. The process is driven by transitions between nodes in a graph.
+- **Agents as Tools:** LLMs are instantiated with specific prompts to act as specialized agents. They do not control the flow; they are invoked by graph nodes to execute tasks.
+  - **Discussing Agents:** The primary participants who propose agenda items, debate, and vote.
+  - **Moderator Agent:** A specialized reasoning tool invoked to perform process-oriented tasks that require complex understanding, such as compiling unique lists from agent proposals and synthesizing votes to produce a final, ordered agenda.
+  - **Summarizer Agent:** Invoked after each discussion round to create a concise, agent-agnostic summary of the key points.
+  - **Topic Report Agent:** Invoked after an agenda item is concluded. It synthesizes all round summaries and final considerations into a comprehensive report for that specific item.
+  - **Ecclesia Report Agent:** Invoked at the end of the entire session. It analyzes all individual topic reports to scope and write a final, multi-part summary of the whole discussion.
 
 #### **5. Agent Personas & Prompting**
 
@@ -168,34 +168,34 @@ The application is a state machine where the graph dictates the flow from one no
 2.  **Collate Proposals Node:** The collected proposals are passed to this node, which invokes the **Moderator Agent** to read all suggestions and compile a single, deduplicated list of agenda items.
 3.  **Agenda Voting Node:** A polling node presents the collated list to the **Discussing Agents** and instructs them to vote on their preferred order of discussion.
 4.  **Synthesize Agenda Node:** This node invokes the **Moderator Agent**, providing it with all the natural language votes. The Moderator's task is to analyze the votes, break any ties, and produce a final, rank-ordered agenda.
-    *   **Output Format:** The Moderator's output **must** be a JSON object: `{"proposed_agenda": ["Agenda Item C", "Agenda Item A", "Agenda Item B"]}`.
+    - **Output Format:** The Moderator's output **must** be a JSON object: `{"proposed_agenda": ["Agenda Item C", "Agenda Item A", "Agenda Item B"]}`.
 5.  **HITL - Agenda Approval Node:** The system parses the Moderator's JSON. The ordered agenda is displayed to the **User**, who must approve or edit it to proceed. This user-approved agenda is saved to the graph's state.
 
 ##### **Phase 2: Discussion Loop (Per Agenda Item)**
 
 1.  **Announce Item Node:** This node announces the first item from the approved agenda that will be discussed.
 2.  **Discussion Round Node:** The system enters the core discussion loop for the current agenda item.
-    *   **Turn Order:** The order of agents is rotated each round (e.g., \[A,B,C] -> \[B,C,A]).
-    *   **Context Flow:** The context provided to each agent is critical. For any given turn, an agent receives:
-        1.  The initial user-provided theme.
-        2.  The specific agenda item being discussed.
-        3.  A collection of all compacted summaries from *previous* rounds.
-        4.  The live, verbatim comments from any agents who have already spoken *within the current round*.
+    - **Turn Order:** The order of agents is rotated each round (e.g., \[A,B,C] -> \[B,C,A]).
+    - **Context Flow:** The context provided to each agent is critical. For any given turn, an agent receives:
+      1.  The initial user-provided theme.
+      2.  The specific agenda item being discussed.
+      3.  A collection of all compacted summaries from _previous_ rounds.
+      4.  The live, verbatim comments from any agents who have already spoken _within the current round_.
 3.  **Round Summarization Node:** After all agents have spoken in a round, this node invokes the **Summarizer Agent**. It is given all comments from the round and creates a single, agent-agnostic "compacted text" summary. This summary is appended to the state for future rounds.
 4.  **Conditional Branch: End-of-Topic Poll:** A conditional node checks if the round number is 3 or greater. If so, it directs the flow to the poll. If not, it loops back to the **Discussion Round Node**.
 5.  **End-of-Topic Poll Node:** This polling node asks the **Discussing Agents**: "Should we conclude the discussion on '\[Current Agenda Item]'? Please respond with 'Yes' or 'No' and a short justification."
 6.  **Conditional Branch: User Stop Point:** A conditional node checks if `current_round % 5 == 0`.
-    *   If `True`, the flow is directed to the **HITL - Periodic User Stop Node**.
-    *   If `False`, the flow proceeds to tally the agent poll results.
+    - If `True`, the flow is directed to the **HITL - Periodic User Stop Node**.
+    - If `False`, the flow proceeds to tally the agent poll results.
 7.  **HITL - Periodic User Stop Node:** The system pauses and asks the **User** if they wish to end the current agenda item discussion.
 8.  **Conditional Branch: Tally Votes & User Input:** This decision node determines the next step based on the polls.
-    *   If the user forces a stop OR the agent vote to conclude passes (Majority + 1), the graph transitions to **Phase 3**.
-    *   If the vote fails and the user does not intervene, the graph loops back to the **Discussion Round Node** to start the next round.
+    - If the user forces a stop OR the agent vote to conclude passes (Majority + 1), the graph transitions to **Phase 3**.
+    - If the vote fails and the user does not intervene, the graph loops back to the **Discussion Round Node** to start the next round.
 
 ##### **Phase 3: Agenda Item Conclusion & Reporting**
 
 1.  **Final Considerations Node:** This node prompts agents for their final thoughts.
-    *   **Logic:** If the conclusion was triggered by a standard agent vote, it prompts only the agents who voted "No". If the conclusion was forced by the user at a 5-round checkpoint, it prompts **all** agents.
+    - **Logic:** If the conclusion was triggered by a standard agent vote, it prompts only the agents who voted "No". If the conclusion was forced by the user at a 5-round checkpoint, it prompts **all** agents.
 2.  **Topic Report Generation Node:** This node invokes the **Topic Report Agent**. It is provided with all the compacted round summaries and the "Final Considerations" text for the concluded item. The agent's task is to synthesize this information into a single, comprehensive report.
 3.  **File Output Node:** The generated report is saved to a dedicated Markdown file (e.g., `agenda_summary_Legal_Status_of_DAOs.md`).
 
@@ -203,20 +203,20 @@ The application is a state machine where the graph dictates the flow from one no
 
 1.  **Agent Poll Node (Ecclesia End?):** After a topic report is saved, this polling node asks all **Discussing Agents** if they wish to end the entire session (the "ecclesia").
 2.  **Conditional Branch: Agent Decision:**
-    *   If agents vote to end, the graph transitions directly to **Phase 5**.
-    *   If agents vote to continue, the graph proceeds to the user approval node.
+    - If agents vote to end, the graph transitions directly to **Phase 5**.
+    - If agents vote to continue, the graph proceeds to the user approval node.
 3.  **HITL - User Approval Node:** The system asks the **User** for final permission to continue to the next agenda item.
 4.  **Conditional Branch: Final Continuation Logic:**
-    *   If the user denies permission, the graph transitions to **Phase 5**.
-    *   If the user grants permission, the graph checks if any agenda items remain.
-        *   If the agenda is now empty, the graph transitions to **Phase 5**.
-        *   If items remain, the graph transitions back to the **Agenda Proposal Node (Phase 1)**, first instructing agents to re-evaluate the agenda (propose additions/removals) based on the discussion so far.
+    - If the user denies permission, the graph transitions to **Phase 5**.
+    - If the user grants permission, the graph checks if any agenda items remain.
+      - If the agenda is now empty, the graph transitions to **Phase 5**.
+      - If items remain, the graph transitions back to the **Agenda Proposal Node (Phase 1)**, first instructing agents to re-evaluate the agenda (propose additions/removals) based on the discussion so far.
 
 ##### **Phase 5: Final Report Generation**
 
 1.  **Trigger:** This phase is initiated when any end condition in Phase 4 is met.
 2.  **Final Report Node:** This node activates the **Ecclesia Report Agent**.
-    *   **Task:** The agent is prompted to read all saved `agenda_summary_....md` files, define a logical structure for a final report (e.g., Executive Summary, Key Themes, Points of Contention), and then write the content for each section.
+    - **Task:** The agent is prompted to read all saved `agenda_summary_....md` files, define a logical structure for a final report (e.g., Executive Summary, Key Themes, Points of Contention), and then write the content for each section.
 3.  **Multi-File Output Node:** The content for each section of the final report is saved to a separate, numbered Markdown file (e.g., `final_report_01_Executive_Summary.md`).
 4.  **End Node:** The graph transitions to its final node, which displays a "Session Complete" message and terminates the application.
 
@@ -303,6 +303,7 @@ graph TD
 ##### Diagram Legend & Node-Centric Architecture
 
 **Node Types:**
+
 - **Process Nodes (Gray):** Automated system operations and agent tool invocations
 - **Decision Nodes (Red):** Conditional logic determining graph flow paths
 - **HITL Nodes (Gold):** Human-in-the-Loop gates requiring user input
@@ -311,6 +312,7 @@ graph TD
 - **Start/End (Green):** Graph entry and termination points
 
 **Key Architectural Features:**
+
 - **Agent Tool Invocation:** Agents are called by nodes, not autonomous
 - **Specialized Agent Roles:** Five distinct agent types for specific tasks
 - **Enhanced User Control:** Multiple HITL gates including periodic stops
@@ -335,6 +337,7 @@ This flow demonstrates how the node-centric architecture maintains process contr
 The node-centric architecture uses a dual-layer state management approach:
 
 **In-Memory State (LangGraph State Object):**
+
 - **Primary State Dictionary:** Managed by LangGraph containing:
   - `theme`: User-provided discussion theme
   - `current_agenda`: User-approved agenda items list
@@ -348,6 +351,7 @@ The node-centric architecture uses a dual-layer state management approach:
 - **Flow Control State:** Tracking graph node transitions and conditional logic
 
 **Persistent State (Log File):**
+
 - **Session Transcript:** Append-only text file storing complete session history
 - **Timestamp Format:** Each entry prefixed with timestamp and speaker identification
 - **File Naming:** `session_YYYY-MM-DD_HHMMSS.log`
@@ -358,6 +362,7 @@ The node-centric architecture uses a dual-layer state management approach:
 The rich library provides enhanced terminal output for optimal user experience:
 
 **Color Coding Scheme:**
+
 - **Theme/System Messages:** Bold White
 - **User Prompts (HITL):** Bright Yellow
 - **Moderator Agent:** Cyan (process facilitation)
@@ -372,6 +377,7 @@ The rich library provides enhanced terminal output for optimal user experience:
 - **Success Messages:** Bright Green
 
 **Formatting Features:**
+
 - **Progress Indicators:** Round numbers, agenda item progress, session status
 - **Structured Output:** Clearly delineated sections for different phases
 - **Agent Identification:** Consistent naming and color coding
@@ -382,30 +388,35 @@ The rich library provides enhanced terminal output for optimal user experience:
 Robust error handling ensures reliable operation across diverse scenarios:
 
 **API Communication Failures:**
+
 - **Retry Mechanism:** Exponential backoff for transient network errors (3 attempts)
 - **Provider Failover:** If an agent's provider fails, log error and skip turn with notification
 - **Persistent Failures:** If API persistently fails, gracefully exclude agent from remaining session
 - **Rate Limiting:** Implement intelligent rate limiting and backoff strategies
 
 **Configuration & Environment Issues:**
+
 - **Missing API Keys:** Startup validation with informative error messages for missing credentials
 - **Invalid Configuration:** YAML parsing validation with specific error reporting
 - **Model Availability:** Runtime checking for model availability and fallback options
 - **File System Permissions:** Validation of write permissions for logging and report generation
 
 **Agent Response Validation:**
+
 - **Format Enforcement:** For structured outputs (JSON agendas), implement format validation with re-prompting
 - **Content Filtering:** Basic validation for on-topic responses and appropriate content
 - **Vote Parsing:** Intelligent parsing of natural language votes with fallback interpretation
 - **Response Timeouts:** Configurable timeouts for agent responses with graceful handling
 
 **State Management Errors:**
+
 - **Corrupted State:** State validation checkpoints with recovery mechanisms
 - **Context Overflow:** Intelligent context trimming while preserving essential information
 - **Session Recovery:** Basic session state persistence for recovery from unexpected termination
 - **Resource Management:** Memory usage monitoring and optimization for long sessions
 
 **User Input Validation:**
+
 - **HITL Input Validation:** Clear error messaging for invalid user inputs with re-prompting
 - **Agenda Editing:** Validation of user agenda modifications with format checking
 - **Session Control:** Robust handling of user interruption and session control commands
@@ -415,36 +426,42 @@ Robust error handling ensures reliable operation across diverse scenarios:
 The node-centric architecture enables several exciting possibilities for future development:
 
 **Enhanced Agent Capabilities:**
+
 - **Persona Assignment:** Allow users to assign specific personas to agents in config.yml (e.g., "You are a skeptical economist")
 - **Dynamic Agent Addition:** Runtime addition of new agents to ongoing discussions
 - **Agent Specialization:** Topic-specific agent configurations for different domains
 - **Cross-Session Agent Memory:** Persistent agent knowledge across multiple sessions
 
 **Advanced Context Management:**
+
 - **Vector Database Integration:** Replace simple summarization with ChromaDB or similar for sophisticated context retrieval
 - **Semantic Search:** Content-aware context selection based on relevance to current discussion
 - **Multi-Modal Support:** Integration of document, image, and other media types in discussions
 - **Hierarchical Summarization:** Multi-level context compression with selective detail preservation
 
 **Workflow Enhancements:**
+
 - **Parallel Topic Discussions:** Multi-threaded discussions on different agenda items
 - **Conditional Branching:** Agent-driven workflow modifications based on discussion outcomes
 - **Meta-Discussion Capabilities:** Agents discussing and modifying the discussion process itself
 - **Session Templates:** Pre-configured discussion formats for specific use cases
 
 **Reporting & Analysis:**
+
 - **Real-Time Analytics:** Live dashboard showing discussion metrics and trends
 - **Sentiment Analysis:** Tracking agreement/disagreement patterns across topics
 - **Final Report Compilation:** Automated PDF generation using pandoc or similar tools
 - **Cross-Session Analysis:** Comparative analysis across multiple related sessions
 
 **User Experience Improvements:**
+
 - **Web Interface:** Gradio or Streamlit UI for browser-based interaction
 - **Save/Load Session State:** Full session serialization for pause/resume functionality
 - **Mobile Support:** Responsive design for mobile device access
 - **Collaborative Features:** Multiple human participants in a single session
 
 **Integration & Deployment:**
+
 - **API Mode:** RESTful API for integration with other applications
 - **Cloud Deployment:** Containerized deployment with cloud provider integration
 - **Enterprise Features:** SSO, audit logging, compliance reporting, and administrative controls

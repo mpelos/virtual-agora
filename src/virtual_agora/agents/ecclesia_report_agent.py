@@ -5,6 +5,7 @@ analyzing all topic reports to create a comprehensive multi-section synthesis.
 """
 
 import json
+import re
 from typing import List, Dict, Any, Optional
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel, ValidationError
@@ -76,9 +77,9 @@ Approach this as a professional analyst creating a report for stakeholders who n
         for topic, report in topic_reports.items():
             # Take first 200 characters as excerpt
             excerpt = report[:200] + "..." if len(report) > 200 else report
-            report_excerpts.append(f"\n{topic}:\n{excerpt}")
+            report_excerpts.append(f"Topic: {topic}\n{excerpt}")
 
-        excerpts_text = "\n".join(report_excerpts)
+        excerpts_text = "\n\n".join(report_excerpts)
 
         prompt = f"""Discussion Theme: {discussion_theme}
 
@@ -88,12 +89,9 @@ Topics Discussed:
 Topic Report Excerpts:
 {excerpts_text}
 
-Based on these topics and their content, define a logical report structure.
-Output ONLY a JSON list of section titles that will comprehensively cover the session's insights.
-
-Example format: ["Executive Summary", "Key Themes Across Topics", "Points of Consensus", "Areas of Ongoing Debate", "Innovative Insights", "Implications and Recommendations", "Conclusion"]
-
-Your response must be valid JSON."""
+Analyze these topics and create a logical structure for a comprehensive final report. 
+Output a JSON object with "report_sections" containing an ordered list of section titles.
+Example: {{"report_sections": ["Executive Summary", "Key Themes", "Conclusions"]}}"""
 
         # Generate structure with JSON validation
         response = self.generate_response(prompt)
@@ -102,25 +100,23 @@ Your response must be valid JSON."""
         try:
             # Clean up response to ensure it's valid JSON
             response = response.strip()
-            if not response.startswith("["):
-                # Extract JSON array if wrapped in other text
-                import re
+            json_match = re.search(
+                r'\{\s*"report_sections"\s*:\s*\[.*?\]\s*\}', response, re.DOTALL
+            )
+            if not json_match:
+                raise ValueError(
+                    "Could not find valid report structure JSON in the response."
+                )
 
-                json_match = re.search(r"\[.*\]", response, re.DOTALL)
-                if json_match:
-                    response = json_match.group()
-
-            sections = json.loads(response)
-
-            if not isinstance(sections, list) or not all(
-                isinstance(s, str) for s in sections
-            ):
-                raise ValueError("Response must be a list of strings")
+            response = json_match.group()
+            data = json.loads(response)
+            validated_data = ReportStructure(**data)
+            sections = validated_data.report_sections
 
             logger.info(f"Generated report structure with {len(sections)} sections")
             return sections
 
-        except (json.JSONDecodeError, ValueError) as e:
+        except (json.JSONDecodeError, ValidationError) as e:
             logger.error(f"Failed to parse report structure: {e}")
             # Fallback to default structure
             default_sections = [
@@ -158,9 +154,9 @@ Your response must be valid JSON."""
         # Context from previous sections
         prev_context = ""
         if previous_sections:
-            prev_context = "Previously written sections:\n" + "\n".join(
+            prev_context = "Previously written sections (for context):\n" + "\n".join(
                 [
-                    f"\n{title}:\n{content[:300]}..."
+                    f"{title}:\n{content[:300]}..."
                     for title, content in previous_sections.items()
                 ]
             )
@@ -168,13 +164,12 @@ Your response must be valid JSON."""
         # Full topic reports
         reports_text = "\n\n".join(
             [
-                f"=== Topic: {topic} ===\n{report}"
+                f"Topic: {topic}\n---\n{report}\n---"
                 for topic, report in topic_reports.items()
             ]
         )
 
         prompt = f"""Discussion Theme: {discussion_theme}
-
 Section to Write: {section_title}
 
 {prev_context}
@@ -182,13 +177,7 @@ Section to Write: {section_title}
 All Topic Reports:
 {reports_text}
 
-Write the content for the "{section_title}" section. This should:
-1. Synthesize insights across all topics (not just summarize each one)
-2. Identify patterns and connections between topics
-3. Provide analysis and interpretation
-4. Be written for stakeholders who need actionable insights
-
-Focus on synthesis and analysis rather than repetition. Write professionally and concisely."""
+Write comprehensive content for the section '{section_title}'. Synthesize information across all topics to identify patterns, connections, and high-level insights. Write in a professional, analytical style suitable for stakeholders."""
 
         content = self.generate_response(prompt)
 
@@ -229,80 +218,14 @@ Focus on synthesis and analysis rather than repetition. Write professionally and
 Discussion Theme: {theme}
 
 Topics Covered:
-{topics_list}
-{summaries_text}
+{topics_list}{summaries_text}
 
-Write comprehensive content for this section of the final report. Focus on:
-1. Cross-topic synthesis and analysis
-2. Identifying patterns and themes
-3. Drawing meaningful conclusions
-4. Providing actionable insights
-
-Write in a professional, analytical style suitable for executive readership."""
+Write comprehensive, analytical content for this section of the final report. Focus on:
+- Cross-topic synthesis and analysis
+- Identifying overarching patterns and themes
+- Drawing meaningful, high-level conclusions
+- Providing actionable insights for executive readership"""
 
         content = self.generate_response(prompt)
 
         return content
-
-    async def define_report_structure(
-        self, topic_summaries: List[Dict[str, str]], discussion_theme: str
-    ) -> List[str]:
-        """Async version of report structure definition.
-
-        This method is migrated from ModeratorAgent's async define_report_structure.
-
-        Args:
-            topic_summaries: List of topic summary dictionaries
-            discussion_theme: Overall theme
-
-        Returns:
-            List of section titles
-        """
-        # Convert list format to dict format
-        topic_reports = {}
-        for summary_dict in topic_summaries:
-            topic = summary_dict.get("topic", "Unknown Topic")
-            summary = summary_dict.get("summary", "")
-            topic_reports[topic] = summary
-
-        # Use sync method
-        return self.generate_report_structure(topic_reports, discussion_theme)
-
-    async def generate_report_section(
-        self,
-        section_title: str,
-        all_summaries: List[Dict[str, str]],
-        discussion_theme: str,
-        previous_sections: List[Dict[str, str]],
-    ) -> str:
-        """Async version of section generation.
-
-        This method is migrated from ModeratorAgent's async generate_report_section.
-
-        Args:
-            section_title: Section to write
-            all_summaries: All topic summaries
-            discussion_theme: Overall theme
-            previous_sections: Previously written sections
-
-        Returns:
-            Section content
-        """
-        # Convert formats
-        topic_reports = {}
-        for summary_dict in all_summaries:
-            topic = summary_dict.get("topic", "Unknown Topic")
-            summary = summary_dict.get("summary", "")
-            topic_reports[topic] = summary
-
-        prev_sections_dict = {}
-        for section in previous_sections:
-            title = section.get("title", "")
-            content = section.get("content", "")
-            if title:
-                prev_sections_dict[title] = content
-
-        # Use sync method
-        return self.write_section(
-            section_title, topic_reports, discussion_theme, prev_sections_dict
-        )
