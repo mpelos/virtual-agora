@@ -1,0 +1,2 @@
+# This file ensures the checkpoints directory is tracked in git  
+# Checkpoint files are automatically ignored by .gitignore

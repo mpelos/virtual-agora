@@ -153,3 +153,11 @@ logs/*
 !logs/.gitkeep
 reports/*
 !reports/.gitkeep
+sessions/*
+!sessions/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+
+# Test files with sensitive data
+*.env.test
+config.test.yml

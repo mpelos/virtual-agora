@@ -103,15 +103,14 @@ class FlowNodes:
         moderator = self.agents["moderator"]
 
         # Step 1: Request topic proposals from all agents
-        proposal_prompt = f"""
-        You are facilitating a discussion on: "{main_topic}"
-        
-        Please request each agent to propose 3-5 sub-topics for structured discussion.
-        Ask each agent individually and collect their proposals.
-        """
+        proposal_prompt = moderator.request_topic_proposals(
+            main_topic=main_topic,
+            agent_count=len(state["speaking_order"])
+        )
 
         # Get proposals from each participant
-        proposals = []
+        agent_responses = []
+        agent_ids = []
 
         # Use loading spinner while collecting proposals
         with LoadingSpinner(
@@ -123,79 +122,73 @@ class FlowNodes:
                     f"Getting proposals from {agent_id} ({i+1}/{len(state['speaking_order'])})"
                 )
 
-                # Ask agent for proposals
-                agent_response = agent(
-                    {
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": f"Based on the main topic '{main_topic}', please propose 3-5 specific sub-topics you think would be valuable to discuss.",
-                            }
-                        ]
-                    }
-                )
-
-                # Extract proposals (simplified - in real implementation would parse response)
-                agent_proposals = agent_response.get("proposals", [])
-                proposals.extend(agent_proposals)
+                # Ask agent for proposals using proper message format
+                response_dict = agent({
+                    "messages": [
+                        {"role": "user", "content": proposal_prompt}
+                    ]
+                })
+                
+                # Extract the AI response content
+                messages = response_dict.get("messages", [])
+                if messages:
+                    # Get the last message which should be the AI response
+                    response_content = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
+                    agent_responses.append(response_content)
+                    agent_ids.append(agent_id)
+                    logger.info(f"Collected proposals from {agent_id}")
 
         # Step 2: Moderator collates and deduplicates proposals
-        collation_prompt = f"""
-        Here are all the proposed sub-topics: {proposals}
+        proposal_data = moderator.collect_proposals(agent_responses, agent_ids)
+        unique_topics = proposal_data["unique_topics"]
         
-        Please create a unified, deduplicated list of discussion topics and present them
-        to the agents for voting. Format as a clear numbered list.
-        """
-
-        collated_topics = moderator(
-            {"messages": [{"role": "user", "content": collation_prompt}]}
-        ).get("topics", [])
+        logger.info(f"Collected {len(unique_topics)} unique topics for voting")
 
         # Step 3: Collect votes from agents
-        votes = {}
+        vote_responses = []
+        voter_ids = []
+        
         for agent_id in state["speaking_order"]:
             agent = self.agents[agent_id]
 
             vote_prompt = f"""
-            Here are the proposed discussion topics:
-            {chr(10).join(f"{i+1}. {topic}" for i, topic in enumerate(collated_topics))}
+            Here are the proposed discussion topics for '{main_topic}':
+            {chr(10).join(f"{i+1}. {topic}" for i, topic in enumerate(unique_topics))}
             
             Please rank these topics in order of preference (1 being most preferred).
-            Respond with your ranking.
+            Provide your ranking with brief reasoning for your top choices.
             """
 
-            vote_response = agent(
-                {"messages": [{"role": "user", "content": vote_prompt}]}
-            )
-
-            votes[agent_id] = vote_response.get(
-                "ranking", list(range(len(collated_topics)))
-            )
+            vote_response_dict = agent({
+                "messages": [{"role": "user", "content": vote_prompt}]
+            })
+            
+            # Extract the vote response content
+            messages = vote_response_dict.get("messages", [])
+            if messages:
+                vote_content = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
+                vote_responses.append(vote_content)
+                voter_ids.append(agent_id)
+                logger.info(f"Collected vote from {agent_id}")
 
         # Step 4: Moderator synthesizes votes into final agenda
-        synthesis_prompt = f"""
-        Based on these votes from agents: {votes}
-        For topics: {collated_topics}
-        
-        Analyze the votes and create a final ranked agenda. You have authority to break ties.
-        
-        Respond with ONLY a JSON object in this format:
-        {{"proposed_agenda": ["Topic 1", "Topic 2", "Topic 3"]}}
-        """
-
-        agenda_response = moderator(
-            {"messages": [{"role": "user", "content": synthesis_prompt}]}
-        )
-
-        # Parse agenda (simplified - would use proper JSON parsing)
-        proposed_agenda = agenda_response.get("proposed_agenda", collated_topics[:3])
+        try:
+            final_agenda = moderator.synthesize_agenda(
+                topics=unique_topics,
+                votes=vote_responses,
+                voter_ids=voter_ids
+            )
+        except Exception as e:
+            logger.error(f"Failed to synthesize agenda: {e}")
+            # Fallback to simple ordering
+            final_agenda = unique_topics[:5]  # Take first 5 topics
 
         updates = {
             "current_phase": 1,
             "phase_start_time": datetime.now(),
-            "proposed_topics": collated_topics,
-            "topic_queue": proposed_agenda,
-            "proposed_agenda": proposed_agenda,  # For HITL approval
+            "proposed_topics": unique_topics,
+            "topic_queue": final_agenda,
+            "proposed_agenda": final_agenda,  # For HITL approval
             "phase_history": [
                 {
                     "from_phase": 0,
@@ -207,7 +200,7 @@ class FlowNodes:
             ],
         }
 
-        logger.info(f"Generated proposed agenda: {proposed_agenda}")
+        logger.info(f"Generated proposed agenda: {final_agenda}")
 
         return updates
 
@@ -327,7 +320,16 @@ class FlowNodes:
             agent = self.agents[agent_id]
 
             # Prepare context for agent
-            context_messages = state["messages"][-10:]  # Last 10 messages for context
+            context_messages = state.get("messages", [])[-10:]  # Last 10 messages for context
+            
+            # Convert context messages to proper format for agent
+            formatted_context = []
+            for msg in context_messages:
+                if isinstance(msg, dict):
+                    formatted_context.append({
+                        "role": "assistant" if msg.get("speaker_role") == "participant" else "user",
+                        "content": msg.get("content", "")
+                    })
 
             agent_prompt = f"""
             Topic: {current_topic}
@@ -335,29 +337,33 @@ class FlowNodes:
             Your turn: {i + 1}/{len(speaking_order)}
             
             Please provide your thoughts on this topic. Build upon the previous discussion.
+            Keep your response focused and substantive (2-4 sentences).
             """
 
-            agent_response = agent(
-                {
-                    "messages": context_messages
-                    + [{"role": "user", "content": agent_prompt}]
-                }
-            )
+            # Call the agent with proper message format
+            agent_response_dict = agent({
+                "messages": formatted_context + [{"role": "user", "content": agent_prompt}]
+            })
 
-            round_messages.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "speaker_id": agent_id,
-                    "speaker_role": "participant",
-                    "content": agent_response["messages"][-1]["content"],
-                    "timestamp": datetime.now(),
-                    "phase": 2,
-                    "topic": current_topic,
-                    "round": current_round,
-                }
-            )
+            # Extract the response content
+            response_messages = agent_response_dict.get("messages", [])
+            if response_messages:
+                # Get the last message which should be the AI response
+                last_message = response_messages[-1]
+                response_content = last_message.content if hasattr(last_message, 'content') else str(last_message)
+            else:
+                response_content = f"[Agent {agent_id} failed to respond]"
+                logger.warning(f"Agent {agent_id} did not provide a response")
 
+            # Create Message object using agent's create_message method
+            message = agent.create_message(response_content, current_topic)
+            message["phase"] = 2
+            message["round"] = current_round
+
+            round_messages.append(message)
             participants.append(agent_id)
+            
+            logger.info(f"Agent {agent_id} provided response for round {current_round}")
 
         # Create round info
         round_info = RoundInfo(
@@ -479,21 +485,40 @@ class FlowNodes:
             Should we conclude the discussion on '{current_topic}'?
             
             Please respond with 'Yes' or 'No' and provide a short justification.
+            Format: Yes/No - [your reasoning]
             """
 
-            vote_response = agent(
-                {"messages": [{"role": "user", "content": poll_prompt}]}
-            )
+            vote_response_dict = agent({
+                "messages": [{"role": "user", "content": poll_prompt}]
+            })
 
-            # Parse vote (simplified - would use proper parsing)
-            vote_content = vote_response["messages"][-1]["content"].lower()
-            vote = "yes" if "yes" in vote_content else "no"
+            # Extract the vote response content
+            response_messages = vote_response_dict.get("messages", [])
+            if response_messages:
+                last_message = response_messages[-1]
+                vote_content = last_message.content if hasattr(last_message, 'content') else str(last_message)
+            else:
+                vote_content = "No - Failed to respond"
+                logger.warning(f"Agent {agent_id} failed to provide conclusion vote")
+
+            # Parse vote (look for yes/no in response)
+            vote_content_lower = vote_content.lower()
+            if "yes" in vote_content_lower and "no" not in vote_content_lower:
+                vote = "yes"
+            elif "no" in vote_content_lower:
+                vote = "no"
+            else:
+                # Default to "no" if unclear
+                vote = "no"
+                logger.warning(f"Unclear vote from {agent_id}: {vote_content}")
 
             votes[agent_id] = {
                 "vote": vote,
-                "justification": vote_response["messages"][-1]["content"],
+                "justification": vote_content,
                 "timestamp": datetime.now(),
             }
+            
+            logger.info(f"Agent {agent_id} voted: {vote}")
 
         # Tally votes
         yes_votes = sum(1 for vote_info in votes.values() if vote_info["vote"] == "yes")

@@ -104,10 +104,16 @@ class LangGraphUIIntegration:
 
         # Initialize dashboard
         if state.get("agents"):
-            agent_providers = {
-                agent_id: ProviderType(agent["provider"])
-                for agent_id, agent in state["agents"].items()
-            }
+            agent_providers = {}
+            for agent_id, agent in state["agents"].items():
+                try:
+                    # Try to convert provider to ProviderType
+                    provider_value = agent["provider"].lower()
+                    agent_providers[agent_id] = ProviderType(provider_value)
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"Invalid provider '{agent['provider']}' for agent {agent_id}, skipping")
+                    # Skip this agent rather than failing
+                    continue
 
             self.dashboard_manager.initialize_session(
                 state["session_id"],

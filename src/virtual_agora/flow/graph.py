@@ -28,6 +28,7 @@ from virtual_agora.state.manager import StateManager
 from virtual_agora.utils.logging import get_logger
 from virtual_agora.utils.exceptions import StateError
 from virtual_agora.agents.llm_agent import LLMAgent
+from virtual_agora.agents.moderator import ModeratorAgent
 from virtual_agora.providers import create_provider
 
 from .nodes import FlowNodes
@@ -78,8 +79,8 @@ class VirtualAgoraFlow:
             temperature=getattr(self.config.moderator, "temperature", 0.7),
             max_tokens=getattr(self.config.moderator, "max_tokens", None),
         )
-        self.agents["moderator"] = LLMAgent(
-            agent_id="moderator", llm=moderator_llm, role="moderator"
+        self.agents["moderator"] = ModeratorAgent(
+            agent_id="moderator", llm=moderator_llm, mode="facilitation"
         )
         logger.info("Initialized moderator agent")
 
