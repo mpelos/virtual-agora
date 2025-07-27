@@ -157,6 +157,7 @@ sessions/*
 !sessions/.gitkeep
 checkpoints/*
 !checkpoints/.gitkeep
+.gemini-clipboard/
 
 # Test files with sensitive data
 *.env.test
