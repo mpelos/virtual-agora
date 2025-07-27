@@ -8,8 +8,11 @@ from collections import Counter
 from typing import Optional, Set, Dict, Any
 
 from virtual_agora.config.models import (
-    Config, Provider, 
-    SummarizerConfig, TopicReportConfig, EcclesiaReportConfig
+    Config,
+    Provider,
+    SummarizerConfig,
+    TopicReportConfig,
+    EcclesiaReportConfig,
 )
 from virtual_agora.utils.exceptions import ConfigurationError
 from virtual_agora.utils.logging import get_logger
@@ -147,68 +150,68 @@ class ConfigValidator:
                 f"Some agent names exceed {max_name_length} characters "
                 f"and may cause display issues: {', '.join(long_names[:3])}"
             )
-    
+
     def validate_specialized_agents(self) -> None:
         """Validate specialized agent configurations for v1.3.
-        
+
         Checks that specialized agents use compatible models and
         appropriate configurations for their roles.
         """
         # Check summarizer configuration
-        if hasattr(self.config.summarizer, 'temperature'):
+        if hasattr(self.config.summarizer, "temperature"):
             if self.config.summarizer.temperature > 0.5:
                 logger.warning(
                     f"Summarizer temperature is {self.config.summarizer.temperature}. "
                     f"Lower temperatures (0.2-0.4) typically produce more consistent summaries."
                 )
-        
+
         # Check topic report agent
         topic_model = self.config.topic_report.model.lower()
-        if hasattr(self.config.topic_report, 'max_tokens'):
+        if hasattr(self.config.topic_report, "max_tokens"):
             if self.config.topic_report.max_tokens < 1000:
                 logger.warning(
                     f"Topic report max_tokens is {self.config.topic_report.max_tokens}. "
                     f"Consider increasing to 1500+ for comprehensive reports."
                 )
-        
+
         # Check ecclesia report agent
-        if hasattr(self.config.ecclesia_report, 'max_tokens'):
+        if hasattr(self.config.ecclesia_report, "max_tokens"):
             if self.config.ecclesia_report.max_tokens < 1500:
                 logger.warning(
                     f"Ecclesia report max_tokens is {self.config.ecclesia_report.max_tokens}. "
                     f"Consider increasing to 2000+ for detailed final reports."
                 )
-        
+
         # Validate model availability for all specialized agents
         specialized_agents = [
-            ('moderator', self.config.moderator),
-            ('summarizer', self.config.summarizer),
-            ('topic_report', self.config.topic_report),
-            ('ecclesia_report', self.config.ecclesia_report),
+            ("moderator", self.config.moderator),
+            ("summarizer", self.config.summarizer),
+            ("topic_report", self.config.topic_report),
+            ("ecclesia_report", self.config.ecclesia_report),
         ]
-        
+
         for agent_type, agent_config in specialized_agents:
             if not self._is_model_available(agent_config.provider, agent_config.model):
                 logger.warning(
                     f"{agent_type} model '{agent_config.model}' may not be available "
                     f"for provider {agent_config.provider.value}"
                 )
-    
+
     def _is_model_available(self, provider: Provider, model: str) -> bool:
         """Check if a model is likely available for a provider.
-        
+
         This is a basic check based on known model patterns.
         """
         model_lower = model.lower()
-        
+
         # Known model patterns by provider
         provider_patterns = {
-            Provider.GOOGLE: ['gemini', 'bard'],
-            Provider.OPENAI: ['gpt', 'davinci', 'babbage', 'ada'],
-            Provider.ANTHROPIC: ['claude'],
-            Provider.GROK: ['grok'],
+            Provider.GOOGLE: ["gemini", "bard"],
+            Provider.OPENAI: ["gpt", "davinci", "babbage", "ada"],
+            Provider.ANTHROPIC: ["claude"],
+            Provider.GROK: ["grok"],
         }
-        
+
         patterns = provider_patterns.get(provider, [])
         return any(pattern in model_lower for pattern in patterns)
 
@@ -272,7 +275,7 @@ class ConfigValidator:
         except ConfigurationError as e:
             report["errors"].append(str(e))
             report["valid"] = False
-            
+
         try:
             self.validate_specialized_agents()
         except ConfigurationError as e:

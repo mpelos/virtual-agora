@@ -51,15 +51,18 @@ def merge_hitl_state(
         else:
             # Replace entire history
             merged["approval_history"] = updates["approval_history"]
-    
+
     # Handle periodic_stop_responses similarly
-    if "periodic_stop_responses" in updates and isinstance(updates["periodic_stop_responses"], list):
+    if "periodic_stop_responses" in updates and isinstance(
+        updates["periodic_stop_responses"], list
+    ):
         if len(updates["periodic_stop_responses"]) == 1 and isinstance(
             updates["periodic_stop_responses"][0], dict
         ):
             # Single new entry - append it
             merged["periodic_stop_responses"] = (
-                existing.get("periodic_stop_responses", []) + updates["periodic_stop_responses"]
+                existing.get("periodic_stop_responses", [])
+                + updates["periodic_stop_responses"]
             )
         else:
             # Replace entire list

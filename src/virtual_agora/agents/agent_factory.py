@@ -129,7 +129,7 @@ class AgentFactory:
                 llm=llm,
                 compression_ratio=0.3,
                 max_summary_tokens=self.config.summarizer.max_tokens or 500,
-                enable_error_handling=True
+                enable_error_handling=True,
             )
 
             logger.info(
@@ -166,9 +166,7 @@ class AgentFactory:
             # Create topic report agent
             topic_report_id = "topic_report"
             self._topic_report = TopicReportAgent(
-                agent_id=topic_report_id,
-                llm=llm,
-                enable_error_handling=True
+                agent_id=topic_report_id, llm=llm, enable_error_handling=True
             )
 
             logger.info(
@@ -205,9 +203,7 @@ class AgentFactory:
             # Create ecclesia report agent
             ecclesia_report_id = "ecclesia_report"
             self._ecclesia_report = EcclesiaReportAgent(
-                agent_id=ecclesia_report_id,
-                llm=llm,
-                enable_error_handling=True
+                agent_id=ecclesia_report_id, llm=llm, enable_error_handling=True
             )
 
             logger.info(
@@ -217,7 +213,9 @@ class AgentFactory:
 
         except Exception as e:
             logger.error(f"Failed to create ecclesia report agent: {e}")
-            raise ConfigurationError(f"Ecclesia report agent creation failed: {e}") from e
+            raise ConfigurationError(
+                f"Ecclesia report agent creation failed: {e}"
+            ) from e
 
     def _create_agents_from_config(
         self, agent_config: AgentConfig
@@ -462,25 +460,25 @@ class AgentFactory:
 
     def create_specialized_agents(self) -> Dict[str, Any]:
         """Create all specialized agents based on configuration.
-        
+
         Returns:
             Dictionary mapping agent type to agent instance
-            
+
         Raises:
             ConfigurationError: If any agent creation fails
         """
         agents = {}
-        
+
         try:
             # Create all specialized agents
-            agents['moderator'] = self.create_moderator()
-            agents['summarizer'] = self.create_summarizer()
-            agents['topic_report'] = self.create_topic_report()
-            agents['ecclesia_report'] = self.create_ecclesia_report()
-            
+            agents["moderator"] = self.create_moderator()
+            agents["summarizer"] = self.create_summarizer()
+            agents["topic_report"] = self.create_topic_report()
+            agents["ecclesia_report"] = self.create_ecclesia_report()
+
             logger.info(f"Successfully created all {len(agents)} specialized agents")
             return agents
-            
+
         except Exception as e:
             logger.error(f"Failed to create specialized agents: {e}")
             raise
@@ -510,10 +508,10 @@ def create_agents_from_config(config: Config) -> Dict[str, Any]:
 
 def create_specialized_agents(config: Config) -> Dict[str, Any]:
     """Convenience function to create all specialized agents from configuration.
-    
+
     Args:
         config: Virtual Agora configuration
-        
+
     Returns:
         Dictionary mapping agent type to agent instance
     """

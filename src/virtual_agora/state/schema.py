@@ -136,7 +136,7 @@ class ToolExecutionMetrics(TypedDict):
 
 class AgentInvocation(TypedDict):
     """Track when specialized agents are invoked by graph nodes."""
-    
+
     invocation_id: str
     agent_type: str  # 'moderator', 'summarizer', 'topic_report', 'ecclesia_report'
     agent_id: str
@@ -151,7 +151,7 @@ class AgentInvocation(TypedDict):
 
 class RoundSummary(TypedDict):
     """Compacted summary of a discussion round."""
-    
+
     round_number: int
     topic: str
     summary_text: str
@@ -163,7 +163,7 @@ class RoundSummary(TypedDict):
 
 class UserStop(TypedDict):
     """Record of when user was asked to stop (5-round intervals)."""
-    
+
     stop_id: str
     round_number: int
     topic: str
@@ -174,12 +174,12 @@ class UserStop(TypedDict):
 
 class AgentContext(TypedDict):
     """Context provided to a specialized agent."""
-    
+
     agent_type: str  # 'summarizer', 'topic_report', etc.
     input_context: Dict[str, Any]
     timestamp: datetime
     source_node: str  # Which graph node called this agent
-    
+
     # Context flow tracking
     round_context: NotRequired[List[str]]  # Current round's messages
     compacted_summaries: NotRequired[List[str]]  # Previous round summaries
@@ -215,7 +215,7 @@ class HITLState(TypedDict):
     prompt_message: Optional[str]
     options: Optional[List[str]]
     approval_history: List[Dict[str, Any]]
-    
+
     # Periodic stop tracking
     last_periodic_stop_round: Optional[int]
     periodic_stop_responses: List[Dict[str, Any]]
@@ -391,7 +391,7 @@ class VirtualAgoraState(TypedDict):
     agent_invocations: Annotated[
         List[AgentInvocation], list.append
     ]  # Track which agents were called when
-    
+
     # Enhanced context flow (v1.3)
     round_summaries: Annotated[
         List[RoundSummary], list.append
@@ -399,13 +399,13 @@ class VirtualAgoraState(TypedDict):
     agent_contexts: Annotated[
         List[AgentContext], list.append
     ]  # Context provided to each agent
-    
+
     # Periodic HITL stops (v1.3)
     periodic_stop_counter: int  # Tracks rounds for 5-round stops
     user_stop_history: Annotated[
         List[UserStop], list.append
     ]  # When user was asked to stop
-    
+
     # Error tracking (for recovery)
     last_error: Optional[str]
     error_count: int

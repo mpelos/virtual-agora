@@ -17,7 +17,7 @@ from virtual_agora.config.models import Config as VirtualAgoraConfig
 from ..helpers.fake_llm import create_fake_llm_pool, ModeratorFakeLLM, AgentFakeLLM
 from ..helpers.integration_utils import (
     IntegrationTestHelper,
-    TestStateBuilder,
+    StateTestBuilder,
     TestResponseValidator,
     patch_ui_components,
 )

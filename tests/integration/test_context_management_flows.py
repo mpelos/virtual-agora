@@ -18,7 +18,7 @@ from virtual_agora.utils.exceptions import VirtualAgoraError
 from ..helpers.fake_llm import ModeratorFakeLLM, AgentFakeLLM
 from ..helpers.integration_utils import (
     IntegrationTestHelper,
-    TestStateBuilder,
+    StateTestBuilder,
     TestResponseValidator,
 )
 

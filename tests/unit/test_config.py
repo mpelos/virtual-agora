@@ -8,8 +8,13 @@ import yaml
 from pydantic import ValidationError
 
 from virtual_agora.config.models import (
-    Config, ModeratorConfig, AgentConfig, Provider,
-    SummarizerConfig, TopicReportConfig, EcclesiaReportConfig
+    Config,
+    ModeratorConfig,
+    AgentConfig,
+    Provider,
+    SummarizerConfig,
+    TopicReportConfig,
+    EcclesiaReportConfig,
 )
 from virtual_agora.config.loader import ConfigLoader
 from virtual_agora.config.validators import ConfigValidator
@@ -60,8 +65,12 @@ class TestConfigSchema:
         config = Config(
             moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
             summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
-            topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
-            ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
+            topic_report=TopicReportConfig(
+                provider="Anthropic", model="claude-3-opus-20240229"
+            ),
+            ecclesia_report=EcclesiaReportConfig(
+                provider="Google", model="gemini-2.5-pro"
+            ),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(provider="Anthropic", model="claude-3-opus-20240229"),
@@ -76,8 +85,12 @@ class TestConfigSchema:
             Config(
                 moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
                 summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
-                topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
-                ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
+                topic_report=TopicReportConfig(
+                    provider="Anthropic", model="claude-3-opus-20240229"
+                ),
+                ecclesia_report=EcclesiaReportConfig(
+                    provider="Google", model="gemini-2.5-pro"
+                ),
                 agents=[
                     AgentConfig(provider="OpenAI", model="gpt-4o", count=10),
                     AgentConfig(provider="OpenAI", model="gpt-4o", count=10),
@@ -92,8 +105,12 @@ class TestConfigSchema:
             Config(
                 moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
                 summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
-                topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
-                ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
+                topic_report=TopicReportConfig(
+                    provider="Anthropic", model="claude-3-opus-20240229"
+                ),
+                ecclesia_report=EcclesiaReportConfig(
+                    provider="Google", model="gemini-2.5-pro"
+                ),
                 agents=[
                     AgentConfig(provider="OpenAI", model="gpt-4o", count=1),
                 ],
@@ -105,8 +122,12 @@ class TestConfigSchema:
         config = Config(
             moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
             summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
-            topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
-            ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
+            topic_report=TopicReportConfig(
+                provider="Anthropic", model="claude-3-opus-20240229"
+            ),
+            ecclesia_report=EcclesiaReportConfig(
+                provider="Google", model="gemini-2.5-pro"
+            ),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(
@@ -229,8 +250,12 @@ class TestConfigValidator:
         config = Config(
             moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
             summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
-            topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
-            ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
+            topic_report=TopicReportConfig(
+                provider="Anthropic", model="claude-3-opus-20240229"
+            ),
+            ecclesia_report=EcclesiaReportConfig(
+                provider="Google", model="gemini-2.5-pro"
+            ),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(provider="Anthropic", model="claude-3-opus-20240229"),
@@ -286,8 +311,12 @@ class TestConfigValidator:
         config = Config(
             moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
             summarizer=SummarizerConfig(provider="OpenAI", model="gpt-4o"),
-            topic_report=TopicReportConfig(provider="Anthropic", model="claude-3-opus-20240229"),
-            ecclesia_report=EcclesiaReportConfig(provider="Google", model="gemini-2.5-pro"),
+            topic_report=TopicReportConfig(
+                provider="Anthropic", model="claude-3-opus-20240229"
+            ),
+            ecclesia_report=EcclesiaReportConfig(
+                provider="Google", model="gemini-2.5-pro"
+            ),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(provider="Anthropic", model="claude-3-opus-20240229"),

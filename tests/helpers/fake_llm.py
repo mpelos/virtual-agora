@@ -330,6 +330,116 @@ class ScenarioFakeLLM(FakeLLMBase):
         return "I have concerns about this approach that merit discussion."
 
 
+class SummarizerFakeLLM(PredictableFakeLLM):
+    """Fake LLM specifically designed for summarizer agent responses."""
+
+    def __init__(self, **kwargs):
+        # Initialize with summarizer-specific patterns
+        summarizer_patterns = {
+            r"summarize.*round": "Key points: technical considerations, implementation challenges discussed. General agreement on systematic approach.",
+            r"create a summary": "Substantive discussion covered technical aspects and implementation. Agreement on systematic approach, some divergence on priorities.",
+            r"topic:.*round:": "Discussion addressed technical considerations and implementation challenges. Consensus on systematic approach emerged.",
+            r"progressive.*summary": "Throughout the discussion rounds, the conversation evolved from initial exploration to deeper analysis. Early rounds focused on defining the problem space, middle rounds examined various solutions, and recent rounds converged on practical implementation strategies.",
+            r"extract.*insights": "- Technical implementation requires careful planning\n- Stakeholder buy-in is crucial for success\n- Phased approach recommended for risk mitigation\n- Continuous monitoring needed for optimization",
+            r"compress.*context": "Discussion covered core requirements, implementation challenges, and proposed solutions. Consensus emerged on phased approach with emphasis on stakeholder engagement and continuous improvement.",
+        }
+
+        # Call parent with patterns
+        super().__init__(response_patterns=summarizer_patterns, **kwargs)
+
+
+class TopicReportFakeLLM(PredictableFakeLLM):
+    """Fake LLM specifically designed for topic report agent responses."""
+
+    def __init__(self, **kwargs):
+        # Initialize with topic report-specific patterns
+        topic_report_patterns = {
+            r"synthesize.*topic|topic.*report|comprehensive report": """# Topic Report: Technical Implementation
+
+## Overview
+This topic generated substantial discussion among the agents, covering technical, practical, and strategic dimensions. The conversation evolved from initial exploration to concrete recommendations.
+
+## Major Themes
+1. **Technical Requirements**: Agents emphasized the need for robust architecture and scalability
+2. **Implementation Strategy**: Consensus on phased approach with clear milestones
+3. **Risk Management**: Identified key risks and mitigation strategies
+4. **Stakeholder Considerations**: Importance of user experience and adoption
+
+## Points of Consensus
+- Need for systematic approach to implementation
+- Importance of continuous monitoring and iteration
+- Value of stakeholder engagement throughout process
+- Priority on security and reliability
+
+## Areas of Disagreement
+- Timeline expectations varied among agents
+- Resource allocation priorities differed
+- Level of automation vs. human oversight debated
+
+## Key Insights
+- Early prototyping can validate assumptions quickly
+- Cross-functional collaboration essential for success
+- Regular feedback loops improve outcomes
+- Flexibility in approach allows adaptation to challenges
+
+## Implications and Next Steps
+The discussion suggests a clear path forward with phased implementation, regular checkpoints, and continuous refinement based on feedback and metrics.""",
+            r"minority.*considerations": "The dissenting agents raised valid concerns about implementation complexity and timeline feasibility. Their perspectives highlight the need for contingency planning and more conservative resource estimates.",
+            r"final.*synthesis": "The topic discussion provided comprehensive coverage of key issues, with agents contributing diverse perspectives that enriched the analysis. While consensus was reached on major points, the noted areas of disagreement warrant continued attention during implementation.",
+        }
+
+        # Call parent with patterns
+        super().__init__(response_patterns=topic_report_patterns, **kwargs)
+
+
+class EcclesiaReportFakeLLM(PredictableFakeLLM):
+    """Fake LLM specifically designed for ecclesia (final) report agent responses."""
+
+    def __init__(self, **kwargs):
+        # Initialize with ecclesia report-specific patterns
+        ecclesia_patterns = {
+            r"report.*structure|structure.*report": '["Executive Summary", "Cross-Topic Analysis", "Key Themes and Patterns", "Consensus and Divergence", "Strategic Recommendations", "Implementation Roadmap", "Risk Assessment", "Conclusion"]',
+            r"executive.*summary|write.*summary": """# Executive Summary
+
+This Virtual Agora session brought together diverse AI perspectives to explore the designated theme comprehensively. Across multiple agenda items, the discussion revealed both strong areas of consensus and productive tensions that enhanced understanding.
+
+## Key Achievements
+- Systematic exploration of all major dimensions of the theme
+- Identification of practical implementation pathways
+- Recognition of critical success factors and risks
+- Development of actionable recommendations
+
+## Major Findings
+The session demonstrated remarkable convergence on fundamental principles while maintaining healthy debate on implementation details. Technical feasibility was confirmed, though timeline and resource requirements remain points of discussion.
+
+## Strategic Value
+The multi-agent deliberation process proved effective in surfacing considerations that might be overlooked in traditional analysis. The diversity of perspectives enriched the discussion and led to more robust conclusions.""",
+            r"cross.*topic|theme.*analysis": """# Cross-Topic Analysis
+
+## Interconnections
+Analysis across all agenda items reveals strong interdependencies. Technical decisions discussed in one topic have direct implications for implementation strategies in another. This systemic view emerged naturally from the multi-agent discussion format.
+
+## Recurring Patterns
+- Consistent emphasis on phased implementation across all topics
+- Universal recognition of stakeholder engagement importance
+- Repeated calls for robust monitoring and feedback systems
+- Common concerns about resource allocation and prioritization
+
+## Synergies Identified
+The discussion revealed opportunities for shared infrastructure and coordinated efforts across different implementation areas, potentially reducing overall resource requirements and accelerating deployment.""",
+            r"write.*section|section.*content": """# {section_title}
+
+This section synthesizes insights from across all agenda items to provide integrated analysis and recommendations. The multi-agent discussion format enabled comprehensive exploration of interconnected themes and identification of strategic opportunities.
+
+Key findings indicate strong alignment on core principles with productive debate on implementation specifics. The diversity of perspectives enriched the analysis and surfaced important considerations for successful execution.
+
+Recommendations emphasize the value of iterative development, continuous stakeholder engagement, and adaptive management to navigate identified challenges while capitalizing on opportunities.""",
+        }
+
+        # Call parent with patterns
+        super().__init__(response_patterns=ecclesia_patterns, **kwargs)
+
+
 def create_fake_llm_pool(
     num_agents: int = 3, personalities: List[str] = None, scenario: str = "default"
 ) -> Dict[str, FakeLLMBase]:
@@ -364,3 +474,17 @@ def create_fake_llm_pool(
             )
 
     return llm_pool
+
+
+def create_specialized_fake_llms() -> Dict[str, FakeLLMBase]:
+    """Create fake LLMs for all specialized agent types in v1.3.
+
+    Returns:
+        Dictionary mapping agent types to fake LLM instances
+    """
+    return {
+        "moderator": ModeratorFakeLLM(),
+        "summarizer": SummarizerFakeLLM(),
+        "topic_report": TopicReportFakeLLM(),
+        "ecclesia_report": EcclesiaReportFakeLLM(),
+    }

@@ -17,14 +17,16 @@ from virtual_agora.state.schema import VirtualAgoraState
 from virtual_agora.flow.graph import VirtualAgoraFlow
 from virtual_agora.reporting.report_writer import ReportSectionWriter
 from virtual_agora.reporting.topic_summary import TopicSummaryGenerator
-from virtual_agora.reporting.file_manager import FileManager
+from virtual_agora.reporting.file_manager import ReportFileManager as FileManager
 from virtual_agora.reporting.exporter import ReportExporter
-from virtual_agora.reporting.metadata import MetadataCollector
+from virtual_agora.reporting.metadata import (
+    ReportMetadataGenerator as MetadataCollector,
+)
 
 from ..helpers.fake_llm import ModeratorFakeLLM, AgentFakeLLM
 from ..helpers.integration_utils import (
     IntegrationTestHelper,
-    TestStateBuilder,
+    StateTestBuilder,
     TestResponseValidator,
     patch_ui_components,
 )

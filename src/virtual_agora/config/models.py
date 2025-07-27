@@ -71,12 +71,10 @@ class SummarizerConfig(BaseModel):
         default=0.3,  # Lower temperature for consistent summarization
         ge=0.0,
         le=1.0,
-        description="Temperature for summarization"
+        description="Temperature for summarization",
     )
     max_tokens: Optional[int] = Field(
-        default=500,
-        gt=0,
-        description="Maximum tokens for summaries"
+        default=500, gt=0, description="Maximum tokens for summaries"
     )
 
 
@@ -103,12 +101,10 @@ class TopicReportConfig(BaseModel):
         default=0.5,  # Balanced temperature for comprehensive synthesis
         ge=0.0,
         le=1.0,
-        description="Temperature for topic report generation"
+        description="Temperature for topic report generation",
     )
     max_tokens: Optional[int] = Field(
-        default=1500,
-        gt=0,
-        description="Maximum tokens for topic reports"
+        default=1500, gt=0, description="Maximum tokens for topic reports"
     )
 
 
@@ -135,12 +131,10 @@ class EcclesiaReportConfig(BaseModel):
         default=0.7,  # Higher temperature for creative synthesis
         ge=0.0,
         le=1.0,
-        description="Temperature for final report generation"
+        description="Temperature for final report generation",
     )
     max_tokens: Optional[int] = Field(
-        default=2000,
-        gt=0,
-        description="Maximum tokens for final report sections"
+        default=2000, gt=0, description="Maximum tokens for final report sections"
     )
 
 

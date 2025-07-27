@@ -149,7 +149,7 @@ class ConfigLoader:
 
         # Add moderator provider
         required_providers.add(self._config.moderator.provider.value)
-        
+
         # Add specialized agents providers (v1.3)
         required_providers.add(self._config.summarizer.provider.value)
         required_providers.add(self._config.topic_report.provider.value)

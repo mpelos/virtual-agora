@@ -43,7 +43,7 @@ logger = get_logger(__name__)
 
 class VirtualAgoraV13Flow:
     """Manages the complete v1.3 LangGraph discussion flow.
-    
+
     Key changes from v1.1:
     - Node-centric architecture (nodes orchestrate agents)
     - 5 specialized agents instead of single moderator with modes
@@ -81,9 +81,7 @@ class VirtualAgoraV13Flow:
 
         # Initialize flow components with specialized agents
         self.nodes = V13FlowNodes(
-            self.specialized_agents, 
-            self.discussing_agents, 
-            self.state_manager
+            self.specialized_agents, self.discussing_agents, self.state_manager
         )
         self.conditions = V13FlowConditions()
 
@@ -97,13 +95,12 @@ class VirtualAgoraV13Flow:
             max_tokens=getattr(self.config.moderator, "max_tokens", None),
         )
         self.specialized_agents["moderator"] = ModeratorAgent(
-            agent_id="moderator", 
-            llm=moderator_llm
+            agent_id="moderator", llm=moderator_llm
         )
         logger.info("Initialized moderator agent")
 
         # Create summarizer
-        if hasattr(self.config, 'summarizer'):
+        if hasattr(self.config, "summarizer"):
             summarizer_llm = create_provider(
                 provider=self.config.summarizer.provider.value,
                 model=self.config.summarizer.model,
@@ -111,20 +108,18 @@ class VirtualAgoraV13Flow:
                 max_tokens=getattr(self.config.summarizer, "max_tokens", None),
             )
             self.specialized_agents["summarizer"] = SummarizerAgent(
-                agent_id="summarizer",
-                llm=summarizer_llm
+                agent_id="summarizer", llm=summarizer_llm
             )
             logger.info("Initialized summarizer agent")
         else:
             # Fallback: use moderator config for summarizer
             logger.warning("No summarizer config found, using moderator config")
             self.specialized_agents["summarizer"] = SummarizerAgent(
-                agent_id="summarizer",
-                llm=moderator_llm
+                agent_id="summarizer", llm=moderator_llm
             )
 
         # Create topic report agent
-        if hasattr(self.config, 'topic_report'):
+        if hasattr(self.config, "topic_report"):
             topic_report_llm = create_provider(
                 provider=self.config.topic_report.provider.value,
                 model=self.config.topic_report.model,
@@ -132,20 +127,18 @@ class VirtualAgoraV13Flow:
                 max_tokens=getattr(self.config.topic_report, "max_tokens", None),
             )
             self.specialized_agents["topic_report"] = TopicReportAgent(
-                agent_id="topic_report",
-                llm=topic_report_llm
+                agent_id="topic_report", llm=topic_report_llm
             )
             logger.info("Initialized topic report agent")
         else:
             # Fallback
             logger.warning("No topic_report config found, using moderator config")
             self.specialized_agents["topic_report"] = TopicReportAgent(
-                agent_id="topic_report",
-                llm=moderator_llm
+                agent_id="topic_report", llm=moderator_llm
             )
 
         # Create ecclesia report agent
-        if hasattr(self.config, 'ecclesia_report'):
+        if hasattr(self.config, "ecclesia_report"):
             ecclesia_report_llm = create_provider(
                 provider=self.config.ecclesia_report.provider.value,
                 model=self.config.ecclesia_report.model,
@@ -153,16 +146,14 @@ class VirtualAgoraV13Flow:
                 max_tokens=getattr(self.config.ecclesia_report, "max_tokens", None),
             )
             self.specialized_agents["ecclesia_report"] = EcclesiaReportAgent(
-                agent_id="ecclesia_report",
-                llm=ecclesia_report_llm
+                agent_id="ecclesia_report", llm=ecclesia_report_llm
             )
             logger.info("Initialized ecclesia report agent")
         else:
             # Fallback
             logger.warning("No ecclesia_report config found, using moderator config")
             self.specialized_agents["ecclesia_report"] = EcclesiaReportAgent(
-                agent_id="ecclesia_report",
-                llm=moderator_llm
+                agent_id="ecclesia_report", llm=moderator_llm
             )
 
         # Create discussing agents
@@ -178,20 +169,15 @@ class VirtualAgoraV13Flow:
             for i in range(agent_config.count):
                 agent_counter += 1
                 agent_id = f"{agent_config.model}_{agent_counter}"
-                
+
                 # Use DiscussionAgent if available, otherwise LLMAgent
                 try:
-                    agent = DiscussionAgent(
-                        agent_id=agent_id, 
-                        llm=provider_llm
-                    )
+                    agent = DiscussionAgent(agent_id=agent_id, llm=provider_llm)
                 except:
                     agent = LLMAgent(
-                        agent_id=agent_id, 
-                        llm=provider_llm, 
-                        role="participant"
+                        agent_id=agent_id, llm=provider_llm, role="participant"
                     )
-                
+
                 self.discussing_agents.append(agent)
                 logger.info(f"Initialized discussing agent: {agent_id}")
 
@@ -225,7 +211,9 @@ class VirtualAgoraV13Flow:
 
         # ===== Phase 3: Topic Conclusion Nodes =====
         graph.add_node("final_considerations", self.nodes.final_considerations_node)
-        graph.add_node("topic_report_generation", self.nodes.topic_report_generation_node)
+        graph.add_node(
+            "topic_report_generation", self.nodes.topic_report_generation_node
+        )
         graph.add_node("file_output", self.nodes.file_output_node)
 
         # ===== Phase 4: Continuation Nodes =====
@@ -238,7 +226,7 @@ class VirtualAgoraV13Flow:
         graph.add_node("multi_file_output", self.nodes.multi_file_output_node)
 
         # ===== Define the flow with edges =====
-        
+
         # Start -> Phase 0
         graph.add_edge(START, "config_and_keys")
         graph.add_edge("config_and_keys", "agent_instantiation")
@@ -258,7 +246,7 @@ class VirtualAgoraV13Flow:
             {
                 "discussion": "announce_item",
                 "agenda_setting": "agenda_proposal",  # Loop back if rejected
-            }
+            },
         )
 
         # Phase 2: Discussion Flow
@@ -272,7 +260,7 @@ class VirtualAgoraV13Flow:
             {
                 "continue_discussion": "discussion_round",
                 "start_polling": "end_topic_poll",
-            }
+            },
         )
 
         # Conditional: Check for periodic stop (round % 5 == 0)
@@ -281,14 +269,15 @@ class VirtualAgoraV13Flow:
         graph.add_conditional_edges(
             "end_topic_poll",
             lambda state: (
-                "periodic_stop" if self.conditions.check_periodic_stop(state) == "periodic_stop"
+                "periodic_stop"
+                if self.conditions.check_periodic_stop(state) == "periodic_stop"
                 else self.conditions.evaluate_conclusion_vote(state)
             ),
             {
                 "periodic_stop": "periodic_user_stop",
                 "continue_discussion": "discussion_round",
                 "conclude_topic": "final_considerations",
-            }
+            },
         )
 
         # Handle periodic stop result
@@ -298,7 +287,7 @@ class VirtualAgoraV13Flow:
             {
                 "continue_discussion": "discussion_round",
                 "conclude_topic": "final_considerations",
-            }
+            },
         )
 
         # Phase 3: Topic Conclusion Flow
@@ -314,22 +303,22 @@ class VirtualAgoraV13Flow:
             {
                 "end_session": "final_report_generation",
                 "check_user": "user_approval",
-            }
+            },
         )
 
         # User approval with agenda check
         graph.add_conditional_edges(
             "user_approval",
             lambda state: (
-                "end_session" if self.conditions.evaluate_session_continuation(state) == "end_session"
-                else "no_items" if not state.get("topic_queue", [])
-                else "has_items"
+                "end_session"
+                if self.conditions.evaluate_session_continuation(state) == "end_session"
+                else "no_items" if not state.get("topic_queue", []) else "has_items"
             ),
             {
                 "end_session": "final_report_generation",
                 "no_items": "final_report_generation",
                 "has_items": "agenda_modification",
-            }
+            },
         )
 
         # After agenda modification, check what to do
@@ -338,8 +327,8 @@ class VirtualAgoraV13Flow:
             self.conditions.should_modify_agenda,
             {
                 "modify_agenda": "agenda_proposal",  # Re-evaluate agenda
-                "next_topic": "announce_item",       # Continue with next topic
-            }
+                "next_topic": "announce_item",  # Continue with next topic
+            },
         )
 
         # Phase 5: Final Report
@@ -405,7 +394,7 @@ class VirtualAgoraV13Flow:
             "hitl_state": hitl_state,
             "flow_control": flow_control,
             "specialized_agents": {},  # Will be populated by agent_instantiation_node
-            "agents": {},              # Will be populated by agent_instantiation_node
+            "agents": {},  # Will be populated by agent_instantiation_node
             "vote_history": [],
             "periodic_stop_counter": 0,
             "user_forced_conclusion": False,

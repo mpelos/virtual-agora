@@ -17,7 +17,7 @@ from virtual_agora.ui.preferences import UserPreferences
 from ..helpers.fake_llm import ModeratorFakeLLM, AgentFakeLLM
 from ..helpers.integration_utils import (
     IntegrationTestHelper,
-    TestStateBuilder,
+    StateTestBuilder,
     TestResponseValidator,
 )
 

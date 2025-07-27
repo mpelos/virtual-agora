@@ -20,7 +20,7 @@ from virtual_agora.flow.graph import VirtualAgoraFlow
 from ..helpers.fake_llm import ModeratorFakeLLM, AgentFakeLLM
 from ..helpers.integration_utils import (
     IntegrationTestHelper,
-    TestStateBuilder,
+    StateTestBuilder,
     TestResponseValidator,
     patch_ui_components,
 )
