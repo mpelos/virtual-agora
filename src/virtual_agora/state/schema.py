@@ -174,6 +174,18 @@ class Agenda(TypedDict):
     completed_topics: List[str]
 
 
+class UIState(TypedDict):
+    """UI state for terminal display management."""
+
+    console_initialized: bool
+    theme_applied: bool
+    accessibility_enabled: bool
+    dashboard_active: bool
+    current_display_mode: str  # 'full', 'compact', 'text_only', 'screen_reader'
+    progress_operations: Dict[str, str]  # operation_id -> status
+    last_ui_update: datetime
+
+
 class VirtualAgoraState(TypedDict):
     """Complete state for a Virtual Agora session.
 
@@ -186,6 +198,9 @@ class VirtualAgoraState(TypedDict):
     session_id: str
     start_time: datetime
     config_hash: str  # Hash of the configuration for validation
+
+    # UI state management
+    ui_state: UIState
 
     # Phase management (0-5)
     # 0: Initialization, 1: Agenda Setting, 2: Discussion, 3: Topic Conclusion, 4: Agenda Re-evaluation, 5: Final Report

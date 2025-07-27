@@ -46,17 +46,29 @@ from virtual_agora.ui.preferences import (
 )
 from virtual_agora.ui.interrupt_handler import setup_interrupt_handlers
 from virtual_agora.ui.components import LoadingSpinner, create_header_panel
+from virtual_agora.ui.console import get_console
+from virtual_agora.ui.theme import get_current_theme, ProviderType
+from virtual_agora.ui.accessibility import initialize_accessibility
+from virtual_agora.ui.langgraph_integration import (
+    get_ui_integration,
+    initialize_ui_integration,
+    update_ui_from_state_change,
+)
 
 
 # Install rich traceback handler for better error messages
 install_rich_traceback(show_locals=True)
 
-# Initialize console and logger
-console = Console()
+# Initialize enhanced console and logger
+enhanced_console = get_console()
+console = enhanced_console.rich_console  # For backward compatibility
 logger = get_logger(__name__)
 
 # Initialize error reporter
 error_reporter = ErrorReporter(console)
+
+# Initialize UI integration
+ui_integration = initialize_ui_integration()
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -269,6 +281,9 @@ async def run_application(args: argparse.Namespace) -> int:
             if not prefs.use_color:
                 console.no_color = True
 
+            # Initialize accessibility features
+            initialize_accessibility()
+
             # Initialize state management
             state_manager = StateManager(config)
             recovery_manager = StateRecoveryManager()
@@ -287,6 +302,9 @@ async def run_application(args: argparse.Namespace) -> int:
             state = state_manager.initialize_state(session_id)
             logger.info(f"Initialized session: {session_id}")
 
+            # Initialize UI for session
+            state = ui_integration.initialize_ui_for_session(state)
+
             # Create initial checkpoint
             recovery_manager.create_checkpoint(
                 state,
@@ -302,20 +320,18 @@ async def run_application(args: argparse.Namespace) -> int:
                 console.print("[green]Configuration validation successful![/green]")
                 return 0
 
-            # Show welcome header using enhanced UI
-            console.print(
-                create_header_panel(
-                    "Welcome to Virtual Agora!",
-                    subtitle="A structured multi-agent discussion platform",
-                )
-            )
-            console.print()
+            # Welcome header is now shown by UI integration initialization
 
             # Get initial topic from user (uses enhanced UI internally)
             topic = get_initial_topic()
-            state_manager.update_state({"topic": topic})
+            state_manager.update_state({"main_topic": topic})
+
+            # Update UI with topic
+            updated_state = state_manager.get_state()
+            ui_integration.update_ui_from_state(updated_state)
+
             recovery_manager.create_checkpoint(
-                state_manager.get_state(),
+                updated_state,
                 operation="get_topic",
                 save_to_disk=True,
             )

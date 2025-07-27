@@ -26,9 +26,23 @@ from rich import box
 from rich.align import Align
 
 from virtual_agora.utils.logging import get_logger
+from virtual_agora.ui.console import get_console
+from virtual_agora.ui.interactive import (
+    get_prompts,
+    PromptOption,
+    ask_text,
+    ask_choice,
+    ask_confirmation,
+    create_non_empty_validator,
+    create_length_validator,
+)
+from virtual_agora.ui.theme import MessageType
+from virtual_agora.ui.formatters import format_content, FormatType
 
-# Initialize console and logger
-console = Console()
+# Initialize enhanced console and logger
+console = get_console().rich_console  # For backward compatibility
+enhanced_console = get_console()
+prompts = get_prompts()
 logger = get_logger(__name__)
 
 # Input validation constants
