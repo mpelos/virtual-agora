@@ -34,12 +34,13 @@ class TestLLMAgent:
         self.mock_llm.__class__.__name__ = "ChatOpenAI"
         self.mock_llm.model_name = "gpt-4"
 
-        # Create agent
+        # Create agent with error handling disabled to test the raw LLM
         self.agent = LLMAgent(
             agent_id="test-agent",
             llm=self.mock_llm,
             role="participant",
             system_prompt="Test system prompt",
+            enable_error_handling=False,
         )
 
     def test_agent_initialization(self):
@@ -306,7 +307,9 @@ class TestLLMAgentIntegration:
         mock_llm.__class__.__name__ = "ChatAnthropic"
         mock_llm.model_name = "claude-3-opus"
 
-        agent = LLMAgent("claude-agent", mock_llm, role="participant")
+        agent = LLMAgent(
+            "claude-agent", mock_llm, role="participant", enable_error_handling=False
+        )
 
         # Mock responses for a conversation
         responses = [
@@ -364,9 +367,12 @@ class TestLLMAgentLangGraphIntegration:
         self.mock_llm.__class__.__name__ = "ChatOpenAI"
         self.mock_llm.model_name = "gpt-4"
 
-        # Create agent
+        # Create agent with error handling disabled for testing
         self.agent = LLMAgent(
-            agent_id="test-agent", llm=self.mock_llm, role="participant"
+            agent_id="test-agent",
+            llm=self.mock_llm,
+            role="participant",
+            enable_error_handling=False,
         )
 
     def test_agent_as_callable_node_with_messages_state(self):
@@ -733,20 +739,35 @@ class TestLLMAgentToolIntegration:
         self.mock_llm.model_name = "gpt-4"
         self.mock_llm.bind_tools = Mock(return_value=self.mock_llm)
 
-        # Create mock tools
-        self.mock_tool1 = Mock()
-        self.mock_tool1.name = "test_tool_1"
-        self.mock_tool1.description = "Test tool 1"
+        # Create proper tool functions that LangChain can accept
+        from langchain_core.tools import Tool
 
-        self.mock_tool2 = Mock()
-        self.mock_tool2.name = "test_tool_2"
-        self.mock_tool2.description = "Test tool 2"
+        def test_func_1(input: str) -> str:
+            """Test tool 1 function."""
+            return f"Tool 1 result: {input}"
+
+        def test_func_2(input: str) -> str:
+            """Test tool 2 function."""
+            return f"Tool 2 result: {input}"
+
+        self.mock_tool1 = Tool(
+            name="test_tool_1", description="Test tool 1", func=test_func_1
+        )
+
+        self.mock_tool2 = Tool(
+            name="test_tool_2", description="Test tool 2", func=test_func_2
+        )
 
         self.tools = [self.mock_tool1, self.mock_tool2]
 
     def test_agent_with_tools_initialization(self):
         """Test creating agent with tools."""
-        agent = LLMAgent(agent_id="tool-agent", llm=self.mock_llm, tools=self.tools)
+        agent = LLMAgent(
+            agent_id="tool-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
+        )
 
         assert agent.tools == self.tools
         assert agent.has_tools()
@@ -758,7 +779,9 @@ class TestLLMAgentToolIntegration:
 
     def test_agent_bind_tools_after_creation(self):
         """Test binding tools after agent creation."""
-        agent = LLMAgent(agent_id="test-agent", llm=self.mock_llm)
+        agent = LLMAgent(
+            agent_id="test-agent", llm=self.mock_llm, enable_error_handling=False
+        )
 
         # Initially no tools
         assert not agent.has_tools()
@@ -787,7 +810,12 @@ class TestLLMAgentToolIntegration:
 
     def test_agent_generates_tool_calls(self):
         """Test agent generating tool calls in response."""
-        agent = LLMAgent(agent_id="tool-agent", llm=self.mock_llm, tools=self.tools)
+        agent = LLMAgent(
+            agent_id="tool-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
+        )
 
         # Mock LLM response with tool calls
         tool_call = {
@@ -825,9 +853,14 @@ class TestLLMAgentToolIntegration:
                 )
             ]
         }
-        mock_tool_node.return_value = mock_tool_results
+        mock_tool_node.invoke.return_value = mock_tool_results
 
-        agent = LLMAgent(agent_id="tool-agent", llm=self.mock_llm, tools=self.tools)
+        agent = LLMAgent(
+            agent_id="tool-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
+        )
         agent._tool_node = mock_tool_node
 
         # Create state with tool call
@@ -844,15 +877,20 @@ class TestLLMAgentToolIntegration:
         # Call agent - should execute tool
         result = agent(state)
 
-        # Verify tool node was called
-        mock_tool_node.assert_called_once()
+        # Verify tool node was called with invoke method
+        mock_tool_node.invoke.assert_called_once()
 
         # Verify result
         assert result == mock_tool_results
 
     def test_agent_streaming_with_tools(self):
         """Test streaming with tool calls."""
-        agent = LLMAgent(agent_id="stream-agent", llm=self.mock_llm, tools=self.tools)
+        agent = LLMAgent(
+            agent_id="stream-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
+        )
 
         # Mock streaming chunks with tool calls
         chunks = [
@@ -884,7 +922,10 @@ class TestLLMAgentToolIntegration:
     async def test_agent_async_with_tools(self):
         """Test async execution with tools."""
         agent = LLMAgent(
-            agent_id="async-tool-agent", llm=self.mock_llm, tools=self.tools
+            agent_id="async-tool-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
         )
 
         # Mock async response with tool call
@@ -909,13 +950,20 @@ class TestLLMAgentToolIntegration:
 
     def test_get_tool_node(self):
         """Test getting tool node from agent."""
-        agent = LLMAgent(agent_id="test-agent", llm=self.mock_llm, tools=self.tools)
+        agent = LLMAgent(
+            agent_id="test-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
+        )
 
         tool_node = agent.get_tool_node()
         assert tool_node is not None
 
         # Agent without tools
-        agent_no_tools = LLMAgent(agent_id="no-tools", llm=self.mock_llm)
+        agent_no_tools = LLMAgent(
+            agent_id="no-tools", llm=self.mock_llm, enable_error_handling=False
+        )
 
         assert agent_no_tools.get_tool_node() is None
 
@@ -925,7 +973,12 @@ class TestLLMAgentToolIntegration:
         self.mock_llm.bind_tools.side_effect = Exception("Binding failed")
 
         # Create agent with tools - should handle error gracefully
-        agent = LLMAgent(agent_id="fail-agent", llm=self.mock_llm, tools=self.tools)
+        agent = LLMAgent(
+            agent_id="fail-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
+        )
 
         # Agent should still be created but without tools
         assert agent._tool_bound_llm is None

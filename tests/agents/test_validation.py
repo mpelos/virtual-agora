@@ -158,7 +158,7 @@ class TestResponseValidator:
 
     def test_validate_basic_format_warnings(self):
         """Test basic format validation warnings."""
-        response = "Line1\nLine2\nLine3\nLine4\nLine5\nLine6\nLine7\nLine8\nLine9\nLine10\nLine11\nLine12\nLine13\nLine14\nLine15\nLine16\nLine17\nLine18\nLine19\nLine20\nLine21"
+        response = "Line1\nLine2\nLine3\nLine4\nLine5\nLine6\nLine7\nLine8\nLine9\nLine10\nLine11\nLine12\nLine13\nLine14\nLine15\nLine16\nLine17\nLine18\nLine19\nLine20\nLine21\nLine22"
         result = ValidationResult(True, ResponseType.DISCUSSION, response)
 
         self.validator._validate_basic_format(response, result)
@@ -247,7 +247,7 @@ class TestResponseValidatorDiscussion:
     def test_validate_discussion_response_constructive_elements(self):
         """Test detection of constructive elements."""
         # Response without constructive elements
-        response = "The solution is wrong. The approach fails. The method breaks everything completely."
+        response = "The solution is wrong. The approach fails. The method breaks everything completely. This implementation is terrible and will not work in any scenario. The whole design is flawed from the beginning."
         result = ValidationResult(True, ResponseType.DISCUSSION, response)
 
         self.validator._validate_discussion_response(response, result)
@@ -332,7 +332,7 @@ class TestResponseValidatorTopicProposal:
     def test_validate_topic_proposal_quality_checks(self):
         """Test topic proposal quality checks."""
         response = """1. AI
-2. This is a very long topic that goes on and on and provides way too much detail that could be considered excessive for a simple topic proposal and might overwhelm participants
+2. This is a very long topic that goes on and on and provides way too much detail that could be considered excessive for a simple topic proposal and might overwhelm participants with its verbosity and unnecessary elaboration on every minor detail and consideration
 3. Machine learning ethics and fairness"""
 
         result = ValidationResult(True, ResponseType.TOPIC_PROPOSAL, response)
@@ -446,7 +446,7 @@ class TestResponseValidatorConclusionVote:
 
     def test_validate_conclusion_vote_ambiguous(self):
         """Test ambiguous conclusion vote."""
-        response = "Yes, it's been good, but no, we could discuss more."
+        response = "It's been good (yes), but no, we could discuss more."
         result = ValidationResult(True, ResponseType.CONCLUSION_VOTE, response)
 
         self.validator._validate_conclusion_vote(response, result)
@@ -493,7 +493,7 @@ class TestResponseValidatorMinorityConsideration:
 
     def test_validate_minority_consideration_too_long(self):
         """Test minority consideration that's too long."""
-        response = " ".join(["Long consideration"] * 30)  # Very long response
+        response = " ".join(["Long consideration"] * 80)  # Very long response
         result = ValidationResult(True, ResponseType.MINORITY_CONSIDERATION, response)
 
         self.validator._validate_minority_consideration(response, result)
@@ -614,7 +614,9 @@ class TestResponseValidatorIntegration:
     def test_get_validation_statistics(self):
         """Test getting validation statistics."""
         # Perform some validations
-        self.validator.validate_response("Good response", ResponseType.DISCUSSION)
+        self.validator.validate_response(
+            "This is a good and substantive response", ResponseType.DISCUSSION
+        )
         self.validator.validate_response(
             "Bad", ResponseType.TOPIC_PROPOSAL
         )  # Should fail
@@ -664,7 +666,7 @@ class TestValidationMiddleware:
         mock_agent = Mock()
         mock_agent.agent_id = "test-agent"
         mock_agent.generate_discussion_response.return_value = (
-            "Good discussion response"
+            "This is a good and thoughtful discussion response"
         )
 
         response, result = self.middleware.validate_agent_response(
@@ -674,7 +676,7 @@ class TestValidationMiddleware:
             "Test topic",
         )
 
-        assert response == "Good discussion response"
+        assert response == "This is a good and thoughtful discussion response"
         assert isinstance(result, ValidationResult)
         assert result.is_valid is True
         mock_agent.generate_discussion_response.assert_called_once_with("Test topic")

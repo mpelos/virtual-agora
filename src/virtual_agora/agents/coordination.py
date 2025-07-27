@@ -238,7 +238,7 @@ class VoteCollector:
             True if vote was accepted, False otherwise
         """
         if vote["voter_id"] not in self.agent_ids:
-            logger.warning(f"Vote from unknown agent {vote.voter_id}")
+            logger.warning(f"Vote from unknown agent {vote['voter_id']}")
             return False
 
         if self.vote_deadline and datetime.now() > self.vote_deadline:

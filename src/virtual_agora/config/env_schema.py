@@ -7,7 +7,7 @@ variables and provides structured access to configuration.
 import re
 from typing import Optional, Dict, Any
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from virtual_agora.utils.exceptions import ConfigurationError
@@ -21,35 +21,32 @@ class APIKeyConfig(BaseModel):
     key: Optional[str] = Field(None, min_length=10)
     provider: str
 
-    @field_validator("key")
-    @classmethod
-    def validate_key_format(cls, v: Optional[str], info) -> Optional[str]:
+    @model_validator(mode="after")
+    def validate_key_format(self) -> "APIKeyConfig":
         """Validate API key format based on provider."""
-        if v is None:
-            return v
-
-        provider = info.data.get("provider")
+        if self.key is None:
+            return self
 
         # Basic validation patterns for known providers
         patterns = {
-            "Google": r"^AIza[0-9A-Za-z\-_]{35}$",  # Google API keys start with AIza
+            "Google": r"^AIza[0-9A-Za-z\-_]{36}$",  # Google API keys start with AIza
             "OpenAI": r"^sk-[A-Za-z0-9]{48}$",  # OpenAI keys start with sk-
             "Anthropic": r"^sk-ant-[A-Za-z0-9\-_]+$",  # Anthropic keys start with sk-ant-
             # Grok pattern unknown
         }
 
-        pattern = patterns.get(provider)
-        if pattern and not re.match(pattern, v):
+        pattern = patterns.get(self.provider)
+        if pattern and not re.match(pattern, self.key):
             # Just warn, don't fail - patterns might change
             import warnings
 
             warnings.warn(
-                f"API key for {provider} may have incorrect format. "
+                f"API key for {self.provider} may have incorrect format. "
                 f"Please verify it's correct.",
                 UserWarning,
             )
 
-        return v
+        return self
 
 
 class EnvironmentConfig(BaseSettings):

@@ -16,6 +16,15 @@ from virtual_agora.agents.llm_agent import LLMAgent
 from virtual_agora.flow.context_window import ContextWindowManager
 from virtual_agora.flow.cycle_detection import CyclePreventionManager
 from virtual_agora.utils.logging import get_logger
+from virtual_agora.ui.human_in_the_loop import (
+    get_initial_topic,
+    get_agenda_approval,
+    get_continuation_approval,
+    get_agenda_modifications,
+    display_session_status,
+)
+from virtual_agora.ui.preferences import get_user_preferences
+from virtual_agora.ui.components import LoadingSpinner
 
 logger = get_logger(__name__)
 
@@ -49,13 +58,8 @@ class FlowNodes:
         # Get main topic from user if not already provided
         main_topic = state.get("main_topic")
         if not main_topic:
-            main_topic = interrupt(
-                {
-                    "type": "user_input",
-                    "message": "Please enter the topic you would like the agents to discuss:",
-                    "input_type": "text",
-                }
-            )
+            # Use the enhanced UI to get the topic
+            main_topic = get_initial_topic()
 
         # Initialize speaking order from agent IDs (excluding moderator)
         participant_ids = [
@@ -108,24 +112,32 @@ class FlowNodes:
 
         # Get proposals from each participant
         proposals = []
-        for agent_id in state["speaking_order"]:
-            agent = self.agents[agent_id]
 
-            # Ask agent for proposals
-            agent_response = agent(
-                {
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": f"Based on the main topic '{main_topic}', please propose 3-5 specific sub-topics you think would be valuable to discuss.",
-                        }
-                    ]
-                }
-            )
+        # Use loading spinner while collecting proposals
+        with LoadingSpinner(
+            f"Collecting topic proposals from {len(state['speaking_order'])} agents..."
+        ) as spinner:
+            for i, agent_id in enumerate(state["speaking_order"]):
+                agent = self.agents[agent_id]
+                spinner.update(
+                    f"Getting proposals from {agent_id} ({i+1}/{len(state['speaking_order'])})"
+                )
 
-            # Extract proposals (simplified - in real implementation would parse response)
-            agent_proposals = agent_response.get("proposals", [])
-            proposals.extend(agent_proposals)
+                # Ask agent for proposals
+                agent_response = agent(
+                    {
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": f"Based on the main topic '{main_topic}', please propose 3-5 specific sub-topics you think would be valuable to discuss.",
+                            }
+                        ]
+                    }
+                )
+
+                # Extract proposals (simplified - in real implementation would parse response)
+                agent_proposals = agent_response.get("proposals", [])
+                proposals.extend(agent_proposals)
 
         # Step 2: Moderator collates and deduplicates proposals
         collation_prompt = f"""
@@ -212,20 +224,32 @@ class FlowNodes:
 
         proposed_agenda = state["proposed_agenda"]
 
-        # Present agenda to user for approval
-        user_response = interrupt(
-            {
-                "type": "agenda_approval",
-                "message": "Please review and approve the proposed discussion agenda:",
-                "agenda": proposed_agenda,
-                "options": ["approve", "edit", "reject"],
-            }
-        )
+        # Get user preferences
+        prefs = get_user_preferences()
 
-        if user_response == "approve":
+        # Check if auto-approval is enabled
+        if prefs.auto_approve_agenda_on_consensus and state.get(
+            "unanimous_agenda_vote", False
+        ):
+            logger.info("Auto-approving agenda due to unanimous vote")
+            approved_agenda = proposed_agenda
+            approval_result = "auto_approved"
+        else:
+            # Use enhanced UI for agenda approval
+            approved_agenda = get_agenda_approval(proposed_agenda)
+
+            if approved_agenda == proposed_agenda:
+                approval_result = "approved"
+            elif approved_agenda:
+                approval_result = "edited"
+            else:
+                approval_result = "rejected"
+
+        if approval_result in ["approved", "auto_approved", "edited"]:
             updates = {
                 "agenda_approved": True,
-                "topic_queue": proposed_agenda,
+                "topic_queue": approved_agenda,
+                "proposed_agenda": approved_agenda,
                 "hitl_state": {
                     **state["hitl_state"],
                     "awaiting_approval": False,
@@ -233,37 +257,14 @@ class FlowNodes:
                     + [
                         {
                             "type": "agenda_approval",
-                            "result": "approved",
+                            "result": approval_result,
                             "timestamp": datetime.now(),
-                        }
-                    ],
-                },
-            }
-        elif user_response == "edit":
-            # Get edited agenda from user
-            edited_agenda = interrupt(
-                {
-                    "type": "agenda_edit",
-                    "message": "Please provide your edited agenda:",
-                    "current_agenda": proposed_agenda,
-                }
-            )
-
-            updates = {
-                "agenda_approved": True,
-                "topic_queue": edited_agenda,
-                "proposed_agenda": edited_agenda,
-                "hitl_state": {
-                    **state["hitl_state"],
-                    "awaiting_approval": False,
-                    "approval_history": state["hitl_state"]["approval_history"]
-                    + [
-                        {
-                            "type": "agenda_approval",
-                            "result": "edited",
-                            "timestamp": datetime.now(),
-                            "original": proposed_agenda,
-                            "edited": edited_agenda,
+                            "original": (
+                                proposed_agenda if approval_result == "edited" else None
+                            ),
+                            "edited": (
+                                approved_agenda if approval_result == "edited" else None
+                            ),
                         }
                     ],
                 },
@@ -668,17 +669,40 @@ class FlowNodes:
         completed_topic = state["completed_topics"][-1]
         remaining_topics = state["topic_queue"]
 
-        user_response = interrupt(
-            {
-                "type": "continuation_approval",
-                "message": f"The topic '{completed_topic}' is now concluded and its summary has been saved. Shall we re-evaluate the agenda and continue?",
-                "completed_topic": completed_topic,
-                "remaining_topics": remaining_topics,
-                "options": ["yes", "no"],
-            }
-        )
+        # Display session status
+        status_info = {
+            "Session ID": state.get("session_id", "Unknown"),
+            "Topics Completed": len(state.get("completed_topics", [])),
+            "Topics Remaining": len(remaining_topics),
+            "Total Messages": state.get("total_messages", 0),
+            "Current Phase": state.get("current_phase", 0),
+        }
+        display_session_status(status_info)
 
-        continue_session = user_response.lower() == "yes"
+        # Get user preferences
+        prefs = get_user_preferences()
+
+        # Use enhanced UI for continuation approval
+        action = get_continuation_approval(completed_topic, remaining_topics)
+
+        # Handle the response
+        if action == "y":
+            continue_session = True
+            result = "continue"
+        elif action == "n":
+            continue_session = False
+            result = "end"
+        elif action == "m":
+            # User wants to modify agenda first
+            continue_session = True
+            result = "modify"
+            # Trigger agenda modification
+            new_agenda = get_agenda_modifications(remaining_topics)
+            state["topic_queue"] = new_agenda
+        else:
+            # Default to user preference
+            continue_session = prefs.default_continuation_choice == "y"
+            result = prefs.default_continuation_choice
 
         updates = {
             "continue_session": continue_session,
@@ -688,8 +712,9 @@ class FlowNodes:
                 + [
                     {
                         "type": "continuation_approval",
-                        "result": user_response,
+                        "result": result,
                         "timestamp": datetime.now(),
+                        "completed_topic": completed_topic,
                     }
                 ],
             },

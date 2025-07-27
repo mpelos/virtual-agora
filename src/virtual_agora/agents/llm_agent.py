@@ -783,7 +783,7 @@ class LLMAgent:
                 logger.info(
                     f"Agent {self.agent_id} executing {len(tool_calls)} tool calls"
                 )
-                tool_results = self._tool_node(state, config)
+                tool_results = self._tool_node.invoke(state, config)
 
                 # Stream tool results if writer provided
                 if writer:
@@ -923,7 +923,7 @@ class LLMAgent:
                     f"Agent {self.agent_id} executing {len(tool_calls)} tool calls"
                 )
                 # ToolNode doesn't have async support yet, so use sync version
-                tool_results = self._tool_node(state, config)
+                tool_results = self._tool_node.invoke(state, config)
 
                 # Stream tool results if writer provided
                 if writer:
@@ -1302,7 +1302,7 @@ class LLMAgent:
             tool_calls = getattr(messages[-1], "tool_calls", [])
             if tool_calls and self._tool_node:
                 # Execute tool calls
-                tool_results = self._tool_node(state, config)
+                tool_results = self._tool_node.invoke(state, config)
 
                 # Yield tool results based on stream mode
                 if stream_mode == "messages":
@@ -1430,7 +1430,7 @@ class LLMAgent:
             tool_calls = getattr(messages[-1], "tool_calls", [])
             if tool_calls and self._tool_node:
                 # Execute tool calls (sync for now as ToolNode doesn't have async)
-                tool_results = self._tool_node(state, config)
+                tool_results = self._tool_node.invoke(state, config)
 
                 # Yield tool results based on stream mode
                 if stream_mode == "messages":

@@ -119,8 +119,10 @@ class TestFallbackFunctionality:
     @patch("virtual_agora.providers.factory.init_chat_model")
     def test_create_provider_with_fallbacks(self, mock_init_chat_model):
         """Test creating a provider with fallbacks."""
-        # Create mock providers
-        primary_mock = Mock()
+        # Create mock providers - using spec to control available attributes
+        primary_mock = Mock(
+            spec=["with_fallbacks", "invoke"]
+        )  # Only has with_fallbacks, not with_retry
         primary_mock.with_fallbacks = Mock()
         fallback_mock = Mock()
 
@@ -159,9 +161,10 @@ class TestFallbackFunctionality:
         self, mock_init_chat_model
     ):
         """Test the convenience function for creating providers with fallbacks."""
-        primary_mock = Mock()
-        fallback_mock1 = Mock()
-        fallback_mock2 = Mock()
+        # Create mocks with spec to control available attributes
+        primary_mock = Mock(spec=["with_fallbacks", "invoke"])
+        fallback_mock1 = Mock(spec=["invoke"])
+        fallback_mock2 = Mock(spec=["invoke"])
         fallback_chain_mock = Mock()
 
         # Setup the with_fallbacks method
@@ -193,9 +196,15 @@ class TestFallbackFunctionality:
         assert mock_init_chat_model.call_count == 3
 
         # Verify with_fallbacks was called with the fallback providers
-        primary_mock.with_fallbacks.assert_called_once_with(
-            [fallback_mock1, fallback_mock2]
-        )
+        # The method should be called with a list and with exceptions_to_handle keyword
+        primary_mock.with_fallbacks.assert_called_once()
+        call_args = primary_mock.with_fallbacks.call_args
+        # Check positional arguments
+        assert len(call_args[0]) == 1  # One positional argument (the list)
+        assert call_args[0][0] == [fallback_mock1, fallback_mock2]
+        # Check keyword arguments
+        assert "exceptions_to_handle" in call_args[1]
+        assert call_args[1]["exceptions_to_handle"] == (Exception,)
 
         # Verify we got the fallback chain
         assert result == fallback_chain_mock

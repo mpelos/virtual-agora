@@ -40,6 +40,12 @@ from virtual_agora.ui.human_in_the_loop import (
     get_agenda_modifications,
     display_session_status,
 )
+from virtual_agora.ui.preferences import (
+    get_preferences_manager,
+    get_user_preferences,
+)
+from virtual_agora.ui.interrupt_handler import setup_interrupt_handlers
+from virtual_agora.ui.components import LoadingSpinner, create_header_panel
 
 
 # Install rich traceback handler for better error messages
@@ -121,6 +127,8 @@ async def run_application(args: argparse.Namespace) -> int:
     state_manager: Optional[StateManager] = None
     recovery_manager: Optional[StateRecoveryManager] = None
     session_id: Optional[str] = None
+    preferences_manager = get_preferences_manager()
+    interrupt_handler = None
 
     # Create a wrapper to properly register cleanup after managers are initialized
     def register_cleanup():
@@ -251,10 +259,26 @@ async def run_application(args: argparse.Namespace) -> int:
                 console.print(f"\n[red]Configuration Error:[/red] {e}")
                 return 1
 
+            # Load user preferences
+            prefs = preferences_manager.load()
+            logger.info(
+                f"Loaded user preferences (verbosity: {prefs.display_verbosity})"
+            )
+
+            # Apply preference for colored output
+            if not prefs.use_color:
+                console.no_color = True
+
             # Initialize state management
             state_manager = StateManager(config)
             recovery_manager = StateRecoveryManager()
             session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+            # Set up interrupt handlers
+            interrupt_handler = setup_interrupt_handlers(
+                state_manager, recovery_manager
+            )
+            logger.info("Interrupt handlers configured")
 
             # Register cleanup tasks now that managers are initialized
             register_cleanup()
@@ -278,10 +302,16 @@ async def run_application(args: argparse.Namespace) -> int:
                 console.print("[green]Configuration validation successful![/green]")
                 return 0
 
-            console.print("\n[bold cyan]Welcome to Virtual Agora![/bold cyan]")
-            console.print("A structured multi-agent discussion platform\n")
+            # Show welcome header using enhanced UI
+            console.print(
+                create_header_panel(
+                    "Welcome to Virtual Agora!",
+                    subtitle="A structured multi-agent discussion platform",
+                )
+            )
+            console.print()
 
-            # Get initial topic from user
+            # Get initial topic from user (uses enhanced UI internally)
             topic = get_initial_topic()
             state_manager.update_state({"topic": topic})
             recovery_manager.create_checkpoint(
@@ -421,6 +451,10 @@ async def run_application(args: argparse.Namespace) -> int:
         return 1
 
     finally:
+        # Teardown interrupt handlers
+        if interrupt_handler:
+            interrupt_handler.teardown()
+
         # Show error summary if any errors occurred
         error_summary = error_handler.get_error_summary()
         if error_summary["total_errors"] > 0:

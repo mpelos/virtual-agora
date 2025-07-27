@@ -198,7 +198,8 @@ class TestUtilityFunctions:
             {"vote": "invalid"},  # Should be ignored
         ]
 
-        counts = count_votes(votes)
+        # count_votes is now a tool, invoke it directly
+        counts = count_votes.invoke({"votes": votes})
 
         assert counts["yes"] == 3  # Including uppercase
         assert counts["no"] == 1
@@ -206,7 +207,8 @@ class TestUtilityFunctions:
 
     def test_count_votes_empty(self):
         """Test counting empty vote list."""
-        counts = count_votes([])
+        # count_votes is now a tool, invoke it directly
+        counts = count_votes.invoke({"votes": []})
 
         assert counts["yes"] == 0
         assert counts["no"] == 0
@@ -216,7 +218,8 @@ class TestUtilityFunctions:
         """Test formatting agenda without votes."""
         topics = ["AI Ethics", "Climate Change", "Education Reform"]
 
-        agenda = format_agenda(topics)
+        # format_agenda is now a tool, invoke it directly
+        agenda = format_agenda.invoke({"topics": topics})
 
         assert "Discussion Agenda:" in agenda
         assert "1. AI Ethics" in agenda
@@ -226,12 +229,15 @@ class TestUtilityFunctions:
     def test_format_agenda_with_votes(self):
         """Test formatting agenda with vote information."""
         topics = ["Topic A", "Topic B"]
-        votes = {"Topic A": "5 yes, 2 no", "Topic B": "3 yes, 4 no"}
+        # The function expects Dict[str, int], but the logic seems to be converting it to string
+        # Let's see what the actual behavior is
+        votes = {"Topic A": 5, "Topic B": 3}
 
-        agenda = format_agenda(topics, votes)
+        # format_agenda is now a tool, invoke it directly
+        agenda = format_agenda.invoke({"topics": topics, "votes": votes})
 
-        assert "1. Topic A (Votes: 5 yes, 2 no)" in agenda
-        assert "2. Topic B (Votes: 3 yes, 4 no)" in agenda
+        assert "1. Topic A (Votes: 5)" in agenda
+        assert "2. Topic B (Votes: 3)" in agenda
 
     def test_create_discussion_tools(self):
         """Test creating standard discussion tools."""

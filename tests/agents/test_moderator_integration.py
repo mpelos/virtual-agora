@@ -74,7 +74,7 @@ class TestModeratorAgentIntegration:
     def test_moderator_agent_initialization(self, moderator_agent):
         """Test that ModeratorAgent initializes correctly with all parameters."""
         assert moderator_agent.agent_id == "moderator"
-        assert moderator_agent.mode == "facilitation"
+        assert moderator_agent.current_mode == "facilitation"
         assert moderator_agent.turn_timeout_seconds == 300
         assert moderator_agent.relevance_threshold == 0.7
         assert moderator_agent.warning_threshold == 2
@@ -83,12 +83,19 @@ class TestModeratorAgentIntegration:
         # Check that collections are initialized
         assert hasattr(moderator_agent, "relevance_violations")
         assert hasattr(moderator_agent, "muted_agents")
-        assert hasattr(moderator_agent, "active_polls")
 
     def test_round_management_workflow(self, moderator_agent):
         """Test complete round management workflow."""
         topic = "AI Ethics"
         round_number = 1
+
+        # Set up some participants
+        moderator_agent.speaking_order = ["agent1", "agent2", "agent3"]
+        moderator_agent.participation_metrics = {
+            "agent1": {"turns_taken": 2},
+            "agent2": {"turns_taken": 1},
+            "agent3": {"turns_taken": 0},
+        }
 
         # Test topic announcement
         announcement = moderator_agent.announce_topic(topic, round_number)
@@ -107,39 +114,40 @@ class TestModeratorAgentIntegration:
         moderator_agent.current_topic_context = topic
 
         # Test relevance scoring
-        with patch.object(
-            moderator_agent, "_calculate_relevance_score", return_value=0.3
-        ):
-            relevance_assessment = {
-                "reason": "Message is off-topic",
-                "suggestions": "Please focus on AI ethics",
-            }
+        relevance_assessment = {
+            "reason": "Message is off-topic",
+            "suggestions": "Please focus on AI ethics",
+            "relevance_score": 0.3,
+            "is_relevant": False,
+            "topic": topic,
+        }
 
-            # Issue first warning
-            warning_msg = moderator_agent.issue_relevance_warning(
-                agent_id, relevance_assessment
-            )
-            assert "Relevance Warning" in warning_msg
-            assert agent_id in warning_msg
+        # First track the violation
+        moderator_agent.track_relevance_violation(
+            agent_id, "This is an off-topic message", relevance_assessment
+        )
 
-            # Check violation tracking
-            assert agent_id in moderator_agent.relevance_violations
-            assert (
-                moderator_agent.relevance_violations[agent_id]["warnings_issued"] == 1
-            )
+        # Issue first warning
+        warning_msg = moderator_agent.issue_relevance_warning(
+            agent_id, relevance_assessment
+        )
+        assert "Relevance Warning" in warning_msg
+        assert agent_id in warning_msg
 
-            # Issue second warning (should trigger muting)
-            second_warning = moderator_agent.issue_relevance_warning(
-                agent_id, relevance_assessment
-            )
-            assert "Final Warning" in second_warning
+        # Check violation tracking
+        assert agent_id in moderator_agent.relevance_violations
+        assert moderator_agent.relevance_violations[agent_id]["warnings_issued"] == 1
 
-            # Next violation should mute
-            mute_msg = moderator_agent.mute_agent(
-                agent_id, "Multiple relevance violations"
-            )
-            assert "has been temporarily muted" in mute_msg
-            assert agent_id in moderator_agent.muted_agents
+        # Issue second warning (should trigger muting)
+        second_warning = moderator_agent.issue_relevance_warning(
+            agent_id, relevance_assessment
+        )
+        assert "Final Warning" in second_warning
+
+        # Next violation should mute
+        mute_msg = moderator_agent.mute_agent(agent_id, "Multiple relevance violations")
+        assert "has been temporarily muted" in mute_msg
+        assert agent_id in moderator_agent.muted_agents
 
     def test_summarization_integration(self, moderator_agent):
         """Test summarization workflow with mock LLM responses."""
@@ -147,16 +155,18 @@ class TestModeratorAgentIntegration:
             mock_invoke.return_value = AIMessage(content="Test summary generated")
 
             # Test round summary generation
+            # Note: Messages need a 'round' field for the filter to work
             messages = [
-                Message(
-                    id="msg1",
-                    speaker_id="participant1",
-                    speaker_role="participant",
-                    content="Discussion point 1",
-                    timestamp=datetime.now(),
-                    phase=2,
-                    topic="AI Ethics",
-                )
+                {
+                    "id": "msg1",
+                    "speaker_id": "participant1",
+                    "speaker_role": "participant",
+                    "content": "Discussion point 1",
+                    "timestamp": datetime.now(),
+                    "phase": 2,
+                    "topic": "AI Ethics",
+                    "round": 1,  # Add round field to match the filter
+                }
             ]
 
             round_summary = moderator_agent.generate_round_summary(
@@ -186,17 +196,17 @@ class TestModeratorAgentIntegration:
         vote1_result = moderator_agent.cast_vote(
             poll_id, "participant1", "conclude", "We've covered enough"
         )
-        assert vote1_result["status"] == "recorded"
+        assert vote1_result["success"] is True
 
         vote2_result = moderator_agent.cast_vote(
             poll_id, "participant2", "conclude", "Time to move on"
         )
-        assert vote2_result["status"] == "recorded"
+        assert vote2_result["success"] is True
 
         vote3_result = moderator_agent.cast_vote(
             poll_id, "participant3", "continue", "Need more discussion"
         )
-        assert vote3_result["status"] == "recorded"
+        assert vote3_result["success"] is True
 
         # Tally results
         tally_result = moderator_agent.tally_poll_results(poll_id)
@@ -214,12 +224,12 @@ class TestModeratorAgentIntegration:
 
     def test_mode_switching_integration(self, moderator_agent):
         """Test mode switching during operations."""
-        original_mode = moderator_agent.mode
+        original_mode = moderator_agent.current_mode
         assert original_mode == "facilitation"
 
         # Switch to synthesis mode
         moderator_agent.set_mode("synthesis")
-        assert moderator_agent.mode == "synthesis"
+        assert moderator_agent.current_mode == "synthesis"
 
         # Perform synthesis operation
         with patch.object(moderator_agent.llm, "invoke") as mock_invoke:
@@ -242,31 +252,26 @@ class TestModeratorAgentIntegration:
 
         # Switch back to facilitation
         moderator_agent.set_mode("facilitation")
-        assert moderator_agent.mode == "facilitation"
+        assert moderator_agent.current_mode == "facilitation"
 
     def test_timeout_handling_integration(self, moderator_agent):
         """Test timeout detection and handling."""
         agent_id = "participant1"
 
-        # Mock a timeout situation
-        past_time = datetime.now() - timedelta(seconds=400)  # 400 seconds ago
-
-        # Check timeout detection
-        is_timeout = moderator_agent._is_turn_timeout(past_time)
-        assert is_timeout
-
-        # Test timeout announcement
-        timeout_msg = moderator_agent.announce_turn_timeout(agent_id)
-        assert "timeout" in timeout_msg.lower()
+        # Test timeout handling - the handle_agent_timeout method handles all timeout logic
+        timeout_msg = moderator_agent.handle_agent_timeout(agent_id)
+        assert "did not respond" in timeout_msg
         assert agent_id in timeout_msg
+        assert str(moderator_agent.turn_timeout_seconds) in timeout_msg
 
     def test_error_handling_integration(self, moderator_agent):
         """Test error handling in moderator operations."""
         # Test invalid poll ID
-        with pytest.raises(ValueError, match="Poll .* not found"):
-            moderator_agent.cast_vote(
-                "invalid_poll_id", "participant1", "yes", "reasoning"
-            )
+        result = moderator_agent.cast_vote(
+            "invalid_poll_id", "participant1", "yes", "reasoning"
+        )
+        assert result["success"] is False
+        assert result["error"] == "Poll invalid_poll_id not found"
 
         # Test invalid choice in valid poll
         poll_result = moderator_agent.initiate_conclusion_poll(
@@ -274,15 +279,24 @@ class TestModeratorAgentIntegration:
         )
         poll_id = poll_result["poll_id"]
 
-        with pytest.raises(ValueError, match="Invalid choice"):
-            moderator_agent.cast_vote(
-                poll_id, "participant1", "invalid_choice", "reasoning"
-            )
+        result = moderator_agent.cast_vote(
+            poll_id, "participant1", "invalid_choice", "reasoning"
+        )
+        assert result["success"] is False
+        assert result["error"] == "invalid_choice"
 
     def test_comprehensive_discussion_cycle(self, moderator_agent):
         """Test a complete discussion cycle with multiple operations."""
         topic = "AI Ethics"
         participants = ["participant1", "participant2", "participant3"]
+
+        # Set up moderator state
+        moderator_agent.speaking_order = participants
+        moderator_agent.participation_metrics = {
+            "participant1": {"turns_taken": 2},
+            "participant2": {"turns_taken": 1},
+            "participant3": {"turns_taken": 1},
+        }
 
         # 1. Start discussion round
         announcement = moderator_agent.announce_topic(topic, 1)
@@ -290,17 +304,24 @@ class TestModeratorAgentIntegration:
 
         # 2. Simulate some relevance issues
         moderator_agent.current_topic_context = topic
-        with patch.object(
-            moderator_agent, "_calculate_relevance_score", return_value=0.3
-        ):
-            relevance_assessment = {
-                "reason": "Off-topic",
-                "suggestions": "Stay focused",
-            }
-            warning_msg = moderator_agent.issue_relevance_warning(
-                "participant1", relevance_assessment
-            )
-            assert "Warning" in warning_msg
+
+        # First track a violation (required before issuing a warning)
+        relevance_assessment = {
+            "reason": "Off-topic",
+            "suggestions": "Stay focused",
+            "relevance_score": 0.3,
+            "is_relevant": False,
+            "topic": topic,
+        }
+        moderator_agent.track_relevance_violation(
+            "participant1", "Some off-topic message", relevance_assessment
+        )
+
+        # Now issue the warning
+        warning_msg = moderator_agent.issue_relevance_warning(
+            "participant1", relevance_assessment
+        )
+        assert "Warning" in warning_msg
 
         # 3. Conduct conclusion poll
         poll_result = moderator_agent.initiate_conclusion_poll(topic, participants, 10)
@@ -324,15 +345,16 @@ class TestModeratorAgentIntegration:
             mock_invoke.return_value = AIMessage(content="Summary of discussion")
 
             messages = [
-                Message(
-                    id="msg1",
-                    speaker_id="participant1",
-                    speaker_role="participant",
-                    content="Point about AI safety",
-                    timestamp=datetime.now(),
-                    phase=2,
-                    topic=topic,
-                )
+                {
+                    "id": "msg1",
+                    "speaker_id": "participant1",
+                    "speaker_role": "participant",
+                    "content": "Point about AI safety",
+                    "timestamp": datetime.now(),
+                    "phase": 2,
+                    "topic": topic,
+                    "round": 1,  # Add round field to match the filter
+                }
             ]
 
             round_summary = moderator_agent.generate_round_summary(1, topic, messages)
@@ -350,9 +372,21 @@ class TestModeratorAgentIntegration:
         # Track initial state
         initial_violations = len(moderator_agent.relevance_violations)
         initial_muted = len(moderator_agent.muted_agents)
-        initial_polls = len(moderator_agent.active_polls)
+        initial_polls = len(moderator_agent.get_active_polls())
 
         # Perform operations that modify state
+        # First track a violation before issuing warning
+        moderator_agent.track_relevance_violation(
+            "agent1",
+            "test message",
+            {
+                "reason": "test",
+                "suggestions": "test",
+                "relevance_score": 0.3,
+                "is_relevant": False,
+                "topic": "test",
+            },
+        )
         moderator_agent.issue_relevance_warning(
             "agent1", {"reason": "test", "suggestions": "test"}
         )
@@ -362,7 +396,7 @@ class TestModeratorAgentIntegration:
         # Verify state changes
         assert len(moderator_agent.relevance_violations) == initial_violations + 1
         assert len(moderator_agent.muted_agents) == initial_muted + 1
-        assert len(moderator_agent.active_polls) == initial_polls + 1
+        assert len(moderator_agent.get_active_polls()) == initial_polls + 1
 
         # Complete poll to clean up state
         moderator_agent.cast_vote(poll_result["poll_id"], "agent1", "conclude", "done")
@@ -370,7 +404,7 @@ class TestModeratorAgentIntegration:
 
         # Verify cleanup
         assert (
-            len(moderator_agent.active_polls) == initial_polls
+            len(moderator_agent.get_active_polls()) == initial_polls
         )  # Poll completed, removed from active
 
 

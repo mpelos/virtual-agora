@@ -38,8 +38,10 @@ class TestToolEnabledAgentCreation:
         mock_llm.model_name = "gpt-4"
         mock_llm.bind_tools = Mock(return_value=mock_llm)
 
-        # Create moderator
-        moderator = create_tool_enabled_moderator(agent_id="moderator-1", llm=mock_llm)
+        # Create moderator with error handling disabled to test the mock
+        moderator = create_tool_enabled_moderator(
+            agent_id="moderator-1", llm=mock_llm, enable_error_handling=False
+        )
 
         # Verify agent properties
         assert moderator.agent_id == "moderator-1"
@@ -62,7 +64,7 @@ class TestToolEnabledAgentCreation:
         mock_llm.bind_tools = Mock(return_value=mock_llm)
 
         participant = create_tool_enabled_participant(
-            agent_id="participant-1", llm=mock_llm, phase=1
+            agent_id="participant-1", llm=mock_llm, phase=1, enable_error_handling=False
         )
 
         # Should have ProposalTool and SummaryTool
@@ -79,7 +81,7 @@ class TestToolEnabledAgentCreation:
         mock_llm.bind_tools = Mock(return_value=mock_llm)
 
         participant = create_tool_enabled_participant(
-            agent_id="participant-2", llm=mock_llm, phase=2
+            agent_id="participant-2", llm=mock_llm, phase=2, enable_error_handling=False
         )
 
         # Should have SummaryTool
@@ -94,7 +96,7 @@ class TestToolEnabledAgentCreation:
         mock_llm.bind_tools = Mock(return_value=mock_llm)
 
         participant = create_tool_enabled_participant(
-            agent_id="participant-3", llm=mock_llm, phase=3
+            agent_id="participant-3", llm=mock_llm, phase=3, enable_error_handling=False
         )
 
         # Should have VotingTool and SummaryTool
@@ -137,6 +139,7 @@ class TestAgentToolExecution:
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatOpenAI"
         self.mock_llm.model_name = "gpt-4"
+        self.mock_llm.with_fallbacks = Mock(return_value=self.mock_llm)
         self.mock_llm.bind_tools = Mock(return_value=self.mock_llm)
 
         # Create tools
@@ -144,9 +147,12 @@ class TestAgentToolExecution:
 
     def test_agent_generates_tool_call(self):
         """Test agent generating tool calls."""
-        # Create agent with tools
+        # Create agent with tools (error handling disabled for testing)
         agent = LLMAgent.create_with_tools(
-            agent_id="test-agent", llm=self.mock_llm, tools=self.tools
+            agent_id="test-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
         )
 
         # Mock LLM response with tool call
@@ -183,7 +189,10 @@ class TestAgentToolExecution:
         """Test agent executing tool calls from previous message."""
         # Create agent with tool node
         agent = LLMAgent.create_with_tools(
-            agent_id="test-agent", llm=self.mock_llm, tools=self.tools
+            agent_id="test-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
         )
 
         # Create state with AI message containing tool calls
@@ -210,7 +219,10 @@ class TestAgentToolExecution:
         """Test async tool execution."""
         # Create agent
         agent = LLMAgent.create_with_tools(
-            agent_id="async-agent", llm=self.mock_llm, tools=self.tools
+            agent_id="async-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
         )
 
         # Mock async LLM response
@@ -240,7 +252,10 @@ class TestAgentToolExecution:
     def test_agent_streaming_with_tools(self):
         """Test streaming responses with tool calls."""
         agent = LLMAgent.create_with_tools(
-            agent_id="stream-agent", llm=self.mock_llm, tools=self.tools
+            agent_id="stream-agent",
+            llm=self.mock_llm,
+            tools=self.tools,
+            enable_error_handling=False,
         )
 
         # Mock streaming with tool calls

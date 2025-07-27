@@ -383,8 +383,9 @@ class TestAgentCoordinator:
         assert isinstance(self.coordinator.timeout_manager, ResponseTimeoutManager)
         assert isinstance(self.coordinator.vote_collector, VoteCollector)
 
+    @patch("concurrent.futures.as_completed")
     @patch("concurrent.futures.ThreadPoolExecutor")
-    def test_coordinate_topic_proposals(self, mock_executor_class):
+    def test_coordinate_topic_proposals(self, mock_executor_class, mock_as_completed):
         """Test coordinating topic proposals."""
         # Setup mock executor
         mock_executor = Mock()
@@ -404,7 +405,7 @@ class TestAgentCoordinator:
             mock_futures.append(future)
 
         mock_executor.submit.side_effect = mock_futures
-        mock_executor.as_completed.return_value = mock_futures
+        mock_as_completed.return_value = mock_futures
 
         # Configure agent mocks
         for agent in self.mock_agents.values():
@@ -419,8 +420,9 @@ class TestAgentCoordinator:
             assert agent_id in proposals
             assert len(proposals[agent_id]) > 0
 
+    @patch("concurrent.futures.as_completed")
     @patch("concurrent.futures.ThreadPoolExecutor")
-    def test_coordinate_agenda_voting(self, mock_executor_class):
+    def test_coordinate_agenda_voting(self, mock_executor_class, mock_as_completed):
         """Test coordinating agenda voting."""
         # Setup mock executor
         mock_executor = Mock()
@@ -440,7 +442,7 @@ class TestAgentCoordinator:
             mock_futures.append(future)
 
         mock_executor.submit.side_effect = mock_futures
-        mock_executor.as_completed.return_value = mock_futures
+        mock_as_completed.return_value = mock_futures
 
         # Configure agent mocks
         for agent in self.mock_agents.values():
@@ -496,8 +498,9 @@ class TestAgentCoordinator:
         assert "agent3" in agent_ids
         assert "agent2" not in agent_ids
 
+    @patch("concurrent.futures.as_completed")
     @patch("concurrent.futures.ThreadPoolExecutor")
-    def test_coordinate_conclusion_voting(self, mock_executor_class):
+    def test_coordinate_conclusion_voting(self, mock_executor_class, mock_as_completed):
         """Test coordinating conclusion voting."""
         # Setup mock executor
         mock_executor = Mock()
@@ -517,7 +520,7 @@ class TestAgentCoordinator:
             mock_futures.append(future)
 
         mock_executor.submit.side_effect = mock_futures
-        mock_executor.as_completed.return_value = mock_futures
+        mock_as_completed.return_value = mock_futures
 
         # Configure agent mocks
         for agent in self.mock_agents.values():
@@ -534,8 +537,11 @@ class TestAgentCoordinator:
         assert results["minority_voters"] == ["agent2"]
         assert len(results["votes"]) == 3
 
+    @patch("concurrent.futures.as_completed")
     @patch("concurrent.futures.ThreadPoolExecutor")
-    def test_coordinate_minority_considerations(self, mock_executor_class):
+    def test_coordinate_minority_considerations(
+        self, mock_executor_class, mock_as_completed
+    ):
         """Test coordinating minority considerations."""
         # Setup mock executor
         mock_executor = Mock()
@@ -547,7 +553,7 @@ class TestAgentCoordinator:
         future = Mock(spec=Future)
         future.result.return_value = ("agent2", "Final consideration from minority")
         mock_executor.submit.return_value = future
-        mock_executor.as_completed.return_value = [future]
+        mock_as_completed.return_value = [future]
 
         # Configure agent mock
         self.mock_agents["agent2"].provide_minority_consideration.return_value = (
@@ -613,8 +619,11 @@ class TestAgentCoordinatorErrorHandling:
 
         self.coordinator = AgentCoordinator(self.mock_agents)
 
+    @patch("concurrent.futures.as_completed")
     @patch("concurrent.futures.ThreadPoolExecutor")
-    def test_handle_agent_errors_in_proposals(self, mock_executor_class):
+    def test_handle_agent_errors_in_proposals(
+        self, mock_executor_class, mock_as_completed
+    ):
         """Test handling agent errors during topic proposals."""
         # Setup mock executor
         mock_executor = Mock()
@@ -631,7 +640,7 @@ class TestAgentCoordinatorErrorHandling:
         )  # Empty result indicates error
 
         mock_executor.submit.side_effect = [success_future, error_future]
-        mock_executor.as_completed.return_value = [success_future, error_future]
+        mock_as_completed.return_value = [success_future, error_future]
 
         # Configure agents - one works, one fails
         self.mock_agents["agent1"].propose_topics.return_value = ["Topic A"]
@@ -709,7 +718,10 @@ class TestCoordinationIntegration:
         coordinator = AgentCoordinator(mock_agents)
 
         # Test complete workflow
-        with patch("concurrent.futures.ThreadPoolExecutor") as mock_executor_class:
+        with (
+            patch("concurrent.futures.ThreadPoolExecutor") as mock_executor_class,
+            patch("concurrent.futures.as_completed") as mock_as_completed,
+        ):
             # Setup mock executor for parallel operations
             mock_executor = Mock()
             mock_executor_class.return_value.__enter__.return_value = mock_executor
@@ -725,7 +737,7 @@ class TestCoordinationIntegration:
                 proposal_futures.append(future)
 
             mock_executor.submit.side_effect = proposal_futures
-            mock_executor.as_completed.return_value = proposal_futures
+            mock_as_completed.return_value = proposal_futures
 
             # 1. Topic proposals
             proposals = coordinator.coordinate_topic_proposals("Main Topic")
@@ -742,7 +754,7 @@ class TestCoordinationIntegration:
                 vote_futures.append(future)
 
             mock_executor.submit.side_effect = vote_futures
-            mock_executor.as_completed.return_value = vote_futures
+            mock_as_completed.return_value = vote_futures
 
             # 2. Agenda voting
             votes = coordinator.coordinate_agenda_voting(["Topic A", "Topic B"])
@@ -752,7 +764,10 @@ class TestCoordinationIntegration:
         responses = coordinator.coordinate_discussion_round("Selected Topic")
         assert len(responses) == 3
 
-        with patch("concurrent.futures.ThreadPoolExecutor") as mock_executor_class:
+        with (
+            patch("concurrent.futures.ThreadPoolExecutor") as mock_executor_class,
+            patch("concurrent.futures.as_completed") as mock_as_completed_2,
+        ):
             # Setup for conclusion voting
             mock_executor = Mock()
             mock_executor_class.return_value.__enter__.return_value = mock_executor
@@ -767,7 +782,7 @@ class TestCoordinationIntegration:
                 conclusion_futures.append(future)
 
             mock_executor.submit.side_effect = conclusion_futures
-            mock_executor.as_completed.return_value = conclusion_futures
+            mock_as_completed_2.return_value = conclusion_futures
 
             # 4. Conclusion voting
             conclusion_results = coordinator.coordinate_conclusion_voting(

@@ -392,7 +392,7 @@ class TestRetryMechanism:
         assert breaker.state == CircuitState.OPEN
 
         # Should reject calls
-        with pytest.raises(VirtualAgoraError, match="Circuit breaker is open"):
+        with pytest.raises(VirtualAgoraError, match="Circuit breaker .* is open"):
             breaker.call(lambda: "success")
 
         # Wait for recovery timeout

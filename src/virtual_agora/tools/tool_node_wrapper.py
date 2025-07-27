@@ -119,7 +119,7 @@ class VirtualAgoraToolNode:
                         self.metrics["calls_by_tool"][tool_name] += 1
 
             # Execute tools through underlying ToolNode
-            result = self._tool_node(state, config)
+            result = self._tool_node.invoke(state, config)
 
             # Process results
             tool_messages = result.get("messages", [])

@@ -39,7 +39,9 @@ class TestLangGraphIntegration:
         """Test that LLMAgent can be used directly as a graph node."""
         # Mock the LLM
         mock_llm = Mock()
-        mock_llm.invoke.return_value = Mock(content="Hello from agent")
+        # Set up the chain of methods that might be called
+        mock_llm.with_fallbacks = Mock(return_value=mock_llm)
+        mock_llm.invoke.return_value = AIMessage(content="Hello from agent")
         mock_create_provider.return_value = mock_llm
 
         # Create agent
@@ -72,7 +74,9 @@ class TestLangGraphIntegration:
         """Test async agent execution in graph."""
         # Mock async LLM
         mock_llm = Mock()
-        mock_llm.ainvoke = AsyncMock(return_value=Mock(content="Async response"))
+        # Set up the chain of methods that might be called
+        mock_llm.with_fallbacks = Mock(return_value=mock_llm)
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="Async response"))
         mock_create_provider.return_value = mock_llm
 
         # Create agent
@@ -102,6 +106,8 @@ class TestLangGraphIntegration:
         # Mock streaming LLM
         mock_llm = Mock()
         mock_chunks = [Mock(content="Hello"), Mock(content=" world")]
+        # Set up the chain of methods that might be called
+        mock_llm.with_fallbacks = Mock(return_value=mock_llm)
         mock_llm.stream.return_value = iter(mock_chunks)
         mock_llm.bind.return_value = mock_llm
         mock_create_provider.return_value = mock_llm
@@ -162,7 +168,8 @@ class TestLangGraphIntegration:
         """Test creating agent-specific nodes."""
         # Mock LLM
         mock_llm = Mock()
-        mock_llm.invoke.return_value = Mock(content="Agent node response")
+        mock_llm.with_fallbacks = Mock(return_value=mock_llm)
+        mock_llm.invoke.return_value = AIMessage(content="Agent node response")
         mock_create_provider.return_value = mock_llm
 
         # Create graph
@@ -194,7 +201,8 @@ class TestLangGraphIntegration:
         """Test creating streaming agent nodes."""
         # Mock async LLM
         mock_llm = Mock()
-        mock_llm.ainvoke = AsyncMock(return_value=Mock(content="Streaming node"))
+        mock_llm.with_fallbacks = Mock(return_value=mock_llm)
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="Streaming node"))
         mock_create_provider.return_value = mock_llm
 
         # Create graph
@@ -233,9 +241,10 @@ class TestLangGraphIntegration:
         def mock_invoke(messages):
             # Determine which agent is calling based on the call count
             agent_id = getattr(mock_invoke, "current_agent", "moderator")
-            return Mock(content=responses.get(agent_id, "Default response"))
+            return AIMessage(content=responses.get(agent_id, "Default response"))
 
         mock_llm = Mock()
+        mock_llm.with_fallbacks = Mock(return_value=mock_llm)
         mock_llm.invoke.side_effect = mock_invoke
         mock_create_provider.return_value = mock_llm
 

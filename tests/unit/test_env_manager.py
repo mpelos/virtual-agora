@@ -74,6 +74,8 @@ class TestEnvironmentManager:
         """Test getting API keys for providers."""
         monkeypatch.setenv("GOOGLE_API_KEY", "test_google_key")
         monkeypatch.setenv("OPENAI_API_KEY", "test_openai_key")
+        # Ensure ANTHROPIC_API_KEY is not set
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         manager = EnvironmentManager()
 
@@ -86,6 +88,9 @@ class TestEnvironmentManager:
         """Test getting all API keys."""
         monkeypatch.setenv("GOOGLE_API_KEY", "google_key")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic_key")
+        # Ensure OPENAI_API_KEY and GROK_API_KEY are not set
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GROK_API_KEY", raising=False)
 
         manager = EnvironmentManager()
         keys = manager.get_all_api_keys()
@@ -99,6 +104,8 @@ class TestEnvironmentManager:
         """Test API key validation."""
         monkeypatch.setenv("GOOGLE_API_KEY", "valid_key")
         monkeypatch.setenv("OPENAI_API_KEY", "")  # Empty key
+        # Ensure ANTHROPIC_API_KEY is not set
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         manager = EnvironmentManager()
         required = {"Google", "OpenAI", "Anthropic"}
@@ -117,6 +124,8 @@ class TestEnvironmentManager:
     def test_get_missing_providers(self, monkeypatch):
         """Test getting missing providers."""
         monkeypatch.setenv("GOOGLE_API_KEY", "valid_key")
+        # Ensure OPENAI_API_KEY is not set
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         manager = EnvironmentManager()
         required = {"Google", "OpenAI"}
@@ -130,9 +139,13 @@ class TestEnvironmentManager:
 
         assert manager.mask_api_key(None) == "<not set>"
         assert manager.mask_api_key("") == "<not set>"
-        assert manager.mask_api_key("short") == "****"
-        assert manager.mask_api_key("1234567890") == "******7890"
-        assert manager.mask_api_key("sk-1234567890abcdef") == "**************cdef"
+        assert manager.mask_api_key("short") == "****"  # len <= 8
+        assert (
+            manager.mask_api_key("1234567890") == "******7890"
+        )  # len=10, so 6 asterisks + last 4
+        assert (
+            manager.mask_api_key("sk-1234567890abcdef") == "***************cdef"
+        )  # len=19, so 15 asterisks + last 4
 
     def test_get_env_var(self, monkeypatch):
         """Test getting environment variables."""
@@ -192,7 +205,8 @@ class TestEnvironmentManager:
         google_status = report["api_keys"]["Google Gemini"]
         assert google_status["variable"] == "GOOGLE_API_KEY"
         assert google_status["is_set"] is True
-        assert google_status["masked_value"] == "****************1234"
+        # The file value "test_key" (8 chars) overrides the env value, so should be ****
+        assert google_status["masked_value"] == "****"
 
         # Check optional vars
         assert report["optional_vars"]["VIRTUAL_AGORA_LOG_LEVEL"] == "DEBUG"

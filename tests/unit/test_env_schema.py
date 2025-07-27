@@ -88,6 +88,8 @@ class TestEnvironmentConfig:
         monkeypatch.setenv("VIRTUAL_AGORA_LOG_DIR", "custom_logs")
         monkeypatch.setenv("VIRTUAL_AGORA_SESSION_TIMEOUT", "7200")
         monkeypatch.setenv("VIRTUAL_AGORA_DEBUG", "true")
+        # Ensure ANTHROPIC_API_KEY is not set
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         config = EnvironmentConfig()
 
@@ -132,7 +134,7 @@ class TestEnvironmentConfig:
         monkeypatch.setenv("VIRTUAL_AGORA_LOG_LEVEL", "INVALID")
         with pytest.raises(ValidationError) as exc_info:
             EnvironmentConfig()
-        assert "string does not match regex" in str(exc_info.value)
+        assert "String should match pattern" in str(exc_info.value)
 
     def test_session_timeout_validation(self, monkeypatch):
         """Test session timeout validation."""
@@ -157,6 +159,9 @@ class TestEnvironmentConfig:
         """Test getting all API keys as config objects."""
         monkeypatch.setenv("GOOGLE_API_KEY", "google_key")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic_key")
+        # Ensure OPENAI_API_KEY and GROK_API_KEY are not set
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GROK_API_KEY", raising=False)
 
         config = EnvironmentConfig()
         api_keys = config.get_api_keys()
@@ -195,6 +200,9 @@ class TestEnvironmentConfig:
     def test_validate_required_keys_missing(self, monkeypatch):
         """Test validation failure when keys are missing."""
         monkeypatch.setenv("GOOGLE_API_KEY", "google_key")
+        # Ensure other API keys are not set
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         config = EnvironmentConfig()
 
@@ -204,7 +212,10 @@ class TestEnvironmentConfig:
         error = exc_info.value
         assert "OpenAI" in str(error)
         assert "Anthropic" in str(error)
-        assert error.details["missing_providers"] == ["OpenAI", "Anthropic"]
+        # Sort the lists to compare them without order dependency
+        assert sorted(error.details["missing_providers"]) == sorted(
+            ["OpenAI", "Anthropic"]
+        )
         assert "OPENAI_API_KEY" in error.details["missing_variables"]
         assert "ANTHROPIC_API_KEY" in error.details["missing_variables"]
 
@@ -219,7 +230,9 @@ class TestEnvironmentConfig:
 
         # API keys should be masked
         assert masked["google_api_key"] == "************************************stuv"
-        assert masked["openai_api_key"] == "**************mnop"
+        assert (
+            masked["openai_api_key"] == "***************mnop"
+        )  # 19 chars total, 15 stars + 4
         assert masked["anthropic_api_key"] == "****"  # Too short
 
         # Other values should not be masked
