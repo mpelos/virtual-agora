@@ -10,7 +10,7 @@ from unittest.mock import patch, Mock
 from pathlib import Path
 
 from virtual_agora.config.loader import ConfigLoader
-from virtual_agora.flow.graph import VirtualAgoraFlow
+from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
 from virtual_agora.state.schema import VirtualAgoraState
 from virtual_agora.config.models import Config as VirtualAgoraConfig
 
@@ -246,7 +246,7 @@ class TestCompleteFlow:
 
     def _simulate_complete_flow(
         self,
-        flow: VirtualAgoraFlow,
+        flow: VirtualAgoraV13Flow,
         initial_state: VirtualAgoraState,
         max_topics: int = 2,
         max_rounds_per_topic: int = 5,

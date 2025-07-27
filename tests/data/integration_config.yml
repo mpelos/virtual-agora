@@ -1,10 +1,24 @@
-# Integration Test Configuration for Virtual Agora
+# Integration Test Configuration for Virtual Agora v1.3
 # This configuration uses fake models for testing without external API calls
 
+# Specialized agents for v1.3 architecture
 moderator:
   provider: google
   model: fake-moderator-llm
 
+summarizer:
+  provider: openai
+  model: fake-summarizer-llm
+
+topic_report:
+  provider: anthropic
+  model: fake-topic-report-llm
+
+ecclesia_report:
+  provider: google
+  model: fake-ecclesia-report-llm
+
+# Discussion agents
 agents:
   - provider: openai
     model: fake-agent-optimistic

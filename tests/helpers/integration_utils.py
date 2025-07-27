@@ -32,7 +32,7 @@ from virtual_agora.state.schema import (
 )
 from virtual_agora.agents.llm_agent import LLMAgent
 from virtual_agora.agents.moderator import ModeratorAgent
-from virtual_agora.flow.graph import VirtualAgoraFlow
+from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
 from .fake_llm import FakeLLMBase, create_fake_llm_pool, create_specialized_fake_llms
 
 
@@ -425,7 +425,7 @@ class IntegrationTestHelper:
             agents=agents,
         )
 
-    def create_test_flow(self) -> VirtualAgoraFlow:
+    def create_test_flow(self) -> VirtualAgoraV13Flow:
         """Create a VirtualAgoraFlow with fake LLMs."""
         config = self.create_test_config()
 
@@ -451,7 +451,7 @@ class IntegrationTestHelper:
 
             mock_factory.side_effect = mock_provider_creator
 
-            flow = VirtualAgoraFlow(config, enable_monitoring=False)
+            flow = VirtualAgoraV13Flow(config, enable_monitoring=False)
             return flow
 
     def create_basic_state(self) -> VirtualAgoraState:
@@ -604,7 +604,7 @@ def run_integration_test(
     test_scenario: str = "default",
     num_agents: int = 3,
     user_responses: Dict[str, str] = None,
-) -> tuple[VirtualAgoraFlow, VirtualAgoraState]:
+) -> tuple[VirtualAgoraV13Flow, VirtualAgoraState]:
     """Run a complete integration test scenario.
 
     Returns:

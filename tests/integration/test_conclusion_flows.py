@@ -1,7 +1,8 @@
-"""Integration tests for topic conclusion flows.
+"""Integration tests for topic conclusion flows in Virtual Agora v1.3.
 
 This module tests the conclusion polling, voting, minority dissent,
-and topic summarization workflows using fake LLMs.
+topic report generation, and periodic stops using the node-centric
+architecture with specialized agents.
 """
 
 import pytest
@@ -17,9 +18,9 @@ from virtual_agora.state.schema import (
     TopicInfo,
     RoundInfo,
 )
-from virtual_agora.flow.graph import VirtualAgoraFlow
+from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
 
-from ..helpers.fake_llm import ModeratorFakeLLM, AgentFakeLLM
+from ..helpers.fake_llm import create_fake_llm_pool, create_specialized_fake_llms
 from ..helpers.integration_utils import (
     IntegrationTestHelper,
     StateTestBuilder,

@@ -1,7 +1,7 @@
-"""Integration tests for agenda management flows.
+"""Integration tests for agenda management flows in Virtual Agora v1.3.
 
 This module tests the agenda setting, voting, approval, and modification
-workflows using fake LLMs.
+workflows using the node-centric architecture with specialized agents.
 """
 
 import pytest
@@ -15,9 +15,10 @@ from virtual_agora.state.schema import (
     VoteRound,
     HITLState,
 )
-from virtual_agora.flow.graph import VirtualAgoraFlow
+from virtual_agora.ui.hitl_state import HITLApprovalType
+from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
 
-from ..helpers.fake_llm import ModeratorFakeLLM, AgentFakeLLM
+from ..helpers.fake_llm import create_fake_llm_pool, create_specialized_fake_llms
 from ..helpers.integration_utils import (
     IntegrationTestHelper,
     StateTestBuilder,

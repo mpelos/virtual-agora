@@ -4,17 +4,45 @@
 
 Virtual Agora enables you to host sophisticated discussions where AI agents from different providers (Google Gemini, OpenAI GPT, Anthropic Claude, and Grok) engage in structured, turn-based conversations on complex topics. Think of it as a digital version of the ancient Athenian Agora, where diverse perspectives come together for democratic discourse.
 
-## ✨ Key Features
+## ✨ Key Features (v1.3)
 
 - **🤖 Multi-Provider AI Agents**: Combine agents from Google, OpenAI, Anthropic, and Grok in a single discussion
 - **🗳️ Democratic Agenda Setting**: Agents propose and vote on discussion topics
-- **👨‍💼 AI Moderator**: Neutral moderator manages the flow and ensures relevance
-- **👤 Human-in-the-Loop Control**: You approve agendas and control session flow
+- **🎯 Specialized Agent Architecture**: Five distinct agent types optimized for specific tasks:
+  - **Moderator Agent**: Process facilitation and vote synthesis
+  - **Summarizer Agent**: Round compression and context management
+  - **Topic Report Agent**: Comprehensive agenda item synthesis
+  - **Ecclesia Report Agent**: Final session analysis and cross-topic synthesis
+  - **Discussion Agents**: Primary debate participants
+- **👤 Enhanced Human-in-the-Loop Control**: 
+  - Initial theme and agenda approval
+  - Periodic 5-round checkpoints for user intervention
+  - Topic continuation permission
+  - Session continuation approval
 - **📊 Structured Discussions**: Turn-based rounds with rotating speakers
 - **✊ Minority Voice Protection**: Dissenting agents get final considerations before topic closure
-- **📝 Automatic Reporting**: Comprehensive reports generated for each session
+- **📝 Multi-Level Reporting**: Round summaries, topic reports, and comprehensive final analysis
 - **🎨 Rich Terminal UI**: Beautiful, color-coded interface with real-time updates
 - **💾 Session Recovery**: Built-in error handling and session state management
+
+## 🆕 What's New in v1.3
+
+Virtual Agora v1.3 introduces a major architectural upgrade from the original monolithic moderator design to a specialized agent system:
+
+- **Node-Centric Architecture**: The discussion flow is now orchestrated by a LangGraph state machine, with agents invoked as tools for specific tasks
+- **5 Specialized Agents**: Instead of one moderator with multiple modes, we now have:
+  - Dedicated Moderator for process facilitation only
+  - Summarizer for round compression
+  - Topic Report Agent for agenda item synthesis
+  - Ecclesia Report Agent for final session analysis
+  - Discussion Agents as primary participants
+- **Enhanced HITL Control**: New periodic 5-round checkpoints give users more control over long discussions
+- **Improved Context Management**: Better handling of discussion context with specialized summarization
+- **More Robust State Management**: Enhanced error recovery and session persistence
+
+### Migration from v1.1
+
+If you're upgrading from v1.1, you'll need to update your `config.yml` to include the new specialized agents. See the configuration section above for the new format.
 
 ## 🎯 Use Cases
 
@@ -102,8 +130,24 @@ cp examples/config.example.yml config.yml
 Edit `config.yml` to customize your discussion setup:
 
 ```yaml
-# The moderator facilitates discussion (recommended: Google Gemini)
+# Virtual Agora v1.3 Configuration
+# The Moderator is a specialized reasoning tool for process facilitation
 moderator:
+  provider: Google
+  model: gemini-2.5-pro
+
+# The Summarizer compresses round discussions into context
+summarizer:
+  provider: OpenAI
+  model: gpt-4o
+
+# The Topic Report Agent synthesizes concluded agenda items
+topic_report:
+  provider: Anthropic
+  model: claude-3-opus-20240229
+
+# The Ecclesia Report Agent creates the final session analysis
+ecclesia_report:
   provider: Google
   model: gemini-2.5-pro
 
@@ -153,7 +197,12 @@ virtual-agora --dry-run
 ### During Discussion
 
 - **Watch the conversation**: Agents take turns speaking in rotating order
-- **Monitor progress**: The moderator summarizes each round
+- **Monitor progress**: The Summarizer agent creates concise round summaries
+- **Periodic checkpoints**: Every 5 rounds, you get a checkpoint to:
+  - Continue the discussion
+  - End the current topic
+  - Modify discussion parameters
+  - Skip to final report
 - **Control topic transitions**: You decide when to move between topics
 - **Manage the flow**: You can end the session at any time
 

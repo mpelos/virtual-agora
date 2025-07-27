@@ -1,7 +1,8 @@
-"""Integration tests for discussion round flows.
+"""Integration tests for discussion round flows in Virtual Agora v1.3.
 
 This module tests the discussion rounds, turn rotation, relevance checking,
-and round summarization workflows using fake LLMs.
+and round summarization workflows using the node-centric architecture with
+specialized agents.
 """
 
 import pytest
@@ -16,9 +17,9 @@ from virtual_agora.state.schema import (
     AgentInfo,
     TopicInfo,
 )
-from virtual_agora.flow.graph import VirtualAgoraFlow
+from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
 
-from ..helpers.fake_llm import ModeratorFakeLLM, AgentFakeLLM
+from ..helpers.fake_llm import create_fake_llm_pool, create_specialized_fake_llms
 from ..helpers.integration_utils import (
     IntegrationTestHelper,
     StateTestBuilder,
