@@ -88,7 +88,7 @@ class ProviderRegistry:
         )
         google.add_model(
             ModelInfo(
-                name="gemini-1.5-pro-002",
+                name="gemini-2.5-pro-002",
                 display_name="Gemini 1.5 Pro 002",
                 context_window=2097152,  # 2M tokens
                 output_tokens=8192,
@@ -101,7 +101,7 @@ class ProviderRegistry:
         )
         google.add_model(
             ModelInfo(
-                name="gemini-1.5-pro",
+                name="gemini-2.5-pro",
                 display_name="Gemini 1.5 Pro",
                 context_window=2097152,  # 2M tokens
                 output_tokens=8192,
@@ -113,7 +113,7 @@ class ProviderRegistry:
         )
         google.add_model(
             ModelInfo(
-                name="gemini-1.5-flash-002",
+                name="gemini-2.5-flash-002",
                 display_name="Gemini 1.5 Flash 002",
                 context_window=1048576,  # 1M tokens
                 output_tokens=8192,
@@ -125,7 +125,7 @@ class ProviderRegistry:
         )
         google.add_model(
             ModelInfo(
-                name="gemini-1.5-flash",
+                name="gemini-2.5-flash",
                 display_name="Gemini 1.5 Flash",
                 context_window=1048576,  # 1M tokens
                 output_tokens=8192,
@@ -590,8 +590,8 @@ class ProviderRegistry:
                 "claude-3-5-sonnet-latest": "claude-3-5-sonnet-20241022",
             },
             ProviderType.GOOGLE: {
-                "gemini-pro": "gemini-1.5-pro-002",
-                "gemini-flash": "gemini-1.5-flash-002",
+                "gemini-pro": "gemini-2.5-pro-002",
+                "gemini-flash": "gemini-2.5-flash-002",
                 "gemini-2-flash": "gemini-2.0-flash",
             },
             ProviderType.GROK: {

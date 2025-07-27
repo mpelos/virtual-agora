@@ -26,7 +26,7 @@ def temp_config_file(tmp_path: Path) -> Generator[Path, None, None]:
     config_content = """
 moderator:
   provider: Google
-  model: gemini-1.5-pro
+  model: gemini-2.5-pro
 
 agents:
   - provider: OpenAI

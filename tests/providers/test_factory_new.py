@@ -32,7 +32,7 @@ class TestInitChatModelPattern:
         mock_init_chat_model.return_value = mock_instance
 
         config = GoogleProviderConfig(
-            model="gemini-1.5-pro",
+            model="gemini-2.5-pro",
             api_key="test-key",
             temperature=0.7,
             max_tokens=1000,
@@ -46,7 +46,7 @@ class TestInitChatModelPattern:
         call_args, call_kwargs = mock_init_chat_model.call_args
 
         # Check model identifier
-        assert call_args[0] == "google_genai:gemini-1.5-pro"
+        assert call_args[0] == "google_genai:gemini-2.5-pro"
 
         # Check parameters
         assert call_kwargs["temperature"] == 0.7
@@ -64,10 +64,11 @@ class TestInitChatModelPattern:
         mock_init_chat_model.return_value = mock_instance
 
         test_cases = [
-            (ProviderType.GOOGLE, "google_genai", "gemini-1.5-pro"),
+            (ProviderType.GOOGLE, "google_genai", "gemini-2.5-pro"),
             (ProviderType.OPENAI, "openai", "gpt-4o"),
             (ProviderType.ANTHROPIC, "anthropic", "claude-3-opus-20240229"),
-            (ProviderType.GROK, "openai", "grok-1"),  # Grok uses OpenAI-compatible
+            # Grok uses OpenAI-compatible
+            (ProviderType.GROK, "openai", "grok-1"),
         ]
 
         for provider_type, expected_prefix, model_name in test_cases:
@@ -90,7 +91,7 @@ class TestInitChatModelPattern:
 
         # Test Google (uses disable_streaming)
         google_config = GoogleProviderConfig(
-            model="gemini-1.5-pro", api_key="test-key", streaming=False
+            model="gemini-2.5-pro", api_key="test-key", streaming=False
         )
         ProviderFactory.create_provider(google_config, use_cache=False)
         call_kwargs = mock_init_chat_model.call_args[1]
@@ -136,7 +137,7 @@ class TestFallbackFunctionality:
         # Create provider with fallbacks
         primary_config = {
             "provider": "google",
-            "model": "gemini-1.5-pro",
+            "model": "gemini-2.5-pro",
             "api_key": "test-key",
         }
         fallback_configs = [
@@ -179,7 +180,7 @@ class TestFallbackFunctionality:
         # Use convenience function
         result = create_provider_with_fallbacks(
             primary_provider="google",
-            primary_model="gemini-1.5-pro",
+            primary_model="gemini-2.5-pro",
             fallback_configs=[
                 {"provider": "openai", "model": "gpt-4o", "api_key": "test-key"},
                 {
@@ -228,7 +229,7 @@ class TestErrorHandling:
         legacy_instance = Mock()
         mock_legacy.return_value = legacy_instance
 
-        config = GoogleProviderConfig(model="gemini-1.5-pro", api_key="test-key")
+        config = GoogleProviderConfig(model="gemini-2.5-pro", api_key="test-key")
 
         result = ProviderFactory.create_provider(config, use_cache=False)
 
@@ -242,7 +243,7 @@ class TestErrorHandling:
         # Make init_chat_model raise ConfigurationError
         mock_init_chat_model.side_effect = ConfigurationError("Invalid config")
 
-        config = GoogleProviderConfig(model="gemini-1.5-pro", api_key="test-key")
+        config = GoogleProviderConfig(model="gemini-2.5-pro", api_key="test-key")
 
         with pytest.raises(ConfigurationError) as exc_info:
             ProviderFactory.create_provider(config, use_cache=False)
@@ -260,7 +261,7 @@ class TestProviderSpecificParameters:
         mock_init_chat_model.return_value = mock_instance
 
         config = GoogleProviderConfig(
-            model="gemini-1.5-pro",
+            model="gemini-2.5-pro",
             api_key="test-key",
             top_p=0.9,
             top_k=40,
@@ -330,7 +331,7 @@ class TestApiKeyHandling:
         # Clear any existing API key
         os.environ.pop("GOOGLE_API_KEY", None)
 
-        config = GoogleProviderConfig(model="gemini-1.5-pro", api_key="config-api-key")
+        config = GoogleProviderConfig(model="gemini-2.5-pro", api_key="config-api-key")
 
         ProviderFactory.create_provider(config, use_cache=False)
 
@@ -346,7 +347,7 @@ class TestApiKeyHandling:
         os.environ.pop("GOOGLE_API_KEY", None)
 
         config = GoogleProviderConfig(
-            model="gemini-1.5-pro"
+            model="gemini-2.5-pro"
             # No api_key provided
         )
 

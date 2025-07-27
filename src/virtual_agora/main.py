@@ -321,14 +321,16 @@ async def run_application(args: argparse.Namespace) -> int:
 
             if args.dry_run:
                 console.print("[green]Configuration validation successful![/green]")
-                console.print("[green]Discussion flow initialized successfully![/green]")
+                console.print(
+                    "[green]Discussion flow initialized successfully![/green]"
+                )
                 return 0
 
             # Welcome header is now shown by UI integration initialization
 
             # Get initial topic from user (uses enhanced UI internally)
             topic = get_initial_topic()
-            
+
             # Create session with the topic
             session_id = flow.create_session(session_id=session_id, main_topic=topic)
             logger.info(f"Created discussion session: {session_id}")
@@ -346,19 +348,19 @@ async def run_application(args: argparse.Namespace) -> int:
 
             # Run the complete discussion workflow
             console.print("[cyan]Starting discussion workflow...[/cyan]")
-            
+
             with LoadingSpinner("Running discussion flow..."):
                 try:
                     # Stream the graph execution to get real-time updates
                     config_dict = {"configurable": {"thread_id": session_id}}
-                    
+
                     for update in flow.stream(config_dict):
                         logger.debug(f"Flow update: {update}")
-                        
+
                         # Update UI with each step
                         current_state = flow_state_manager.get_state()
                         ui_integration.update_ui_from_state(current_state)
-                        
+
                         # Create checkpoints at key phases
                         if "current_phase" in update:
                             recovery_manager.create_checkpoint(
@@ -366,24 +368,34 @@ async def run_application(args: argparse.Namespace) -> int:
                                 operation=f"phase_{update['current_phase']}",
                                 save_to_disk=True,
                             )
-                    
+
                     console.print("[green]Discussion completed successfully![/green]")
-                    
+
                     # Get final state and show summary
                     final_state = flow_state_manager.get_state()
-                    console.print(f"[dim]Final session ID: {final_state['session_id']}[/dim]")
-                    console.print(f"[dim]Topics discussed: {len(final_state.get('completed_topics', []))}[/dim]")
-                    console.print(f"[dim]Total messages: {len(final_state.get('messages', []))}[/dim]")
-                    
+                    console.print(
+                        f"[dim]Final session ID: {final_state['session_id']}[/dim]"
+                    )
+                    console.print(
+                        f"[dim]Topics discussed: {len(final_state.get('completed_topics', []))}[/dim]"
+                    )
+                    console.print(
+                        f"[dim]Total messages: {len(final_state.get('messages', []))}[/dim]"
+                    )
+
                 except Exception as e:
                     logger.error(f"Discussion flow error: {e}")
                     console.print(f"[red]Discussion flow error: {e}[/red]")
-                    
+
                     # Attempt recovery
                     if recovery_manager.emergency_recovery(flow_state_manager, e):
-                        console.print("[yellow]Recovered from discussion error[/yellow]")
+                        console.print(
+                            "[yellow]Recovered from discussion error[/yellow]"
+                        )
                     else:
-                        console.print("[red]Could not recover from discussion error[/red]")
+                        console.print(
+                            "[red]Could not recover from discussion error[/red]"
+                        )
                         raise
 
             return 0

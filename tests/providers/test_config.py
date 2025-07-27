@@ -35,9 +35,9 @@ class TestProviderConfig:
 
     def test_basic_config(self):
         """Test creating basic provider config."""
-        config = ProviderConfig(provider=ProviderType.GOOGLE, model="gemini-1.5-pro")
+        config = ProviderConfig(provider=ProviderType.GOOGLE, model="gemini-2.5-pro")
         assert config.provider == ProviderType.GOOGLE
-        assert config.model == "gemini-1.5-pro"
+        assert config.model == "gemini-2.5-pro"
         assert config.temperature == 0.7  # default
         assert config.max_tokens is None  # default
         assert config.timeout == 30  # default
@@ -114,7 +114,7 @@ class TestGoogleProviderConfig:
     def test_google_specific_fields(self):
         """Test Google-specific configuration fields."""
         config = GoogleProviderConfig(
-            model="gemini-1.5-pro",
+            model="gemini-2.5-pro",
             top_p=0.9,
             top_k=40,
             safety_settings={"HARASSMENT": "BLOCK_LOW"},
@@ -213,11 +213,11 @@ class TestCreateProviderConfig:
     def test_create_google_config(self):
         """Test creating Google provider config."""
         config = create_provider_config(
-            provider="google", model="gemini-1.5-pro", temperature=0.5, top_p=0.9
+            provider="google", model="gemini-2.5-pro", temperature=0.5, top_p=0.9
         )
         assert isinstance(config, GoogleProviderConfig)
         assert config.provider == ProviderType.GOOGLE
-        assert config.model == "gemini-1.5-pro"
+        assert config.model == "gemini-2.5-pro"
         assert config.temperature == 0.5
         assert config.top_p == 0.9
 
@@ -248,7 +248,7 @@ class TestCreateProviderConfig:
     def test_create_with_provider_enum(self):
         """Test creating config with ProviderType enum."""
         config = create_provider_config(
-            provider=ProviderType.GOOGLE, model="gemini-1.5-pro"
+            provider=ProviderType.GOOGLE, model="gemini-2.5-pro"
         )
         assert isinstance(config, GoogleProviderConfig)
 

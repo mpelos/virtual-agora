@@ -29,7 +29,7 @@ class TestLangGraphIntegration:
         # Create a minimal config
         self.config = VirtualAgoraConfig(
             moderator=ModeratorConfig(
-                provider=ProviderType.GOOGLE, model="gemini-1.5-pro"
+                provider=ProviderType.GOOGLE, model="gemini-2.5-pro"
             ),
             agents=[AgentConfig(provider=ProviderType.OPENAI, model="gpt-4o", count=2)],
         )
@@ -144,7 +144,7 @@ class TestLangGraphIntegration:
         # Mock LLM responses
         mock_llm = Mock()
         mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        mock_llm.model_name = "gemini-1.5-pro"
+        mock_llm.model_name = "gemini-2.5-pro"
         mock_llm.invoke.return_value = Mock(content="Test response")
         mock_create_provider.return_value = mock_llm
 

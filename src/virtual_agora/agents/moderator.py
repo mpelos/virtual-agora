@@ -123,7 +123,8 @@ class ModeratorAgent(LLMAgent):
         self.relevance_violations: Dict[str, Dict[str, Any]] = (
             {}
         )  # agent_id -> violation data
-        self.muted_agents: Dict[str, datetime] = {}  # agent_id -> mute_end_time
+        # agent_id -> mute_end_time
+        self.muted_agents: Dict[str, datetime] = {}
         self.current_topic_context: Optional[str] = None
 
         # Initialize with moderator-specific system prompt
@@ -2807,7 +2808,7 @@ def create_moderator_agent(
 
     Args:
         agent_id: Unique identifier for the agent
-        llm: LangChain chat model (should be gemini-1.5-pro for optimal performance)
+        llm: LangChain chat model (should be gemini-2.5-pro for optimal performance)
         mode: Initial operational mode
         **kwargs: Additional arguments for ModeratorAgent
 
@@ -2841,7 +2842,7 @@ def create_gemini_moderator(
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", **llm_kwargs)
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro", **llm_kwargs)
 
         return ModeratorAgent(
             agent_id=agent_id,

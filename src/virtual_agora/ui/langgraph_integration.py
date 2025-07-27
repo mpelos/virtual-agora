@@ -111,7 +111,9 @@ class LangGraphUIIntegration:
                     provider_value = agent["provider"].lower()
                     agent_providers[agent_id] = ProviderType(provider_value)
                 except (ValueError, AttributeError) as e:
-                    logger.warning(f"Invalid provider '{agent['provider']}' for agent {agent_id}, skipping")
+                    logger.warning(
+                        f"Invalid provider '{agent['provider']}' for agent {agent_id}, skipping"
+                    )
                     # Skip this agent rather than failing
                     continue
 

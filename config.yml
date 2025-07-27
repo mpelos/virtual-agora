@@ -1,13 +1,9 @@
 # Example Virtual Agora Configuration
 moderator:
-  provider: Google
-  model: gemini-1.5-pro
+  provider: google
+  model: gemini-2.5-flash-lite
 
 agents:
-  - provider: OpenAI
-    model: gpt-4o
-    count: 2
-    
-  - provider: Anthropic
-    model: claude-3-opus-20240229
-    count: 1
+  - provider: google
+    model: gemini-2.5-flash-lite
+    count: 3

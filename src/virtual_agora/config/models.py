@@ -44,40 +44,9 @@ class ModeratorConfig(BaseModel):
     )
     model: str = Field(
         ...,
-        description="Model name/ID for the moderator (e.g., gemini-1.5-pro)",
+        description="Model name/ID for the moderator (e.g., gemini-2.5-pro)",
         min_length=1,
     )
-
-    @field_validator("model")
-    @classmethod
-    def validate_model(cls, v: str, info) -> str:
-        """Validate model name based on provider."""
-        provider = info.data.get("provider")
-
-        if provider == Provider.GOOGLE:
-            valid_models = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"]
-            if not any(v.startswith(prefix) for prefix in valid_models):
-                raise ValueError(
-                    f"Invalid Google model: {v}. "
-                    f"Expected one of: {', '.join(valid_models)}"
-                )
-        elif provider == Provider.OPENAI:
-            valid_models = ["gpt-4", "gpt-3.5"]
-            if not any(v.startswith(prefix) for prefix in valid_models):
-                raise ValueError(
-                    f"Invalid OpenAI model: {v}. "
-                    f"Expected model starting with: {', '.join(valid_models)}"
-                )
-        elif provider == Provider.ANTHROPIC:
-            valid_models = ["claude-3", "claude-2"]
-            if not any(v.startswith(prefix) for prefix in valid_models):
-                raise ValueError(
-                    f"Invalid Anthropic model: {v}. "
-                    f"Expected model starting with: {', '.join(valid_models)}"
-                )
-        # For Grok, we don't validate since model names are not yet known
-
-        return v
 
 
 class AgentConfig(BaseModel):
@@ -101,37 +70,6 @@ class AgentConfig(BaseModel):
         ge=1,
         le=10,  # Reasonable limit to prevent accidental resource exhaustion
     )
-
-    @field_validator("model")
-    @classmethod
-    def validate_model(cls, v: str, info) -> str:
-        """Validate model name based on provider."""
-        # Use the same validation logic as ModeratorConfig
-        provider = info.data.get("provider")
-
-        if provider == Provider.GOOGLE:
-            valid_models = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"]
-            if not any(v.startswith(prefix) for prefix in valid_models):
-                raise ValueError(
-                    f"Invalid Google model: {v}. "
-                    f"Expected one of: {', '.join(valid_models)}"
-                )
-        elif provider == Provider.OPENAI:
-            valid_models = ["gpt-4", "gpt-3.5"]
-            if not any(v.startswith(prefix) for prefix in valid_models):
-                raise ValueError(
-                    f"Invalid OpenAI model: {v}. "
-                    f"Expected model starting with: {', '.join(valid_models)}"
-                )
-        elif provider == Provider.ANTHROPIC:
-            valid_models = ["claude-3", "claude-2"]
-            if not any(v.startswith(prefix) for prefix in valid_models):
-                raise ValueError(
-                    f"Invalid Anthropic model: {v}. "
-                    f"Expected model starting with: {', '.join(valid_models)}"
-                )
-
-        return v
 
 
 class Config(BaseModel):

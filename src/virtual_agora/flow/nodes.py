@@ -104,8 +104,7 @@ class FlowNodes:
 
         # Step 1: Request topic proposals from all agents
         proposal_prompt = moderator.request_topic_proposals(
-            main_topic=main_topic,
-            agent_count=len(state["speaking_order"])
+            main_topic=main_topic, agent_count=len(state["speaking_order"])
         )
 
         # Get proposals from each participant
@@ -123,17 +122,19 @@ class FlowNodes:
                 )
 
                 # Ask agent for proposals using proper message format
-                response_dict = agent({
-                    "messages": [
-                        {"role": "user", "content": proposal_prompt}
-                    ]
-                })
-                
+                response_dict = agent(
+                    {"messages": [{"role": "user", "content": proposal_prompt}]}
+                )
+
                 # Extract the AI response content
                 messages = response_dict.get("messages", [])
                 if messages:
                     # Get the last message which should be the AI response
-                    response_content = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
+                    response_content = (
+                        messages[-1].content
+                        if hasattr(messages[-1], "content")
+                        else str(messages[-1])
+                    )
                     agent_responses.append(response_content)
                     agent_ids.append(agent_id)
                     logger.info(f"Collected proposals from {agent_id}")
@@ -141,13 +142,13 @@ class FlowNodes:
         # Step 2: Moderator collates and deduplicates proposals
         proposal_data = moderator.collect_proposals(agent_responses, agent_ids)
         unique_topics = proposal_data["unique_topics"]
-        
+
         logger.info(f"Collected {len(unique_topics)} unique topics for voting")
 
         # Step 3: Collect votes from agents
         vote_responses = []
         voter_ids = []
-        
+
         for agent_id in state["speaking_order"]:
             agent = self.agents[agent_id]
 
@@ -159,14 +160,18 @@ class FlowNodes:
             Provide your ranking with brief reasoning for your top choices.
             """
 
-            vote_response_dict = agent({
-                "messages": [{"role": "user", "content": vote_prompt}]
-            })
-            
+            vote_response_dict = agent(
+                {"messages": [{"role": "user", "content": vote_prompt}]}
+            )
+
             # Extract the vote response content
             messages = vote_response_dict.get("messages", [])
             if messages:
-                vote_content = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
+                vote_content = (
+                    messages[-1].content
+                    if hasattr(messages[-1], "content")
+                    else str(messages[-1])
+                )
                 vote_responses.append(vote_content)
                 voter_ids.append(agent_id)
                 logger.info(f"Collected vote from {agent_id}")
@@ -174,9 +179,7 @@ class FlowNodes:
         # Step 4: Moderator synthesizes votes into final agenda
         try:
             final_agenda = moderator.synthesize_agenda(
-                topics=unique_topics,
-                votes=vote_responses,
-                voter_ids=voter_ids
+                topics=unique_topics, votes=vote_responses, voter_ids=voter_ids
             )
         except Exception as e:
             logger.error(f"Failed to synthesize agenda: {e}")
@@ -320,16 +323,24 @@ class FlowNodes:
             agent = self.agents[agent_id]
 
             # Prepare context for agent
-            context_messages = state.get("messages", [])[-10:]  # Last 10 messages for context
-            
+            context_messages = state.get("messages", [])[
+                -10:
+            ]  # Last 10 messages for context
+
             # Convert context messages to proper format for agent
             formatted_context = []
             for msg in context_messages:
                 if isinstance(msg, dict):
-                    formatted_context.append({
-                        "role": "assistant" if msg.get("speaker_role") == "participant" else "user",
-                        "content": msg.get("content", "")
-                    })
+                    formatted_context.append(
+                        {
+                            "role": (
+                                "assistant"
+                                if msg.get("speaker_role") == "participant"
+                                else "user"
+                            ),
+                            "content": msg.get("content", ""),
+                        }
+                    )
 
             agent_prompt = f"""
             Topic: {current_topic}
@@ -341,16 +352,23 @@ class FlowNodes:
             """
 
             # Call the agent with proper message format
-            agent_response_dict = agent({
-                "messages": formatted_context + [{"role": "user", "content": agent_prompt}]
-            })
+            agent_response_dict = agent(
+                {
+                    "messages": formatted_context
+                    + [{"role": "user", "content": agent_prompt}]
+                }
+            )
 
             # Extract the response content
             response_messages = agent_response_dict.get("messages", [])
             if response_messages:
                 # Get the last message which should be the AI response
                 last_message = response_messages[-1]
-                response_content = last_message.content if hasattr(last_message, 'content') else str(last_message)
+                response_content = (
+                    last_message.content
+                    if hasattr(last_message, "content")
+                    else str(last_message)
+                )
             else:
                 response_content = f"[Agent {agent_id} failed to respond]"
                 logger.warning(f"Agent {agent_id} did not provide a response")
@@ -362,7 +380,7 @@ class FlowNodes:
 
             round_messages.append(message)
             participants.append(agent_id)
-            
+
             logger.info(f"Agent {agent_id} provided response for round {current_round}")
 
         # Create round info
@@ -488,15 +506,19 @@ class FlowNodes:
             Format: Yes/No - [your reasoning]
             """
 
-            vote_response_dict = agent({
-                "messages": [{"role": "user", "content": poll_prompt}]
-            })
+            vote_response_dict = agent(
+                {"messages": [{"role": "user", "content": poll_prompt}]}
+            )
 
             # Extract the vote response content
             response_messages = vote_response_dict.get("messages", [])
             if response_messages:
                 last_message = response_messages[-1]
-                vote_content = last_message.content if hasattr(last_message, 'content') else str(last_message)
+                vote_content = (
+                    last_message.content
+                    if hasattr(last_message, "content")
+                    else str(last_message)
+                )
             else:
                 vote_content = "No - Failed to respond"
                 logger.warning(f"Agent {agent_id} failed to provide conclusion vote")
@@ -517,7 +539,7 @@ class FlowNodes:
                 "justification": vote_content,
                 "timestamp": datetime.now(),
             }
-            
+
             logger.info(f"Agent {agent_id} voted: {vote}")
 
         # Tally votes

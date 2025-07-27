@@ -51,7 +51,7 @@ The application flow is a stateful graph managed by LangGraph.
 **Phase 0: Initialization**
 
 1. **System Start:** On execution, the application reads the .env file for API keys.
-2. **Configuration Loading:** The config.yml file is parsed to instantiate the Moderator and the list of Discussing Agents. Agent names will be created based on the model and an index (e.g., gemini-1.5-pro-1, gpt-4o-1, gpt-4o-2).
+2. **Configuration Loading:** The config.yml file is parsed to instantiate the Moderator and the list of Discussing Agents. Agent names will be created based on the model and an index (e.g., gemini-2.5-pro-1, gpt-4o-1, gpt-4o-2).
 3. **Logging Setup:** A new log file is created with a timestamp, e.g., session_2025-07-25_121500.log.
 4. **Initial User Prompt:** The system shall prompt the user for the high-level topic of discussion.\[User Input Required\]: Please enter the topic you would like the agents to discuss:
 
@@ -116,7 +116,7 @@ The application flow is a stateful graph managed by LangGraph.
 \# A powerful model is recommended for its complex reasoning tasks.
 moderator:
 provider: Google
-model: gemini-1.5-pro
+model: gemini-2.5-pro
 <br/>\# The list of agents that will participate in the discussion.
 agents:
 \- provider: OpenAI
@@ -126,7 +126,7 @@ count: 2 # Creates gpt-4o-1 and gpt-4o-2
 model: claude-3-opus-20240229
 count: 1
 <br/>\- provider: Google
-model: gemini-1.5-pro
+model: gemini-2.5-pro
 count: 1
 <br/>\- provider: Grok
 \# model: &lt;grok_model_name&gt; # Specify Grok's model name here

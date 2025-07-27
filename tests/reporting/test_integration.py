@@ -339,7 +339,7 @@ Many blank lines above.
                     "role": "participant",
                 },
                 "moderator": {
-                    "model": "gemini-1.5-pro",
+                    "model": "gemini-2.5-pro",
                     "provider": "Google",
                     "role": "moderator",
                 },

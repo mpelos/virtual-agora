@@ -23,7 +23,7 @@ The configuration file has two main sections:
 # Virtual Agora Configuration File
 moderator:
   provider: Google
-  model: gemini-1.5-pro
+  model: gemini-2.5-pro
 
 agents:
   - provider: OpenAI
@@ -35,7 +35,7 @@ agents:
     count: 1
 
   - provider: Google
-    model: gemini-1.5-pro
+    model: gemini-2.5-pro
     count: 1
 ```
 
@@ -48,20 +48,20 @@ The moderator section configures the AI agent responsible for facilitating the d
 | Field    | Type   | Required | Description                                     |
 | -------- | ------ | -------- | ----------------------------------------------- |
 | provider | string | Yes      | LLM provider (Google, OpenAI, Anthropic, Grok)  |
-| model    | string | Yes      | Model identifier (e.g., gemini-1.5-pro, gpt-4o) |
+| model    | string | Yes      | Model identifier (e.g., gemini-2.5-pro, gpt-4o) |
 
 **Example:**
 
 ```yaml
 moderator:
   provider: Google
-  model: gemini-1.5-pro
+  model: gemini-2.5-pro
 ```
 
 **Notes:**
 
 - The moderator should use a capable model since it has complex responsibilities
-- Recommended models: gemini-1.5-pro, gpt-4o, claude-3-opus
+- Recommended models: gemini-2.5-pro, gpt-4o, claude-3-opus
 
 ### Agents Configuration
 
@@ -90,8 +90,8 @@ agents:
 
 ### Google (Gemini)
 
-- `gemini-1.5-pro` - Most capable, recommended for moderator
-- `gemini-1.5-flash` - Faster, lower cost
+- `gemini-2.5-pro` - Most capable, recommended for moderator
+- `gemini-2.5-flash` - Faster, lower cost
 - `gemini-pro` - Previous generation
 
 ### OpenAI
@@ -136,13 +136,13 @@ agents:
     count: 2
 
   - provider: Google
-    model: gemini-1.5-pro
+    model: gemini-2.5-pro
     count: 1
 ```
 
 ### Model Selection
 
-- **Moderator**: Use the most capable model available (e.g., gemini-1.5-pro, gpt-4o)
+- **Moderator**: Use the most capable model available (e.g., gemini-2.5-pro, gpt-4o)
 - **Agents**: Mix of models based on your needs:
   - Capable models for complex reasoning
   - Faster models for quick responses
@@ -270,7 +270,7 @@ For high-quality discussions:
 ```yaml
 moderator:
   provider: Google
-  model: gemini-1.5-pro
+  model: gemini-2.5-pro
 
 agents:
   - provider: OpenAI
@@ -282,7 +282,7 @@ agents:
     count: 2
 
   - provider: Google
-    model: gemini-1.5-pro
+    model: gemini-2.5-pro
     count: 1
 
   # Grok support when available

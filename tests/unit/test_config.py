@@ -26,9 +26,9 @@ class TestConfigSchema:
 
     def test_moderator_config_valid(self):
         """Test valid moderator configuration."""
-        config = ModeratorConfig(provider="Google", model="gemini-1.5-pro")
+        config = ModeratorConfig(provider="Google", model="gemini-2.5-pro")
         assert config.provider == Provider.GOOGLE
-        assert config.model == "gemini-1.5-pro"
+        assert config.model == "gemini-2.5-pro"
 
     def test_moderator_config_invalid_model(self):
         """Test moderator configuration with invalid model."""
@@ -61,7 +61,7 @@ class TestConfigSchema:
     def test_config_valid(self):
         """Test valid complete configuration."""
         config = Config(
-            moderator=ModeratorConfig(provider="Google", model="gemini-1.5-pro"),
+            moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(provider="Anthropic", model="claude-3-opus-20240229"),
@@ -74,7 +74,7 @@ class TestConfigSchema:
         """Test configuration with too many agents."""
         with pytest.raises(ValidationError) as exc_info:
             Config(
-                moderator=ModeratorConfig(provider="Google", model="gemini-1.5-pro"),
+                moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
                 agents=[
                     AgentConfig(provider="OpenAI", model="gpt-4o", count=10),
                     AgentConfig(provider="OpenAI", model="gpt-4o", count=10),
@@ -87,7 +87,7 @@ class TestConfigSchema:
         """Test configuration with too few agents."""
         with pytest.raises(ValidationError) as exc_info:
             Config(
-                moderator=ModeratorConfig(provider="Google", model="gemini-1.5-pro"),
+                moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
                 agents=[
                     AgentConfig(provider="OpenAI", model="gpt-4o", count=1),
                 ],
@@ -97,7 +97,7 @@ class TestConfigSchema:
     def test_config_agent_names(self):
         """Test agent name generation."""
         config = Config(
-            moderator=ModeratorConfig(provider="Google", model="gemini-1.5-pro"),
+            moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(
@@ -118,7 +118,7 @@ class TestConfigLoader:
         config = loader.load()
 
         assert config.moderator.provider == Provider.GOOGLE
-        assert config.moderator.model == "gemini-1.5-pro"
+        assert config.moderator.model == "gemini-2.5-pro"
         assert len(config.agents) == 1
         assert config.agents[0].provider == Provider.OPENAI
         assert config.agents[0].count == 2
@@ -210,7 +210,7 @@ class TestConfigValidator:
     def test_validate_all_valid_config(self):
         """Test validation of a valid configuration."""
         config = Config(
-            moderator=ModeratorConfig(provider="Google", model="gemini-1.5-pro"),
+            moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(provider="Anthropic", model="claude-3-opus-20240229"),
@@ -258,11 +258,11 @@ class TestConfigValidator:
     def test_validation_report(self):
         """Test generation of validation report."""
         config = Config(
-            moderator=ModeratorConfig(provider="Google", model="gemini-1.5-pro"),
+            moderator=ModeratorConfig(provider="Google", model="gemini-2.5-pro"),
             agents=[
                 AgentConfig(provider="OpenAI", model="gpt-4o", count=2),
                 AgentConfig(provider="Anthropic", model="claude-3-opus-20240229"),
-                AgentConfig(provider="Google", model="gemini-1.5-pro"),
+                AgentConfig(provider="Google", model="gemini-2.5-pro"),
             ],
         )
 

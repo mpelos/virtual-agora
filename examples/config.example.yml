@@ -5,7 +5,7 @@
 # A powerful model is recommended for its complex reasoning tasks.
 moderator:
   provider: Google
-  model: gemini-1.5-pro
+  model: gemini-2.5-pro
 
 # The list of agents that will participate in the discussion.
 # You can mix and match providers and models as desired.
@@ -15,14 +15,14 @@ agents:
     model: gpt-4o
     count: 2  # Creates gpt-4o-1 and gpt-4o-2
 
-  # Anthropic agent  
+  # Anthropic agent
   - provider: Anthropic
     model: claude-3-opus-20240229
     count: 1
 
   # Google agent
   - provider: Google
-    model: gemini-1.5-pro
+    model: gemini-2.5-pro
     count: 1
 
   # Grok agent (uncomment and specify model when available)

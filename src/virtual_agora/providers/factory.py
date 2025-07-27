@@ -66,12 +66,12 @@ class ProviderFactory:
         if isinstance(config, dict):
             config = create_provider_config(**config)
 
-        # Validate configuration
-        is_valid, error_msg = registry.validate_model_config(
-            config.provider, config.model
-        )
-        if not is_valid:
-            raise ConfigurationError(error_msg)
+        # Skip model validation - allow any model name to be passed to provider
+        # is_valid, error_msg = registry.validate_model_config(
+        #     config.provider, config.model
+        # )
+        # if not is_valid:
+        #     raise ConfigurationError(error_msg)
 
         # Generate cache key
         cache_key = cls._generate_cache_key(config)

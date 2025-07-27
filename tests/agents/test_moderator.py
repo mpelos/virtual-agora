@@ -29,7 +29,7 @@ class TestModeratorAgent:
         # Create mock LLM instance
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         # Create moderator agent with error handling disabled to avoid LLM wrapping
         self.moderator = ModeratorAgent(
@@ -45,7 +45,7 @@ class TestModeratorAgent:
         assert self.moderator.llm == self.mock_llm
         assert self.moderator.role == "moderator"
         assert self.moderator.current_mode == "facilitation"
-        assert self.moderator.model == "gemini-1.5-pro"
+        assert self.moderator.model == "gemini-2.5-pro"
         assert self.moderator.provider == "google"
         assert isinstance(self.moderator.created_at, datetime)
         assert self.moderator.PROMPT_VERSION == "1.0"
@@ -214,7 +214,7 @@ class TestModeratorJSONGeneration:
         """Set up test method."""
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         self.moderator = ModeratorAgent(
             agent_id="json-moderator",
@@ -273,7 +273,8 @@ class TestModeratorJSONGeneration:
         """Test handling of malformed JSON response."""
         mock_response = Mock()
         mock_response.content = (
-            '{"proposed_agenda": ["Topic A", "Topic B"'  # Missing closing bracket
+            # Missing closing bracket
+            '{"proposed_agenda": ["Topic A", "Topic B"'
         )
         self.mock_llm.invoke.return_value = mock_response
         self.mock_llm.bind.return_value = self.mock_llm
@@ -364,7 +365,7 @@ class TestModeratorReportGeneration:
         """Set up test method."""
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         self.moderator = ModeratorAgent(
             agent_id="report-moderator",
@@ -477,7 +478,7 @@ class TestModeratorLangGraphIntegration:
         """Set up test method."""
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         self.moderator = ModeratorAgent(
             agent_id="langgraph-moderator",
@@ -599,7 +600,7 @@ class TestModeratorFactoryFunctions:
         """Test create_moderator_agent factory function."""
         mock_llm = Mock()
         mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        mock_llm.model_name = "gemini-1.5-pro"
+        mock_llm.model_name = "gemini-2.5-pro"
 
         moderator = create_moderator_agent(
             agent_id="factory-moderator",
@@ -620,7 +621,7 @@ class TestModeratorFactoryFunctions:
         # Mock the ChatGoogleGenerativeAI class
         mock_llm_instance = Mock()
         mock_llm_instance.__class__.__name__ = "ChatGoogleGenerativeAI"
-        mock_llm_instance.model_name = "gemini-1.5-pro"
+        mock_llm_instance.model_name = "gemini-2.5-pro"
         mock_chat_google.return_value = mock_llm_instance
 
         moderator = create_gemini_moderator(
@@ -632,7 +633,7 @@ class TestModeratorFactoryFunctions:
 
         # Verify ChatGoogleGenerativeAI was called with correct parameters
         mock_chat_google.assert_called_once_with(
-            model="gemini-1.5-pro", temperature=0.7
+            model="gemini-2.5-pro", temperature=0.7
         )
 
         # Verify moderator was created correctly
@@ -705,7 +706,7 @@ class TestModeratorErrorHandling:
         """Set up test method."""
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         self.moderator = ModeratorAgent(
             "error-test", self.mock_llm, enable_error_handling=False
@@ -786,7 +787,7 @@ class TestModeratorIntegration:
         """Test a complete moderator workflow across modes."""
         mock_llm = Mock()
         mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        mock_llm.model_name = "gemini-1.5-pro"
+        mock_llm.model_name = "gemini-2.5-pro"
 
         moderator = ModeratorAgent(
             "workflow-test", mock_llm, enable_error_handling=False
@@ -837,7 +838,7 @@ class TestModeratorAgendaSynthesis:
         """Set up test method."""
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         self.moderator = ModeratorAgent(
             agent_id="synthesis-moderator",
@@ -1173,7 +1174,7 @@ class TestModeratorAgendaSynthesis:
         """Test that context is preserved across mode switches."""
         mock_llm = Mock()
         mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        mock_llm.model_name = "gemini-1.5-pro"
+        mock_llm.model_name = "gemini-2.5-pro"
 
         moderator = ModeratorAgent(
             "context-test", mock_llm, enable_error_handling=False
@@ -1222,7 +1223,7 @@ class TestModeratorRoundManagement:
         """Set up test method."""
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         self.moderator = ModeratorAgent(
             agent_id="round-moderator",
@@ -1445,7 +1446,7 @@ class TestModeratorRelevanceEnforcement:
         """Set up test method."""
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         self.moderator = ModeratorAgent(
             agent_id="relevance-moderator",
@@ -1648,7 +1649,8 @@ class TestModeratorRelevanceEnforcement:
         assert agent_id in self.moderator.muted_agents
         mute_end_time = self.moderator.muted_agents[agent_id]
         time_diff = (mute_end_time - datetime.now()).total_seconds()
-        assert 290 <= time_diff <= 305  # Should be about 5 minutes (300 seconds)
+        # Should be about 5 minutes (300 seconds)
+        assert 290 <= time_diff <= 305
 
         # Check violation record updated
         assert self.moderator.relevance_violations[agent_id]["is_muted"] is True
@@ -1848,7 +1850,7 @@ class TestModeratorSummarization:
         """Set up test method."""
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         self.moderator = ModeratorAgent(
             agent_id="summary-moderator",
@@ -2068,7 +2070,7 @@ class TestModeratorPolling:
         """Set up test method."""
         self.mock_llm = Mock()
         self.mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        self.mock_llm.model_name = "gemini-1.5-pro"
+        self.mock_llm.model_name = "gemini-2.5-pro"
 
         self.moderator = ModeratorAgent(
             agent_id="polling-moderator",
@@ -2330,7 +2332,8 @@ class TestModeratorPolling:
         assert status["votes_cast"] == 0
         assert status["votes_required"] == 2
         assert status["remaining_voters"] == ["agent1", "agent2"]
-        assert status["time_remaining_minutes"] > 4.5  # Should be close to 5 minutes
+        # Should be close to 5 minutes
+        assert status["time_remaining_minutes"] > 4.5
 
     def test_check_poll_status_ready_for_tally(self):
         """Test poll status when ready for tally."""

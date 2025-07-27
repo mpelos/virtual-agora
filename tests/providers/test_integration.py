@@ -27,13 +27,13 @@ class TestProviderIntegration:
         """Test creating a Google agent end-to-end."""
         mock_llm = Mock()
         mock_llm.__class__.__name__ = "ChatGoogleGenerativeAI"
-        mock_llm.model_name = "gemini-1.5-pro"
+        mock_llm.model_name = "gemini-2.5-pro"
         mock_init_chat_model.return_value = mock_llm
 
         # Create provider using convenience function
         provider = create_provider(
             provider="google",
-            model="gemini-1.5-pro",
+            model="gemini-2.5-pro",
             api_key="test-key",
             temperature=0.7,
             top_p=0.9,
@@ -47,14 +47,14 @@ class TestProviderIntegration:
         # Verify provider creation
         mock_init_chat_model.assert_called_once()
         call_args, call_kwargs = mock_init_chat_model.call_args
-        assert call_args[0] == "google_genai:gemini-1.5-pro"
+        assert call_args[0] == "google_genai:gemini-2.5-pro"
         assert call_kwargs["temperature"] == 0.7
         assert call_kwargs["top_p"] == 0.9
 
         # Verify agent properties
         assert agent.agent_id == "google-agent"
         assert agent.provider == "google"
-        assert agent.model == "gemini-1.5-pro"
+        assert agent.model == "gemini-2.5-pro"
         assert agent.llm == mock_llm
 
     @patch("virtual_agora.providers.factory.init_chat_model")
@@ -124,7 +124,7 @@ class TestProviderIntegration:
         """Test registry validation integration."""
         # Valid model
         is_valid, error = registry.validate_model_config(
-            ProviderType.GOOGLE, "gemini-1.5-pro"
+            ProviderType.GOOGLE, "gemini-2.5-pro"
         )
         assert is_valid is True
         assert error is None
@@ -246,7 +246,7 @@ class TestProviderIntegration:
             with pytest.raises(ConfigurationError) as exc_info:
                 create_provider(
                     provider="google",
-                    model="gemini-1.5-pro",
+                    model="gemini-2.5-pro",
                     # No API key provided
                 )
             assert "API key not found" in str(exc_info.value)
@@ -258,7 +258,7 @@ class TestProviderCompatibility:
     def test_streaming_support(self):
         """Test streaming support across providers."""
         streaming_models = [
-            ("google", "gemini-1.5-pro"),
+            ("google", "gemini-2.5-pro"),
             ("openai", "gpt-4o"),
             ("anthropic", "claude-3-opus-20240229"),
         ]
@@ -273,7 +273,7 @@ class TestProviderCompatibility:
         """Test function calling support across providers."""
         # Most models should support function calling
         function_models = [
-            ("google", "gemini-1.5-pro"),
+            ("google", "gemini-2.5-pro"),
             ("openai", "gpt-4o"),
             ("anthropic", "claude-3-opus-20240229"),
         ]

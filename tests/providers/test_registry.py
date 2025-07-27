@@ -214,8 +214,8 @@ class TestProviderRegistry:
 
         # Google models
         google_models = reg.list_models_for_provider(ProviderType.GOOGLE)
-        assert "gemini-1.5-pro-002" in google_models
-        assert "gemini-1.5-flash-002" in google_models
+        assert "gemini-2.5-pro-002" in google_models
+        assert "gemini-2.5-flash-002" in google_models
         assert "gemini-2.0-flash" in google_models
 
         # OpenAI models
@@ -383,7 +383,7 @@ class TestNewRegistryFeatures:
         # Test Google aliases
         google_aliases = reg.get_model_aliases(ProviderType.GOOGLE)
         assert "gemini-pro" in google_aliases
-        assert google_aliases["gemini-pro"] == "gemini-1.5-pro-002"
+        assert google_aliases["gemini-pro"] == "gemini-2.5-pro-002"
 
     def test_backward_compatibility(self):
         """Test backward compatibility for max_tokens property."""

@@ -72,7 +72,7 @@ class ConfigValidator:
             logger.warning(
                 f"Moderator is using '{self.config.moderator.model}' which may "
                 f"have limited capabilities for complex moderation tasks. "
-                f"Consider using a more capable model like gpt-4 or gemini-1.5-pro."
+                f"Consider using a more capable model like gpt-4 or gemini-2.5-pro."
             )
 
     def validate_resource_requirements(self) -> None:
@@ -97,7 +97,7 @@ class ConfigValidator:
             )
 
         # Check for expensive model combinations
-        expensive_models = ["gpt-4", "claude-3-opus", "gemini-1.5-pro"]
+        expensive_models = ["gpt-4", "claude-3-opus", "gemini-2.5-pro"]
         expensive_count = 0
 
         if any(

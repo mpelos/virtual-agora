@@ -21,7 +21,7 @@ class TestVirtualAgoraFlow:
         """Set up test method."""
         self.config = VirtualAgoraConfig(
             moderator=ModeratorConfig(
-                provider=ProviderType.GOOGLE, model="gemini-1.5-pro"
+                provider=ProviderType.GOOGLE, model="gemini-2.5-pro"
             ),
             agents=[AgentConfig(provider=ProviderType.OPENAI, model="gpt-4o", count=2)],
         )

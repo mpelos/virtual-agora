@@ -24,7 +24,7 @@ Implement the Moderator Agent, a specialized non-participating AI that facilitat
 **Acceptance Criteria:**
 
 - Implement Moderator class inheriting from base agent
-- Configure with specified model (gemini-1.5-pro)
+- Configure with specified model (gemini-2.5-pro)
 - Implement core prompt as specified in section 5.A
 - Ensure Moderator never expresses opinions on topics
 - Support multiple operational modes:

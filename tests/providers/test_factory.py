@@ -30,7 +30,7 @@ class TestProviderFactory:
         mock_init_chat_model.return_value = mock_instance
 
         config = GoogleProviderConfig(
-            model="gemini-1.5-pro",
+            model="gemini-2.5-pro",
             api_key="test-key",
             temperature=0.5,
             max_tokens=1000,
@@ -44,7 +44,8 @@ class TestProviderFactory:
         mock_init_chat_model.assert_called_once()
         call_args, call_kwargs = mock_init_chat_model.call_args
 
-        assert call_args[0] == "google_genai:gemini-1.5-pro"  # model identifier
+        # model identifier
+        assert call_args[0] == "google_genai:gemini-2.5-pro"
         assert call_kwargs["temperature"] == 0.5
         assert call_kwargs["max_tokens"] == 1000
         assert call_kwargs["top_p"] == 0.9
@@ -99,7 +100,8 @@ class TestProviderFactory:
         mock_init_chat_model.assert_called_once()
         call_args, call_kwargs = mock_init_chat_model.call_args
 
-        assert call_args[0] == "anthropic:claude-3-opus-20240229"  # model identifier
+        # model identifier
+        assert call_args[0] == "anthropic:claude-3-opus-20240229"
         assert call_kwargs["temperature"] == 0.8
         assert call_kwargs["max_tokens"] == 1500
         assert call_kwargs["top_p"] == 0.9
@@ -140,7 +142,7 @@ class TestProviderFactory:
         mock_init_chat_model.return_value = mock_instance
 
         provider = ProviderFactory.create_provider(
-            {"provider": "google", "model": "gemini-1.5-pro", "api_key": "test-key"},
+            {"provider": "google", "model": "gemini-2.5-pro", "api_key": "test-key"},
             use_cache=False,
         )
 
@@ -154,7 +156,7 @@ class TestProviderFactory:
             mock_init_chat_model.return_value = mock_instance
 
             config = GoogleProviderConfig(
-                model="gemini-1.5-pro",
+                model="gemini-2.5-pro",
                 # No api_key provided
             )
 
@@ -167,7 +169,7 @@ class TestProviderFactory:
     def test_missing_api_key_raises_error(self):
         """Test that missing API key raises ConfigurationError."""
         config = GoogleProviderConfig(
-            model="gemini-1.5-pro",
+            model="gemini-2.5-pro",
             # No api_key provided and no environment variable set
         )
 
@@ -217,7 +219,7 @@ class TestProviderFactory:
         mock_instance = Mock()
         mock_init_chat_model.return_value = mock_instance
 
-        config = GoogleProviderConfig(model="gemini-1.5-pro", api_key="test-key")
+        config = GoogleProviderConfig(model="gemini-2.5-pro", api_key="test-key")
 
         # First call should create instance
         provider1 = ProviderFactory.create_provider(config, use_cache=True)
@@ -237,15 +239,15 @@ class TestProviderFactory:
     def test_cache_key_generation(self):
         """Test cache key generation."""
         config1 = GoogleProviderConfig(
-            model="gemini-1.5-pro", temperature=0.7, streaming=False
+            model="gemini-2.5-pro", temperature=0.7, streaming=False
         )
 
         config2 = GoogleProviderConfig(
-            model="gemini-1.5-pro", temperature=0.7, streaming=False
+            model="gemini-2.5-pro", temperature=0.7, streaming=False
         )
 
         config3 = GoogleProviderConfig(
-            model="gemini-1.5-pro",
+            model="gemini-2.5-pro",
             temperature=0.8,  # Different temperature
             streaming=False,
         )
@@ -276,7 +278,7 @@ class TestProviderFactory:
     @patch("virtual_agora.providers.factory.init_chat_model")
     def test_import_error_handling(self, mock_init_chat_model):
         """Test handling of missing LangChain packages with fallback to legacy."""
-        config = GoogleProviderConfig(model="gemini-1.5-pro", api_key="test-key")
+        config = GoogleProviderConfig(model="gemini-2.5-pro", api_key="test-key")
 
         # Mock init_chat_model to raise ImportError
         mock_init_chat_model.side_effect = ImportError(
@@ -307,14 +309,14 @@ class TestCreateProviderFunction:
             mock_instance = Mock()
             mock_create.return_value = mock_instance
 
-            provider = create_provider("google", "gemini-1.5-pro", temperature=0.5)
+            provider = create_provider("google", "gemini-2.5-pro", temperature=0.5)
 
             # Check that factory was called
             mock_create.assert_called_once()
             call_args = mock_create.call_args[0][0]  # First argument (config)
 
             assert call_args.provider == ProviderType.GOOGLE
-            assert call_args.model == "gemini-1.5-pro"
+            assert call_args.model == "gemini-2.5-pro"
             assert call_args.temperature == 0.5
 
             assert provider == mock_instance

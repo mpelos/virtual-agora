@@ -105,7 +105,7 @@ Edit `config.yml` to customize your discussion setup:
 # The moderator facilitates discussion (recommended: Google Gemini)
 moderator:
   provider: Google
-  model: gemini-1.5-pro
+  model: gemini-2.5-pro
 
 # Discussion participants (mix different providers for diverse perspectives)
 agents:
@@ -118,7 +118,7 @@ agents:
     count: 1
 
   - provider: Google
-    model: gemini-1.5-pro
+    model: gemini-2.5-pro
     count: 1
 ```
 
@@ -178,7 +178,7 @@ Choose models based on your needs:
 
 **For Moderators** (need reasoning and neutrality):
 
-- `gemini-1.5-pro` - Excellent reasoning and neutrality
+- `gemini-2.5-pro` - Excellent reasoning and neutrality
 - `gpt-4o` - Strong analytical capabilities
 - `claude-3-opus-20240229` - Excellent at following instructions
 
@@ -194,7 +194,7 @@ Choose models based on your needs:
 # Example advanced configuration
 moderator:
   provider: Google
-  model: gemini-1.5-pro
+  model: gemini-2.5-pro
   temperature: 0.3 # Lower = more consistent
   max_tokens: 2000 # Response length limit
 
