@@ -136,48 +136,39 @@ class V13FlowNodes:
     def get_theme_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """HITL node to get discussion theme.
         
-        This is a special node that pauses execution for user input.
+        This node checks if a theme is already provided, otherwise
+        it relies on the application's initial topic collection.
         """
-        logger.info("Node: get_theme - Requesting user input for theme")
+        logger.info("Node: get_theme - Checking for discussion theme")
         
         # Check if theme already provided
         if state.get("main_topic"):
             logger.info(f"Theme already set: {state['main_topic']}")
-            return {}
-        
-        # Get theme from user
-        main_topic = get_initial_topic()
-        
-        updates = {
-            "main_topic": main_topic,
-            "hitl_state": {
-                "awaiting_approval": False,
-                "approval_type": "theme_input",
-                "prompt_message": None,
-                "options": None,
-                "approval_history": [
+            return {
+                "phase_history": [
                     {
-                        "type": "theme_input",
-                        "result": "provided",
+                        "from_phase": -1,
+                        "to_phase": 0,
                         "timestamp": datetime.now(),
-                        "value": main_topic,
+                        "reason": "Theme provided at session creation",
+                        "triggered_by": "user",
                     }
                 ],
+            }
+        
+        # If no theme is set, this indicates an error in the flow
+        # The application should provide the theme during session creation
+        logger.error("No theme provided at session creation")
+        return {
+            "error": "No discussion theme provided",
+            "hitl_state": {
+                "awaiting_approval": True,
+                "approval_type": "theme_input",
+                "prompt_message": "Please provide a discussion theme",
+                "options": None,
+                "approval_history": state.get("hitl_state", {}).get("approval_history", []),
             },
-            "phase_history": [
-                {
-                    "from_phase": -1,
-                    "to_phase": 0,
-                    "timestamp": datetime.now(),
-                    "reason": "Theme provided by user",
-                    "triggered_by": "user",
-                }
-            ],
         }
-        
-        logger.info(f"User provided theme: {main_topic}")
-        
-        return updates
 
     # ===== Phase 1: Agenda Setting Nodes =====
 
@@ -395,7 +386,7 @@ class V13FlowNodes:
     def agenda_approval_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """HITL node for user agenda approval.
         
-        Pauses for user to approve or edit agenda.
+        Uses enhanced HITL system for approval with editing capability.
         """
         logger.info("Node: agenda_approval - Requesting user approval")
         
@@ -407,52 +398,31 @@ class V13FlowNodes:
         # Check for auto-approval conditions
         if prefs.auto_approve_agenda_on_consensus and state.get("unanimous_agenda_vote", False):
             logger.info("Auto-approving agenda due to unanimous vote")
-            approved_agenda = proposed_agenda
-            approval_result = "auto_approved"
-        else:
-            # Get user approval/edits
-            approved_agenda = get_agenda_approval(proposed_agenda)
-            
-            if approved_agenda == proposed_agenda:
-                approval_result = "approved"
-            elif approved_agenda:
-                approval_result = "edited"
-            else:
-                approval_result = "rejected"
-        
-        # Update state based on result
-        if approval_result in ["approved", "auto_approved", "edited"]:
             updates = {
                 "agenda_approved": True,
-                "topic_queue": approved_agenda,
-                "final_agenda": approved_agenda,
+                "topic_queue": proposed_agenda,
+                "final_agenda": proposed_agenda,
                 "hitl_state": {
                     "awaiting_approval": False,
                     "approval_type": "agenda_approval",
                     "approval_history": state.get("hitl_state", {}).get("approval_history", []) + [
                         {
                             "type": "agenda_approval",
-                            "result": approval_result,
+                            "result": "auto_approved",
                             "timestamp": datetime.now(),
-                            "original": proposed_agenda if approval_result == "edited" else None,
-                            "edited": approved_agenda if approval_result == "edited" else None,
                         }
                     ],
                 },
             }
         else:
+            # Set up HITL state for user interaction
             updates = {
-                "agenda_approved": False,
                 "hitl_state": {
-                    "awaiting_approval": False,
+                    "awaiting_approval": True,
                     "approval_type": "agenda_approval",
-                    "approval_history": state.get("hitl_state", {}).get("approval_history", []) + [
-                        {
-                            "type": "agenda_approval",
-                            "result": "rejected",
-                            "timestamp": datetime.now(),
-                        }
-                    ],
+                    "prompt_message": "Please review and approve the proposed discussion agenda.",
+                    "options": ["approve", "edit", "reorder", "reject"],
+                    "approval_history": state.get("hitl_state", {}).get("approval_history", []),
                 },
             }
         
@@ -823,54 +793,35 @@ class V13FlowNodes:
         """HITL node for 5-round periodic stops.
         
         New in v1.3 - gives user periodic control.
+        Uses enhanced HITL system for interaction.
         """
         logger.info("Node: periodic_user_stop - User checkpoint")
         
         current_round = state["current_round"]
         current_topic = state["active_topic"]
         
-        # Display current status
-        status_info = {
-            "Current Topic": current_topic,
-            "Current Round": current_round,
-            "Messages This Topic": len([
-                m for m in state.get("messages", []) 
-                if m.get("topic") == current_topic
-            ]),
-        }
-        display_session_status(status_info)
-        
-        # Ask user
-        print(f"\n🛑 Periodic Stop (Round {current_round})")
-        print(f"Currently discussing: {current_topic}")
-        response = input("Do you wish to end the current agenda item discussion? (yes/no): ").lower().strip()
-        
-        user_forced_conclusion = response in ["yes", "y"]
-        
+        # Set up HITL state for interaction
         updates = {
-            "user_forced_conclusion": user_forced_conclusion,
-            "periodic_stop_counter": 0,  # Reset counter
             "hitl_state": {
-                "awaiting_approval": False,
+                "awaiting_approval": True,
                 "approval_type": "periodic_stop",
-                "approval_history": state.get("hitl_state", {}).get("approval_history", []) + [
-                    {
-                        "type": "periodic_stop",
-                        "round": current_round,
-                        "result": "force_conclusion" if user_forced_conclusion else "continue",
-                        "timestamp": datetime.now(),
-                    }
-                ],
+                "prompt_message": (
+                    f"You've reached a 5-round checkpoint (Round {current_round}).\n"
+                    f"Currently discussing: {current_topic}\n\n"
+                    "Would you like to:\n"
+                    "- Continue the discussion\n"
+                    "- End the current topic\n"
+                    "- Modify discussion parameters\n"
+                    "- Skip to final report"
+                ),
+                "options": ["continue", "end_topic", "modify", "skip"],
+                "approval_history": state.get("hitl_state", {}).get("approval_history", []),
             },
+            "periodic_stop_counter": state.get("periodic_stop_counter", 0) + 1,
         }
         
-        if user_forced_conclusion:
-            # Override vote results
-            updates["conclusion_vote"] = {
-                **state.get("conclusion_vote", {}),
-                "passed": True,
-                "user_override": True,
-            }
+        # The actual user interaction will be handled by the application's
+        # handle_hitl_gate method when it detects awaiting_approval = True
         
         return updates
 
@@ -1130,6 +1081,7 @@ class V13FlowNodes:
     def user_approval_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """HITL: Get user approval to continue with next topic.
         
+        Uses enhanced HITL system for continuation approval.
         User has final say regardless of agent vote.
         """
         logger.info("Node: user_approval - Getting user continuation approval")
@@ -1138,55 +1090,21 @@ class V13FlowNodes:
         remaining_topics = state.get("topic_queue", [])
         agents_vote_end = state.get("agents_vote_end_session", False)
         
-        # Display session status
-        status_info = {
-            "Session ID": state.get("session_id", "Unknown"),
-            "Topics Completed": len(state.get("completed_topics", [])),
-            "Topics Remaining": len(remaining_topics),
-            "Total Messages": len(state.get("messages", [])),
-            "Agent Vote": "End Session" if agents_vote_end else "Continue",
-        }
-        display_session_status(status_info)
-        
-        # Get user decision
-        action = get_continuation_approval(completed_topic, remaining_topics)
-        
-        # Process response
-        if action == "y":
-            user_approves_continuation = True
-            result = "continue"
-        elif action == "n":
-            user_approves_continuation = False
-            result = "end"
-        elif action == "m":
-            # User wants to modify agenda
-            user_approves_continuation = True
-            result = "modify"
-        else:
-            # Default
-            user_approves_continuation = False
-            result = "end"
-        
+        # Set up HITL state for interaction
         updates = {
-            "user_approves_continuation": user_approves_continuation,
-            "continue_session": user_approves_continuation and not agents_vote_end,
-            "user_requested_modification": action == "m",
             "hitl_state": {
-                "awaiting_approval": False,
-                "approval_type": "continuation_approval",
-                "approval_history": state.get("hitl_state", {}).get("approval_history", []) + [
-                    {
-                        "type": "continuation_approval",
-                        "result": result,
-                        "timestamp": datetime.now(),
-                        "completed_topic": completed_topic,
-                        "agent_recommendation": "end" if agents_vote_end else "continue",
-                    }
-                ],
+                "awaiting_approval": True,
+                "approval_type": "topic_continuation",
+                "prompt_message": (
+                    f"Topic '{completed_topic}' has been concluded.\n"
+                    f"Remaining topics: {len(remaining_topics)}\n"
+                    f"Agent recommendation: {'End session' if agents_vote_end else 'Continue'}\n\n"
+                    "What would you like to do?"
+                ),
+                "options": ["continue", "end_session", "modify_agenda"],
+                "approval_history": state.get("hitl_state", {}).get("approval_history", []),
             },
         }
-        
-        logger.info(f"User decision: {result}")
         
         return updates
 

@@ -379,6 +379,350 @@ def format_timestamp(dt: datetime, relative: bool = False) -> str:
         return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
+class SpecializedAgentDisplay:
+    """Display component for specialized agent activities in v1.3."""
+    
+    def __init__(self, console: Console):
+        self.console = console
+        self.agent_colors = {
+            "moderator": "cyan",
+            "summarizer": "magenta", 
+            "topic_report": "green",
+            "ecclesia_report": "blue"
+        }
+        self.agent_icons = {
+            "moderator": "🎯",
+            "summarizer": "📝",
+            "topic_report": "📋",
+            "ecclesia_report": "📖"
+        }
+    
+    def show_agent_invocation(
+        self,
+        agent_type: str,
+        task: str,
+        context: Dict[str, Any],
+        status: str = "active"
+    ) -> None:
+        """Display when a specialized agent is invoked."""
+        color = self.agent_colors.get(agent_type, "white")
+        icon = self.agent_icons.get(agent_type, "🤖")
+        
+        # Status indicator
+        status_icon = "⚡" if status == "active" else "✓" if status == "completed" else "❌"
+        
+        self.console.print(
+            f"\n{status_icon} [{color}]{icon} {agent_type.replace('_', ' ').title()} Agent[/{color}]"
+        )
+        self.console.print(f"   [bold]Task:[/bold] {task}")
+        
+        if context:
+            self.console.print("   [bold]Context:[/bold]")
+            for key, value in context.items():
+                if isinstance(value, list):
+                    self.console.print(f"     • {key}: {len(value)} items")
+                elif isinstance(value, dict):
+                    self.console.print(f"     • {key}: {len(value)} entries")
+                else:
+                    self.console.print(f"     • {key}: {value}")
+    
+    def show_agent_result(
+        self,
+        agent_type: str,
+        result: str,
+        execution_time: float
+    ) -> None:
+        """Display agent execution result."""
+        color = self.agent_colors.get(agent_type, "white")
+        
+        result_panel = Panel(
+            result[:200] + "..." if len(result) > 200 else result,
+            title=f"[{color}]{agent_type.replace('_', ' ').title()} Result[/{color}]",
+            border_style=color,
+            padding=(0, 1)
+        )
+        self.console.print(result_panel)
+        self.console.print(
+            f"[dim]Execution time: {execution_time:.2f}s[/dim]\n"
+        )
+
+
+class EnhancedProgressTracker:
+    """Enhanced progress tracking for v1.3 workflow."""
+    
+    def __init__(self, console: Console):
+        self.console = console
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console
+        )
+        self.tasks = {}
+        self.phase_names = {
+            0: "Initialization",
+            1: "Agenda Setting", 
+            2: "Discussion",
+            3: "Topic Conclusion",
+            4: "Continuation",
+            5: "Final Report"
+        }
+    
+    def start(self):
+        """Start the progress tracker."""
+        self.progress.start()
+    
+    def stop(self):
+        """Stop the progress tracker."""
+        self.progress.stop()
+    
+    def start_phase(self, phase_num: int, total_steps: int) -> None:
+        """Start tracking a new phase."""
+        phase_name = self.phase_names.get(phase_num, f"Phase {phase_num}")
+        task_id = self.progress.add_task(
+            f"[bold]{phase_name}[/bold]",
+            total=total_steps
+        )
+        self.tasks[f"phase_{phase_num}"] = task_id
+    
+    def update_phase(self, phase_num: int, completed: int) -> None:
+        """Update phase progress."""
+        task_key = f"phase_{phase_num}"
+        if task_key in self.tasks:
+            self.progress.update(
+                self.tasks[task_key],
+                completed=completed
+            )
+    
+    def complete_phase(self, phase_num: int) -> None:
+        """Mark a phase as complete."""
+        task_key = f"phase_{phase_num}"
+        if task_key in self.tasks:
+            phase_name = self.phase_names.get(phase_num, f"Phase {phase_num}")
+            self.progress.update(
+                self.tasks[task_key],
+                description=f"[green]✓[/green] {phase_name}",
+                completed=self.progress.tasks[self.tasks[task_key]].total
+            )
+    
+    def show_round_progress(
+        self,
+        round_num: int,
+        topic: str,
+        is_checkpoint: bool = False
+    ) -> None:
+        """Display round progress with checkpoint indicator."""
+        checkpoint_marker = "🛑" if is_checkpoint else "  "
+        
+        self.console.print(
+            f"\n{checkpoint_marker} [bold]Round {round_num}[/bold] - "
+            f"Topic: [cyan]{topic}[/cyan]"
+        )
+        
+        if is_checkpoint:
+            self.console.print(
+                "[yellow]   ⚠️  5-Round Checkpoint - User control available[/yellow]"
+            )
+
+
+class EnhancedDashboard:
+    """Main dashboard for v1.3 session monitoring."""
+    
+    def __init__(self, console: Console):
+        self.console = console
+        self.layout = self._create_layout()
+        self.agent_display = SpecializedAgentDisplay(console)
+        self.progress_tracker = EnhancedProgressTracker(console)
+        self.last_update = datetime.now()
+    
+    def _create_layout(self) -> Layout:
+        """Create the dashboard layout."""
+        layout = Layout()
+        
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="body"),
+            Layout(name="footer", size=3)
+        )
+        
+        layout["body"].split_row(
+            Layout(name="main", ratio=2),
+            Layout(name="sidebar")
+        )
+        
+        layout["body"]["main"].split_column(
+            Layout(name="activity", ratio=2),
+            Layout(name="progress")
+        )
+        
+        return layout
+    
+    def update_session_info(self, state: Dict[str, Any]) -> None:
+        """Update dashboard with current session state."""
+        # Header: Session info
+        theme = state.get('main_topic', 'Not set')
+        phase = state.get('current_phase', 0)
+        phase_name = self.progress_tracker.phase_names.get(phase, f"Phase {phase}")
+        
+        header_content = Text()
+        header_content.append("Virtual Agora Session\n", style="bold cyan")
+        header_content.append(f"Theme: {theme} | Phase: {phase_name}", style="dim")
+        
+        self.layout["header"].update(
+            Align.center(header_content, vertical="middle")
+        )
+        
+        # Sidebar: Agent status
+        agent_status = self._build_agent_status(state)
+        self.layout["sidebar"].update(agent_status)
+        
+        # Main: Current activity
+        current_activity = self._build_activity_display(state)
+        self.layout["activity"].update(current_activity)
+        
+        # Progress
+        progress_display = self._build_progress_display(state)
+        self.layout["progress"].update(progress_display)
+        
+        # Footer
+        self._update_footer(state)
+        
+        self.last_update = datetime.now()
+    
+    def _build_agent_status(self, state: Dict[str, Any]) -> Panel:
+        """Build agent status display."""
+        specialized = state.get("specialized_agents", {})
+        
+        status_lines = ["[bold]Specialized Agents:[/bold]\n"]
+        
+        for agent_type in ["moderator", "summarizer", "topic_report", "ecclesia_report"]:
+            agent_id = specialized.get(agent_type)
+            color = self.agent_display.agent_colors.get(agent_type, "white")
+            icon = self.agent_display.agent_icons.get(agent_type, "🤖")
+            status = "🟢 Active" if agent_id else "🔴 Not initialized"
+            
+            status_lines.append(
+                f"{icon} [{color}]{agent_type.replace('_', ' ').title()}[/{color}]: {status}"
+            )
+        
+        discussing_count = len(state.get("agents", {}))
+        status_lines.append(f"\n[bold]Discussing Agents:[/bold] {discussing_count}")
+        
+        # Add round counter if in discussion phase
+        if state.get("current_phase") == 2:
+            round_num = state.get("current_round", 0)
+            is_checkpoint = round_num > 0 and round_num % 5 == 0
+            checkpoint_text = " [yellow](Checkpoint)[/yellow]" if is_checkpoint else ""
+            status_lines.append(f"\n[bold]Current Round:[/bold] {round_num}{checkpoint_text}")
+        
+        return Panel(
+            "\n".join(status_lines),
+            title="Agent Status",
+            border_style="blue"
+        )
+    
+    def _build_activity_display(self, state: Dict[str, Any]) -> Panel:
+        """Build current activity display."""
+        phase = state.get("current_phase", 0)
+        
+        activity_lines = []
+        
+        if phase == 0:
+            activity_lines.append("[yellow]Initializing session...[/yellow]")
+        elif phase == 1:
+            activity_lines.append("[cyan]Setting discussion agenda[/cyan]")
+            if state.get("proposed_agenda"):
+                activity_lines.append("\nProposed topics:")
+                for i, topic in enumerate(state["proposed_agenda"][:3], 1):
+                    activity_lines.append(f"  {i}. {topic}")
+                if len(state.get("proposed_agenda", [])) > 3:
+                    activity_lines.append(f"  ... and {len(state['proposed_agenda']) - 3} more")
+        elif phase == 2:
+            topic = state.get("active_topic", "Unknown")
+            activity_lines.append(f"[green]Discussing:[/green] {topic}")
+            
+            # Show recent messages
+            recent_messages = state.get("messages", [])[-3:]
+            if recent_messages:
+                activity_lines.append("\n[dim]Recent comments:[/dim]")
+                for msg in recent_messages:
+                    speaker = msg.get("speaker_id", "Unknown")[:15]
+                    content = msg.get("content", "")[:50] + "..."
+                    activity_lines.append(f"  • {speaker}: {content}")
+        elif phase == 3:
+            activity_lines.append("[yellow]Concluding topic...[/yellow]")
+        elif phase == 4:
+            activity_lines.append("[blue]Evaluating continuation...[/blue]")
+        elif phase == 5:
+            activity_lines.append("[magenta]Generating final report...[/magenta]")
+        
+        return Panel(
+            "\n".join(activity_lines),
+            title="Current Activity",
+            border_style="green"
+        )
+    
+    def _build_progress_display(self, state: Dict[str, Any]) -> Panel:
+        """Build progress display."""
+        completed_topics = len(state.get("completed_topics", []))
+        total_topics = len(state.get("topic_queue", [])) + completed_topics
+        
+        progress_lines = []
+        
+        if total_topics > 0:
+            progress_lines.append(
+                f"Topics: {completed_topics}/{total_topics} completed"
+            )
+            
+            # Progress bar
+            progress_pct = (completed_topics / total_topics) * 100
+            bar_width = 20
+            filled = int(bar_width * completed_topics / total_topics)
+            bar = "█" * filled + "░" * (bar_width - filled)
+            progress_lines.append(f"[{bar}] {progress_pct:.0f}%")
+        
+        # Session duration
+        if "start_time" in state:
+            duration = datetime.now() - state["start_time"]
+            hours, remainder = divmod(duration.seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            progress_lines.append(
+                f"\nSession time: {hours:02d}:{minutes:02d}:{seconds:02d}"
+            )
+        
+        return Panel(
+            "\n".join(progress_lines) if progress_lines else "[dim]No progress data[/dim]",
+            title="Progress",
+            border_style="cyan"
+        )
+    
+    def _update_footer(self, state: Dict[str, Any]) -> None:
+        """Update footer with status information."""
+        footer_text = Text()
+        
+        # HITL state
+        hitl_state = state.get("hitl_state", {})
+        if hitl_state.get("awaiting_approval"):
+            footer_text.append("⏳ Awaiting user input", style="yellow")
+        else:
+            footer_text.append("✓ Running", style="green")
+        
+        footer_text.append(" | ", style="dim")
+        footer_text.append(f"Last update: {format_timestamp(self.last_update, relative=True)}", style="dim")
+        footer_text.append(" | ", style="dim")
+        footer_text.append("Press Ctrl+C for options", style="dim")
+        
+        self.layout["footer"].update(
+            Align.center(footer_text, vertical="middle")
+        )
+    
+    def render(self) -> Layout:
+        """Render the current dashboard state."""
+        return self.layout
+
+
 class InputValidator:
     """Reusable input validation utilities."""
 
