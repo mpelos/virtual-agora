@@ -14,7 +14,15 @@ from virtual_agora.agents.agent_factory import (
 )
 from virtual_agora.agents.discussion_agent import DiscussionAgent
 from virtual_agora.agents.moderator import ModeratorAgent
-from virtual_agora.config.models import Config, AgentConfig, ModeratorConfig, Provider
+from virtual_agora.config.models import (
+    Config,
+    AgentConfig,
+    ModeratorConfig,
+    SummarizerConfig,
+    TopicReportConfig,
+    EcclesiaReportConfig,
+    Provider,
+)
 from virtual_agora.utils.exceptions import ConfigurationError
 
 
@@ -27,8 +35,21 @@ def mock_config():
     ]
 
     moderator_config = ModeratorConfig(provider=Provider.OPENAI, model="gpt-4")
+    summarizer_config = SummarizerConfig(provider=Provider.OPENAI, model="gpt-4")
+    topic_report_config = TopicReportConfig(
+        provider=Provider.ANTHROPIC, model="claude-3-opus"
+    )
+    ecclesia_report_config = EcclesiaReportConfig(
+        provider=Provider.GOOGLE, model="gemini-pro"
+    )
 
-    return Config(agents=agent_configs, moderator=moderator_config)
+    return Config(
+        agents=agent_configs,
+        moderator=moderator_config,
+        summarizer=summarizer_config,
+        topic_report=topic_report_config,
+        ecclesia_report=ecclesia_report_config,
+    )
 
 
 @pytest.fixture
@@ -333,13 +354,17 @@ class TestAgentFactoryAdvancedFeatures:
 
         assert "discussion_agents" in pool
         assert "moderator" in pool
+        assert "summarizer" in pool
+        assert "topic_report" in pool
+        assert "ecclesia_report" in pool
         assert "created_at" in pool
         assert "total_agents" in pool
         assert "validation" in pool
 
         assert len(pool["discussion_agents"]) == 3
         assert isinstance(pool["moderator"], ModeratorAgent)
-        assert pool["total_agents"] == 4  # 3 discussion + 1 moderator
+        # In v1.3, we have 3 discussion agents + 4 specialized agents
+        assert pool["total_agents"] == 7
         assert isinstance(pool["created_at"], datetime)
         assert pool["validation"]["success"] is True
 
@@ -426,6 +451,13 @@ class TestAgentFactoryUtilityFunctions:
                 ),
             ],
             moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
+            summarizer=SummarizerConfig(provider=Provider.OPENAI, model="gpt-4"),
+            topic_report=TopicReportConfig(
+                provider=Provider.ANTHROPIC, model="claude-3-opus"
+            ),
+            ecclesia_report=EcclesiaReportConfig(
+                provider=Provider.GOOGLE, model="gemini-pro"
+            ),
         )
 
         results = validate_agent_requirements(config)
@@ -462,6 +494,11 @@ class TestAgentFactoryUtilityFunctions:
         config = Config(
             agents=[AgentConfig(provider=Provider.OPENAI, model="gpt-4", count=3)],
             moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
+            summarizer=SummarizerConfig(provider=Provider.OPENAI, model="gpt-4"),
+            topic_report=TopicReportConfig(provider=Provider.OPENAI, model="gpt-4"),
+            ecclesia_report=EcclesiaReportConfig(
+                provider=Provider.OPENAI, model="gpt-4"
+            ),
         )
 
         results = validate_agent_requirements(config)
@@ -476,6 +513,14 @@ class TestAgentFactoryUtilityFunctions:
 
 class TestAgentFactoryIntegration:
     """Integration tests for AgentFactory."""
+
+    @pytest.fixture
+    def mock_llm(self):
+        """Create a mock LLM for testing."""
+        llm = Mock(spec=BaseChatModel)
+        llm.model_name = "mock-model"
+        llm.temperature = 0.7
+        return llm
 
     @patch("virtual_agora.agents.agent_factory.ProviderFactory")
     def test_full_factory_workflow(self, mock_provider_class, mock_config):
@@ -510,7 +555,8 @@ class TestAgentFactoryIntegration:
 
         # 6. Create complete pool
         pool = factory.create_agent_pool()
-        assert pool["total_agents"] == 4
+        # In v1.3, we have 3 discussion agents + 4 specialized agents
+        assert pool["total_agents"] == 7
 
         # 7. Reset factory
         factory.reset_factory()

@@ -19,7 +19,11 @@ class TestEcclesiaReportAgentV3:
     @pytest.fixture
     def ecclesia_agent(self, ecclesia_llm):
         """Create test ecclesia report agent."""
-        return EcclesiaReportAgent(agent_id="test_ecclesia_report", llm=ecclesia_llm)
+        return EcclesiaReportAgent(
+            agent_id="test_ecclesia_report",
+            llm=ecclesia_llm,
+            enable_error_handling=False,
+        )
 
     def test_initialization_v13(self, ecclesia_agent):
         """Test agent initialization with v1.3 'The Writer' prompt."""

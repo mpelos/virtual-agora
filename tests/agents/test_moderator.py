@@ -12,11 +12,9 @@ from pydantic import ValidationError
 from virtual_agora.agents.moderator import (
     ModeratorAgent,
     AgendaResponse,
-    ReportStructure,
     create_moderator_agent,
     create_gemini_moderator,
     AGENDA_SCHEMA,
-    REPORT_STRUCTURE_SCHEMA,
 )
 from virtual_agora.state.schema import Message
 
@@ -35,7 +33,6 @@ class TestModeratorAgent:
         self.moderator = ModeratorAgent(
             agent_id="test-moderator",
             llm=self.mock_llm,
-            mode="facilitation",
             enable_error_handling=False,
         )
 
@@ -44,7 +41,6 @@ class TestModeratorAgent:
         assert self.moderator.agent_id == "test-moderator"
         assert self.moderator.llm == self.mock_llm
         assert self.moderator.role == "moderator"
-        assert self.moderator.current_mode == "facilitation"
         assert self.moderator.model == "gemini-2.5-pro"
         assert self.moderator.provider == "google"
         assert isinstance(self.moderator.created_at, datetime)
@@ -65,7 +61,7 @@ class TestModeratorAgent:
         assert moderator.system_prompt == custom_prompt
         assert moderator._custom_system_prompt == custom_prompt
 
-    def test_mode_switching(self):
+        # Mode switching tests removed in v1.3
         """Test switching between operational modes."""
         # Test switching to synthesis mode
         self.moderator.set_mode("synthesis")
@@ -84,7 +80,6 @@ class TestModeratorAgent:
         assert self.moderator.current_mode == "facilitation"
         assert "FACILITATION mode" in self.moderator.system_prompt
 
-    def test_mode_switching_with_custom_prompt(self):
         """Test that custom prompts are preserved during mode switching."""
         custom_prompt = "Custom moderator prompt"
         moderator = ModeratorAgent(
@@ -96,21 +91,18 @@ class TestModeratorAgent:
         assert moderator.system_prompt == custom_prompt
         assert moderator.current_mode == "synthesis"
 
-    def test_mode_switching_same_mode(self):
         """Test switching to the same mode (no-op)."""
         original_prompt = self.moderator.system_prompt
         self.moderator.set_mode("facilitation")  # Same mode
         assert self.moderator.current_mode == "facilitation"
         assert self.moderator.system_prompt == original_prompt
 
-    def test_get_current_mode(self):
         """Test getting current mode."""
         assert self.moderator.get_current_mode() == "facilitation"
 
         self.moderator.set_mode("synthesis")
         assert self.moderator.get_current_mode() == "synthesis"
 
-    def test_mode_specific_prompts(self):
         """Test that each mode has appropriate prompt content."""
         # Facilitation mode
         self.moderator.set_mode("facilitation")

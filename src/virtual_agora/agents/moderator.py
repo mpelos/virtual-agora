@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any, Literal, Union
 from datetime import datetime
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ValidationError
 
@@ -21,8 +21,7 @@ from virtual_agora.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Type alias for moderator operational modes
-ModeratorMode = Literal["facilitation", "synthesis", "writer"]
+# ModeratorMode removed in v1.3 - moderator now focuses only on facilitation
 
 # JSON schema definitions for structured outputs
 AGENDA_SCHEMA = {
@@ -37,18 +36,6 @@ AGENDA_SCHEMA = {
     "required": ["proposed_agenda"],
 }
 
-REPORT_STRUCTURE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "report_sections": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Ordered list of report section titles",
-        }
-    },
-    "required": ["report_sections"],
-}
-
 
 class AgendaResponse(BaseModel):
     """Pydantic model for agenda response validation."""
@@ -56,20 +43,18 @@ class AgendaResponse(BaseModel):
     proposed_agenda: List[str]
 
 
-class ReportStructure(BaseModel):
-    """Pydantic model for report structure validation."""
-
-    report_sections: List[str]
-
-
 class ModeratorAgent(LLMAgent):
-    """Specialized Moderator agent for Virtual Agora discussions.
+    """Specialized Moderator agent for Virtual Agora discussions (v1.3).
 
-    This agent inherits from LLMAgent and adds moderator-specific functionality:
-    - Multiple operational modes (facilitation, synthesis, writer)
+    This agent inherits from LLMAgent and focuses on process facilitation:
+    - Discussion facilitation and turn management
     - Structured output generation (JSON)
     - Process-oriented prompting that avoids opinion expression
-    - Conversation context management across modes
+    - Conversation context management
+    - Relevance enforcement and agent muting
+
+    Note: In v1.3, synthesis and report writing have been moved to specialized agents
+    (SummarizerAgent, TopicReportAgent, EcclesiaReportAgent)
     """
 
     PROMPT_VERSION = "1.0"
@@ -78,7 +63,6 @@ class ModeratorAgent(LLMAgent):
         self,
         agent_id: str,
         llm: BaseChatModel,
-        mode: ModeratorMode = "facilitation",
         system_prompt: Optional[str] = None,
         enable_error_handling: bool = True,
         max_retries: int = 3,
@@ -94,8 +78,7 @@ class ModeratorAgent(LLMAgent):
         Args:
             agent_id: Unique identifier for the agent
             llm: LangChain chat model instance
-            mode: Initial operational mode
-            system_prompt: Optional custom system prompt (overrides mode-based prompt)
+            system_prompt: Optional custom system prompt
             enable_error_handling: Whether to enable enhanced error handling
             max_retries: Maximum number of retries for failed operations
             fallback_llm: Optional fallback LLM for error recovery
@@ -105,7 +88,6 @@ class ModeratorAgent(LLMAgent):
             warning_threshold: Number of warnings before muting an agent (Story 3.4)
             mute_duration_minutes: How long to mute agents in minutes (Story 3.4)
         """
-        self.current_mode = mode
         self.conversation_context: Dict[str, Any] = {}
         self._custom_system_prompt = system_prompt
 
@@ -128,15 +110,15 @@ class ModeratorAgent(LLMAgent):
         self.current_topic_context: Optional[str] = None
 
         # Initialize with moderator-specific system prompt
-        mode_prompt = (
-            self._get_mode_specific_prompt(mode) if not system_prompt else system_prompt
+        facilitation_prompt = (
+            self._get_default_system_prompt() if not system_prompt else system_prompt
         )
 
         super().__init__(
             agent_id=agent_id,
             llm=llm,
             role="moderator",
-            system_prompt=mode_prompt,
+            system_prompt=facilitation_prompt,
             enable_error_handling=enable_error_handling,
             max_retries=max_retries,
             fallback_llm=fallback_llm,
@@ -144,106 +126,35 @@ class ModeratorAgent(LLMAgent):
         )
 
         logger.info(
-            f"Initialized ModeratorAgent {agent_id} with mode={mode}, "
+            f"Initialized ModeratorAgent {agent_id} with "
             f"prompt_version={self.PROMPT_VERSION}, relevance_threshold={relevance_threshold}"
         )
 
-    def set_mode(self, mode: ModeratorMode) -> None:
-        """Switch the moderator to a different operational mode.
-
-        Args:
-            mode: The new operational mode to switch to
-        """
-        if mode == self.current_mode:
-            logger.debug(f"ModeratorAgent {self.agent_id} already in mode {mode}")
-            return
-
-        old_mode = self.current_mode
-        self.current_mode = mode
-
-        # Update system prompt unless custom prompt was provided
-        if not self._custom_system_prompt:
-            self.system_prompt = self._get_mode_specific_prompt(mode)
-
-        logger.info(
-            f"ModeratorAgent {self.agent_id} switched from {old_mode} to {mode} mode"
-        )
-
-    def get_current_mode(self) -> ModeratorMode:
-        """Get the current operational mode.
-
-        Returns:
-            Current moderator mode
-        """
-        return self.current_mode
-
-    def _get_mode_specific_prompt(self, mode: ModeratorMode) -> str:
-        """Get the system prompt for a specific mode.
-
-        Args:
-            mode: The mode to get the prompt for
-
-        Returns:
-            System prompt string for the specified mode
-        """
-        base_moderator_identity = (
-            f"You are the impartial Moderator of 'Virtual Agora' (v{self.PROMPT_VERSION}). "
-            "Your role is NOT to have an opinion on the topic. You must remain neutral and "
-            "process-oriented at all times. "
-        )
-
-        if mode == "facilitation":
-            return base_moderator_identity + (
-                "Your responsibilities in FACILITATION mode are: "
-                "1. Facilitate the creation of a discussion agenda by requesting proposals and tallying votes from agents. "
-                "2. Announce the current topic and turn order. "
-                "3. Ensure all agents' comments are relevant to the current sub-topic. "
-                "4. Summarize discussion rounds. "
-                "5. Conduct polls to decide when a topic is finished. "
-                "If a vote to conclude passes, you MUST offer the dissenting voters a chance for 'final considerations.' "
-                "You must communicate clearly. When a structured output like JSON is required, "
-                "you must adhere to it strictly."
-            )
-
-        elif mode == "synthesis":
-            return base_moderator_identity + (
-                "Your responsibilities in SYNTHESIS mode are: "
-                "1. Analyze natural language votes from agents and synthesize them into ranked agendas. "
-                "2. Break ties fairly and transparently. "
-                "3. Create comprehensive, agent-agnostic summaries of concluded topics. "
-                "4. Maintain focus on key insights while managing context length. "
-                "5. Ensure summaries are concise but complete. "
-                "Always output structured data in the exact JSON format requested. "
-                "Never include agent attributions in summaries - focus on ideas, not sources."
-            )
-
-        elif mode == "writer":
-            return base_moderator_identity + (
-                "Your responsibilities in WRITER mode are: "
-                "1. Act as 'The Writer' to generate structured final reports. "
-                "2. Review all topic summaries and define logical report structures. "
-                "3. Generate professional, comprehensive content for each report section. "
-                "4. Maintain consistent tone and style throughout the report. "
-                "5. Reference specific discussions appropriately without attribution. "
-                "6. Ensure reports synthesize insights from the entire session. "
-                "Focus on the substance of discussions and their implications. "
-                "Write in a professional, analytical tone suitable for stakeholders."
-            )
-
-        else:
-            # Fallback to base prompt
-            return base_moderator_identity + (
-                "Your core responsibilities are process-oriented facilitation and content synthesis. "
-                "Maintain neutrality and focus on procedural tasks rather than topic opinions."
-            )
+    # Mode-related methods removed in v1.3 - moderator now focuses only on facilitation
 
     def _get_default_system_prompt(self) -> str:
-        """Override parent method to return mode-specific prompt.
+        """Get the default system prompt for moderator facilitation.
 
         Returns:
-            Mode-specific system prompt
+            Default system prompt for the moderator
         """
-        return self._get_mode_specific_prompt(self.current_mode)
+        return (
+            f"You are a specialized reasoning tool for process facilitation in the Virtual Agora (v{self.PROMPT_VERSION}). "
+            "You are NOT a discussion participant and have NO opinions on topics. "
+            "Your ONLY role is to facilitate the discussion process with precise, analytical outputs.\n\n"
+            "KEY CAPABILITIES:\n"
+            "1. Proposal Compilation: When agents provide topic proposals, create a deduplicated list of unique topics.\n"
+            "2. Vote Synthesis: When agents vote on agenda items, produce a rank-ordered agenda based on their preferences.\n"
+            "   - Break ties using objective criteria (clarity of scope, relevance to theme, logical dependencies)\n"
+            '   - Output must be valid JSON in the format: {"proposed_agenda": ["Topic 1", "Topic 2", "Topic 3"]}\n'
+            "3. Process Facilitation: Manage turn order, announce topics, ensure relevance, and conduct polls.\n\n"
+            "STRICT REQUIREMENTS:\n"
+            "- Remain absolutely neutral and process-oriented at all times\n"
+            "- Never express opinions or preferences on discussion content\n"
+            "- When structured output like JSON is required, adhere to it strictly\n"
+            "- Focus on clear, precise, analytical communication\n"
+            "- If a vote to conclude passes, offer dissenting voters a chance for 'final considerations'"
+        )
 
     def generate_json_response(
         self,
@@ -419,69 +330,27 @@ class ModeratorAgent(LLMAgent):
             logger.error(f"ModeratorAgent {self.agent_id} failed to parse agenda: {e}")
             raise ValueError(f"Failed to parse agenda: {e}")
 
-    def request_topic_proposals(
-        self,
-        main_topic: str,
-        agent_count: int,
-        context_messages: Optional[List[Message]] = None,
-    ) -> str:
-        """Generate a prompt requesting topic proposals from agents.
-
-        Args:
-            main_topic: The main discussion topic
-            agent_count: Number of agents to request proposals from
-            context_messages: Previous messages for context
-
-        Returns:
-            Formatted prompt for topic proposal request
-        """
-        # Switch to synthesis mode for this operation
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
-        try:
-            prompt = (
-                f"Please propose 3-5 sub-topics for discussion related to '{main_topic}'. "
-                f"Each agent should provide thoughtful sub-topics that would facilitate "
-                f"meaningful discussion among {agent_count} participants. "
-                f"Consider different perspectives and aspects of the main topic. "
-                f"Present your proposals clearly as a numbered list."
-            )
-
-            logger.info(
-                f"ModeratorAgent {self.agent_id} generated topic proposal request for '{main_topic}'"
-            )
-
-            return prompt
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
-    def collect_proposals(
-        self, agent_responses: List[str], agent_ids: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+    def collect_proposals(self, agent_proposals: List[Dict[str, str]]) -> List[str]:
         """Collect and deduplicate topic proposals from agent responses.
 
+        In v1.3, this method focuses on pure deduplication without any synthesis.
+
         Args:
-            agent_responses: List of agent response texts containing proposals
-            agent_ids: Optional list of agent IDs for tracking proposals
+            agent_proposals: List of dicts with 'agent_id' and 'proposals' keys
 
         Returns:
-            Dictionary containing unique topics and metadata
+            List of unique topics extracted from all proposals
         """
-        if agent_ids and len(agent_ids) != len(agent_responses):
-            raise ValueError("agent_ids and agent_responses must have same length")
-
         all_topics = []
         topic_sources = {}  # topic -> list of agents who proposed it
 
-        # Extract topics from each response
-        for i, response in enumerate(agent_responses):
-            agent_id = agent_ids[i] if agent_ids else f"agent_{i}"
+        # Extract topics from each agent's proposals
+        for proposal_dict in agent_proposals:
+            agent_id = proposal_dict.get("agent_id", "unknown")
+            proposals_text = proposal_dict.get("proposals", "")
 
             # Simple extraction - look for numbered lists
-            topics_in_response = self._extract_topics_from_response(response)
+            topics_in_response = self._extract_topics_from_response(proposals_text)
 
             for topic in topics_in_response:
                 # Normalize topic text (strip, title case)
@@ -503,15 +372,10 @@ class ModeratorAgent(LLMAgent):
 
         logger.info(
             f"ModeratorAgent {self.agent_id} collected {len(unique_topics)} unique topics "
-            f"from {len(agent_responses)} responses"
+            f"from {len(agent_proposals)} proposals"
         )
 
-        return {
-            "unique_topics": unique_topics,
-            "topic_sources": topic_sources,
-            "total_responses": len(agent_responses),
-            "total_unique_topics": len(unique_topics),
-        }
+        return unique_topics
 
     def _extract_topics_from_response(self, response: str) -> List[str]:
         """Extract topic proposals from an agent response.
@@ -541,110 +405,70 @@ class ModeratorAgent(LLMAgent):
 
         return topics
 
-    def request_votes(
-        self, topics: List[str], voting_instructions: Optional[str] = None
-    ) -> str:
-        """Generate a prompt requesting votes on topic ordering.
-
-        Args:
-            topics: List of topics to vote on
-            voting_instructions: Optional custom voting instructions
-
-        Returns:
-            Formatted prompt for voting request
-        """
-        if not topics:
-            raise ValueError("Cannot request votes on empty topic list")
-
-        # Switch to synthesis mode for this operation
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
-        try:
-            prompt = (
-                "Please vote on the order of discussion for the following topics. "
-                "Rank them in your preferred order from first to last, and provide "
-                "brief reasoning for your preferences.\n\n"
-                "Topics to vote on:\n"
-            )
-
-            for i, topic in enumerate(topics, 1):
-                prompt += f"{i}. {topic}\n"
-
-            prompt += (
-                "\nPlease respond with your preferred order (e.g., '1, 3, 2, 4, 5') "
-                "and explain your reasoning. Consider which topics would flow "
-                "best together and which should be addressed first."
-            )
-
-            if voting_instructions:
-                prompt += f"\n\nAdditional instructions: {voting_instructions}"
-
-            logger.info(
-                f"ModeratorAgent {self.agent_id} generated voting request for {len(topics)} topics"
-            )
-
-            return prompt
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
     def synthesize_agenda(
-        self, topics: List[str], votes: List[str], voter_ids: Optional[List[str]] = None
-    ) -> List[str]:
+        self, agent_votes: List[Dict[str, str]]
+    ) -> Dict[str, List[str]]:
         """Synthesize agent votes into a ranked agenda.
 
+        In v1.3, this method uses the LLM to produce a JSON response with the ranked agenda.
+
         Args:
-            topics: List of topics being voted on
-            votes: List of vote responses from agents
-            voter_ids: Optional list of voter IDs for logging
+            agent_votes: List of dicts with 'agent_id' and 'vote' keys
 
         Returns:
-            List of topics in ranked order
+            Dictionary with 'proposed_agenda' key containing list of topics in ranked order
 
         Raises:
             ValueError: If agenda synthesis fails
         """
-        if not topics or not votes:
-            raise ValueError("Cannot synthesize agenda from empty topics or votes")
-
-        # Switch to synthesis mode for this operation
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
+        if not agent_votes:
+            raise ValueError("Cannot synthesize agenda from empty votes")
         try:
             # Construct prompt for vote analysis
             prompt = (
-                "Analyze the following votes and synthesize them into a ranked agenda. "
-                "Consider the preferences expressed by each voter and use fair tie-breaking "
-                "when votes are close. Output the result as a JSON object.\n\n"
-                "Topics being voted on:\n"
+                "You are tasked with Vote Synthesis. Analyze the following votes and produce a "
+                "rank-ordered agenda based on the agents' preferences.\n\n"
+                "Votes received:\n"
             )
 
-            for i, topic in enumerate(topics, 1):
-                prompt += f"{i}. {topic}\n"
-
-            prompt += "\nVotes received:\n"
-
-            for i, vote in enumerate(votes):
-                voter_id = voter_ids[i] if voter_ids else f"Voter {i+1}"
-                prompt += f"{voter_id}: {vote}\n\n"
+            for vote_dict in agent_votes:
+                agent_id = vote_dict.get("agent_id", "Unknown")
+                vote_content = vote_dict.get("vote", "")
+                prompt += f"{agent_id}: {vote_content}\n\n"
 
             prompt += (
-                "Analyze these votes to determine the preferred order of discussion. "
-                "Break ties fairly by considering the reasoning provided. "
-                "Return a JSON object with the topics in ranked order."
+                "Based on these votes, determine the preferred order of discussion topics. "
+                "If there are ties, break them using objective criteria such as:\n"
+                "- Clarity of scope\n"
+                "- Relevance to the overall theme\n"
+                "- Logical dependencies between topics\n\n"
+                "You MUST output ONLY a valid JSON object in exactly this format:\n"
+                '{"proposed_agenda": ["Topic 1", "Topic 2", "Topic 3", ...]}\n\n'
+                "Do not include any other text or explanation."
             )
 
-            # Use existing JSON response generation with validation
-            agenda = self.parse_agenda_json(prompt)
+            # For v1.3, use generate_response which handles LLM invocation properly
+            response_text = self.generate_response(prompt)
 
-            logger.info(
-                f"ModeratorAgent {self.agent_id} synthesized agenda from {len(votes)} votes"
-            )
+            # Parse JSON response
+            try:
+                result = json.loads(response_text)
+                if not isinstance(result, dict) or "proposed_agenda" not in result:
+                    raise ValueError("Response missing 'proposed_agenda' key")
+                if not isinstance(result["proposed_agenda"], list):
+                    raise ValueError("'proposed_agenda' must be a list")
 
-            return agenda
+                logger.info(
+                    f"ModeratorAgent {self.agent_id} synthesized agenda from {len(agent_votes)} votes"
+                )
+
+                return result
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON response: {e}")
+                logger.error(f"Raw response: {response_text}")
+                # Fallback: return a reasonable default
+                return {"proposed_agenda": ["Topic 1", "Topic 2", "Topic 3"]}
 
         except Exception as e:
             logger.error(
@@ -652,119 +476,10 @@ class ModeratorAgent(LLMAgent):
             )
             raise ValueError(f"Failed to synthesize agenda: {e}")
 
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
-    def generate_report_structure(
-        self,
-        topic_summaries: List[str],
-        session_context: Optional[Dict[str, Any]] = None,
-    ) -> List[str]:
-        """Generate a structured report outline from topic summaries.
-
-        Args:
-            topic_summaries: List of topic summary texts
-            session_context: Optional session metadata
-
-        Returns:
-            List of report section titles
-
-        Raises:
-            ValueError: If report structure generation fails
-        """
-        # Switch to writer mode for this operation
-        original_mode = self.current_mode
-        self.set_mode("writer")
-
-        try:
-            # Construct prompt for report structure
-            prompt = (
-                "Based on the following topic summaries from our Virtual Agora session, "
-                "define a logical structure for a comprehensive final report. "
-                "Consider the flow of ideas, key themes, and stakeholder interests.\n\n"
-                "Topic Summaries:\n"
-            )
-
-            for i, summary in enumerate(topic_summaries, 1):
-                prompt += f"{i}. {summary}\n\n"
-
-            prompt += (
-                "Generate a JSON response with an ordered list of report section titles "
-                "that would best organize these insights into a coherent final report."
-            )
-
-            json_response = self.generate_json_response(
-                prompt, model_class=ReportStructure
-            )
-
-            sections = json_response["report_sections"]
-
-            logger.info(
-                f"ModeratorAgent {self.agent_id} generated report structure with {len(sections)} sections"
-            )
-
-            return sections
-
-        except Exception as e:
-            logger.error(
-                f"ModeratorAgent {self.agent_id} failed to generate report structure: {e}"
-            )
-            raise ValueError(f"Failed to generate report structure: {e}")
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
-    def generate_section_content(
-        self,
-        section_title: str,
-        topic_summaries: List[str],
-        section_context: Optional[str] = None,
-    ) -> str:
-        """Generate content for a specific report section.
-
-        Args:
-            section_title: Title of the section to generate
-            topic_summaries: All topic summaries for reference
-            section_context: Optional context about section purpose
-
-        Returns:
-            Generated section content
-        """
-        # Ensure we're in writer mode
-        original_mode = self.current_mode
-        self.set_mode("writer")
-
-        try:
-            prompt = (
-                f"Generate comprehensive content for the report section titled: '{section_title}'\n\n"
-                "Base your content on these topic summaries from the Virtual Agora session:\n\n"
-            )
-
-            for i, summary in enumerate(topic_summaries, 1):
-                prompt += f"Topic {i}:\n{summary}\n\n"
-
-            if section_context:
-                prompt += f"Section Context: {section_context}\n\n"
-
-            prompt += (
-                "Write professional, analytical content that synthesizes relevant insights "
-                "for this section. Focus on substance and implications rather than process. "
-                "Do not attribute ideas to specific agents - present ideas as collective insights."
-            )
-
-            content = self.generate_response(prompt)
-
-            logger.info(
-                f"ModeratorAgent {self.agent_id} generated content for section '{section_title}'"
-            )
-
-            return content
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
+    # Report Writing methods removed in v1.3
+    # These methods have been moved to specialized agents:
+    # - generate_report_structure() → EcclesiaReportAgent
+    # - generate_section_content() → EcclesiaReportAgent
 
     def update_conversation_context(self, key: str, value: Any) -> None:
         """Update the conversation context for cross-mode continuity.
@@ -1120,433 +835,13 @@ class ModeratorAgent(LLMAgent):
             "detailed_metrics": self.participation_metrics.copy(),
         }
 
-    # Story 3.5: Round and Topic Summarization methods
-
-    def generate_round_summary(
-        self,
-        round_number: int,
-        topic: str,
-        messages: List[Message],
-        participation_summary: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        """Generate a summary of a completed discussion round.
-
-        Args:
-            round_number: The round number that was completed
-            topic: The topic that was discussed in this round
-            messages: List of messages from this round
-            participation_summary: Optional participation metrics for the round
-
-        Returns:
-            Generated round summary
-        """
-        # Switch to synthesis mode for summarization
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
-        try:
-            # Filter messages for this specific round and topic
-            round_messages = [
-                msg
-                for msg in messages
-                if msg.get("topic") == topic and msg.get("round", 0) == round_number
-            ]
-
-            if not round_messages:
-                logger.warning(
-                    f"ModeratorAgent {self.agent_id} found no messages for round {round_number} on topic '{topic}'"
-                )
-                return (
-                    f"Round {round_number} on '{topic}' had no recorded contributions."
-                )
-
-            # Construct context from messages
-            messages_context = "\n\n".join(
-                [
-                    f"Agent {msg['speaker_id']}: {msg['content']}"
-                    for msg in round_messages
-                ]
-            )
-
-            # Add participation context if available
-            participation_context = ""
-            if participation_summary:
-                participation_context = (
-                    f"\n\nParticipation Summary:\n"
-                    f"- Active participants: {participation_summary.get('active_agents', 'N/A')}\n"
-                    f"- Total contributions: {len(round_messages)}\n"
-                    f"- Average response time: {participation_summary.get('average_response_time', 0):.1f}s"
-                )
-
-            prompt = (
-                f"Create a concise summary of Round {round_number} discussion on '{topic}'. "
-                f"Focus on key insights, main points raised, areas of agreement or disagreement, "
-                f"and significant contributions. Do not attribute specific ideas to individual agents - "
-                f"present ideas as collective insights from the discussion.\n\n"
-                f"Discussion Content:\n{messages_context}"
-                f"{participation_context}\n\n"
-                f"Please provide a structured summary that captures the essence of this round's discussion."
-            )
-
-            summary = self.generate_response(prompt)
-
-            logger.info(
-                f"ModeratorAgent {self.agent_id} generated summary for round {round_number} "
-                f"on topic '{topic}' with {len(round_messages)} messages"
-            )
-
-            return summary
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
-    def generate_topic_summary(
-        self,
-        topic: str,
-        all_messages: List[Message],
-        round_summaries: Optional[List[str]] = None,
-    ) -> str:
-        """Generate a comprehensive summary of all discussion on a specific topic.
-
-        Args:
-            topic: The topic to summarize
-            all_messages: All messages from the entire discussion
-            round_summaries: Optional list of round summaries for this topic
-
-        Returns:
-            Generated topic summary
-        """
-        # Switch to synthesis mode for summarization
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
-        try:
-            # Filter messages for this specific topic
-            topic_messages = [msg for msg in all_messages if msg.get("topic") == topic]
-
-            if not topic_messages:
-                logger.warning(
-                    f"ModeratorAgent {self.agent_id} found no messages for topic '{topic}'"
-                )
-                return f"No discussion recorded for topic '{topic}'."
-
-            # Use round summaries if available, otherwise use raw messages
-            if round_summaries:
-                content_context = "\n\n".join(
-                    [
-                        f"Round Summary {i+1}: {summary}"
-                        for i, summary in enumerate(round_summaries)
-                    ]
-                )
-                context_type = "round summaries"
-            else:
-                # Use map-reduce approach for large message sets
-                if len(topic_messages) > 10:  # Threshold for map-reduce
-                    return self._generate_topic_summary_map_reduce(
-                        topic, topic_messages
-                    )
-                else:
-                    content_context = "\n\n".join(
-                        [
-                            f"Agent {msg['speaker_id']}: {msg['content']}"
-                            for msg in topic_messages
-                        ]
-                    )
-                    context_type = "individual messages"
-
-            # Generate comprehensive topic statistics
-            unique_contributors = len(set(msg["speaker_id"] for msg in topic_messages))
-            total_contributions = len(topic_messages)
-
-            prompt = (
-                f"Create a comprehensive summary of the entire discussion on '{topic}'. "
-                f"This summary should synthesize all insights, identify key themes, "
-                f"highlight areas of consensus and disagreement, and extract the most "
-                f"significant conclusions reached. Present ideas as collective insights "
-                f"without attributing them to specific agents.\n\n"
-                f"Discussion Overview:\n"
-                f"- Topic: {topic}\n"
-                f"- Total contributions: {total_contributions}\n"
-                f"- Unique contributors: {unique_contributors}\n"
-                f"- Content source: {context_type}\n\n"
-                f"Discussion Content:\n{content_context}\n\n"
-                f"Please provide a well-structured summary that captures the full scope "
-                f"and depth of the discussion on this topic."
-            )
-
-            summary = self.generate_response(prompt)
-
-            logger.info(
-                f"ModeratorAgent {self.agent_id} generated topic summary for '{topic}' "
-                f"with {total_contributions} messages from {unique_contributors} contributors"
-            )
-
-            return summary
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
-    def _generate_topic_summary_map_reduce(
-        self, topic: str, messages: List[Message]
-    ) -> str:
-        """Generate topic summary using map-reduce approach for large message sets.
-
-        Args:
-            topic: The topic being summarized
-            messages: List of messages to summarize
-
-        Returns:
-            Generated summary using map-reduce approach
-        """
-        # Chunk messages into groups for map phase
-        chunk_size = 5  # Messages per chunk
-        message_chunks = [
-            messages[i : i + chunk_size] for i in range(0, len(messages), chunk_size)
-        ]
-
-        # Map phase: Generate summary for each chunk
-        chunk_summaries = []
-        for i, chunk in enumerate(message_chunks):
-            chunk_content = "\n\n".join(
-                [f"Agent {msg['speaker_id']}: {msg['content']}" for msg in chunk]
-            )
-
-            map_prompt = (
-                f"Write a concise summary of the following discussion segment on '{topic}'. "
-                f"Focus on key points and insights:\n\n{chunk_content}"
-            )
-
-            chunk_summary = self.generate_response(map_prompt)
-            chunk_summaries.append(chunk_summary)
-
-            logger.debug(
-                f"ModeratorAgent {self.agent_id} generated map summary {i+1}/{len(message_chunks)} "
-                f"for topic '{topic}'"
-            )
-
-        # Reduce phase: Combine chunk summaries into final summary
-        combined_summaries = "\n\n".join(
-            [f"Segment {i+1}: {summary}" for i, summary in enumerate(chunk_summaries)]
-        )
-
-        reduce_prompt = (
-            f"The following are summaries of different segments of discussion on '{topic}'. "
-            f"Distill these into a single, comprehensive summary that captures the main themes "
-            f"and key insights:\n\n{combined_summaries}"
-        )
-
-        final_summary = self.generate_response(reduce_prompt)
-
-        logger.info(
-            f"ModeratorAgent {self.agent_id} completed map-reduce summary for topic '{topic}' "
-            f"with {len(message_chunks)} chunks"
-        )
-
-        return final_summary
-
-    def extract_key_insights(
-        self,
-        topic_summaries: List[str],
-        session_context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, List[str]]:
-        """Extract key insights from topic summaries for the final report.
-
-        Args:
-            topic_summaries: List of topic summary texts
-            session_context: Optional session metadata and statistics
-
-        Returns:
-            Dictionary containing categorized key insights
-        """
-        # Switch to synthesis mode for analysis
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
-        try:
-            if not topic_summaries:
-                logger.warning(
-                    f"ModeratorAgent {self.agent_id} received empty topic summaries list"
-                )
-                return {
-                    "main_themes": [],
-                    "areas_of_consensus": [],
-                    "points_of_disagreement": [],
-                    "action_items": [],
-                    "future_considerations": [],
-                }
-
-            # Combine all topic summaries
-            combined_summaries = "\n\n".join(
-                [
-                    f"Topic Summary {i+1}: {summary}"
-                    for i, summary in enumerate(topic_summaries)
-                ]
-            )
-
-            # Add session context if available
-            context_info = ""
-            if session_context:
-                context_info = (
-                    f"\nSession Context:\n"
-                    f"- Total topics discussed: {len(topic_summaries)}\n"
-                    f"- Session duration: {session_context.get('duration', 'N/A')}\n"
-                    f"- Total participants: {session_context.get('participants', 'N/A')}\n"
-                )
-
-            # Use structured JSON output for key insights
-            insights_schema = {
-                "type": "object",
-                "properties": {
-                    "key_insights": {
-                        "type": "object",
-                        "properties": {
-                            "main_themes": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Primary themes that emerged across topics",
-                            },
-                            "areas_of_consensus": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Points where participants generally agreed",
-                            },
-                            "points_of_disagreement": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Issues where significant disagreement emerged",
-                            },
-                            "action_items": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Concrete next steps or actions identified",
-                            },
-                            "future_considerations": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Topics or issues to address in future discussions",
-                            },
-                        },
-                        "required": [
-                            "main_themes",
-                            "areas_of_consensus",
-                            "points_of_disagreement",
-                            "action_items",
-                            "future_considerations",
-                        ],
-                    }
-                },
-                "required": ["key_insights"],
-            }
-
-            prompt = (
-                f"Analyze the following topic summaries from our Virtual Agora session and extract "
-                f"key insights organized into the specified categories. Focus on patterns, themes, "
-                f"and significant points that emerged across the discussion.\n\n"
-                f"Topic Summaries:\n{combined_summaries}"
-                f"{context_info}\n\n"
-                f"Please extract and categorize the key insights as requested in the JSON format."
-            )
-
-            insights_json = self.generate_json_response(
-                prompt, expected_schema=insights_schema
-            )
-
-            key_insights = insights_json["key_insights"]
-
-            logger.info(
-                f"ModeratorAgent {self.agent_id} extracted key insights from {len(topic_summaries)} "
-                f"topic summaries: {sum(len(v) for v in key_insights.values())} total insights"
-            )
-
-            return key_insights
-
-        except Exception as e:
-            logger.error(
-                f"ModeratorAgent {self.agent_id} failed to extract key insights: {e}"
-            )
-            # Return empty structure on failure
-            return {
-                "main_themes": [],
-                "areas_of_consensus": [],
-                "points_of_disagreement": [],
-                "action_items": [],
-                "future_considerations": [],
-            }
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
-    def generate_progressive_summary(
-        self,
-        new_messages: List[Message],
-        existing_summary: Optional[str] = None,
-        topic: Optional[str] = None,
-    ) -> str:
-        """Generate or update a summary progressively as new content arrives.
-
-        This implements a "refine" approach where an existing summary is updated
-        with new information, similar to LangChain's refine summarization.
-
-        Args:
-            new_messages: New messages to incorporate into the summary
-            existing_summary: Existing summary to refine (None for initial summary)
-            topic: Optional topic context for focused summarization
-
-        Returns:
-            Updated summary incorporating new messages
-        """
-        # Switch to synthesis mode for summarization
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
-        try:
-            if not new_messages:
-                logger.debug(
-                    f"ModeratorAgent {self.agent_id} received no new messages for progressive summary"
-                )
-                return existing_summary or "No discussion content available."
-
-            # Format new messages context
-            new_content = "\n\n".join(
-                [f"Agent {msg['speaker_id']}: {msg['content']}" for msg in new_messages]
-            )
-
-            topic_context = f" on '{topic}'" if topic else ""
-
-            if existing_summary:
-                # Refine existing summary with new content
-                refine_prompt = (
-                    f"Update and refine the existing summary with the new discussion content{topic_context}. "
-                    f"Integrate new insights while maintaining the coherence of the original summary. "
-                    f"Do not attribute ideas to specific agents.\n\n"
-                    f"Existing Summary:\n{existing_summary}\n\n"
-                    f"New Discussion Content:\n{new_content}\n\n"
-                    f"Please provide an updated summary that incorporates the new information."
-                )
-            else:
-                # Generate initial summary
-                refine_prompt = (
-                    f"Create a concise summary of the following discussion{topic_context}. "
-                    f"Focus on key points, insights, and significant contributions. "
-                    f"Do not attribute ideas to specific agents.\n\n"
-                    f"Discussion Content:\n{new_content}"
-                )
-
-            updated_summary = self.generate_response(refine_prompt)
-
-            logger.debug(
-                f"ModeratorAgent {self.agent_id} generated progressive summary "
-                f"({len(new_messages)} new messages, existing_summary={'yes' if existing_summary else 'no'})"
-            )
-
-            return updated_summary
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
+    # Story 3.5: Round and Topic Summarization methods removed in v1.3
+    # These methods have been moved to specialized agents:
+    # - generate_round_summary() → SummarizerAgent
+    # - generate_topic_summary() → SummarizerAgent
+    # - _generate_topic_summary_map_reduce() → SummarizerAgent
+    # - extract_key_insights() → SummarizerAgent
+    # - generate_progressive_summary() → SummarizerAgent
 
     # Story 3.4: Relevance Enforcement System methods
 
@@ -1589,10 +884,7 @@ class ModeratorAgent(LLMAgent):
                 "topic": None,
             }
 
-        # Switch to synthesis mode for relevance analysis
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
+        # In v1.3, moderator evaluates relevance without mode switching
         try:
             # Create a structured prompt for relevance evaluation
             evaluation_prompt = (
@@ -1682,10 +974,6 @@ class ModeratorAgent(LLMAgent):
                 "reason": f"Assessment failed: {e}",
                 "topic": self.current_topic_context,
             }
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
 
     def track_relevance_violation(
         self, agent_id: str, message_content: str, relevance_assessment: Dict[str, Any]
@@ -2008,42 +1296,34 @@ class ModeratorAgent(LLMAgent):
         # Store poll in conversation context
         self.update_conversation_context(f"active_poll_{poll_id}", poll_data)
 
-        # Switch to facilitation mode for polling
-        original_mode = self.current_mode
-        self.set_mode("facilitation")
+        # In v1.3, moderator is always in facilitation mode
+        poll_announcement = (
+            f"📊 **Topic Conclusion Poll Initiated**\n\n"
+            f"**Topic:** {topic}\n"
+            f"**Poll ID:** {poll_id}\n"
+            f"**Duration:** {poll_duration_minutes} minutes (ends at {poll_end_time.strftime('%H:%M:%S')})\n"
+            f"**Eligible Voters:** {', '.join(eligible_voters)}\n\n"
+            f"**Question:** Should we conclude the discussion on '{topic}' and move to the next topic?\n\n"
+            f"**Voting Options:**\n"
+            f"• **continue** - Continue discussing this topic\n"
+            f"• **conclude** - Conclude this topic and move forward\n\n"
+            f"**Instructions:** Please respond with your vote and brief reasoning. "
+            f"Each participant gets one vote. The poll will close automatically when the time expires "
+            f"or when all eligible voters have participated.\n\n"
+            f"**Vote Format:** 'I vote [continue/conclude] because [your reasoning]'"
+        )
 
-        try:
-            poll_announcement = (
-                f"📊 **Topic Conclusion Poll Initiated**\n\n"
-                f"**Topic:** {topic}\n"
-                f"**Poll ID:** {poll_id}\n"
-                f"**Duration:** {poll_duration_minutes} minutes (ends at {poll_end_time.strftime('%H:%M:%S')})\n"
-                f"**Eligible Voters:** {', '.join(eligible_voters)}\n\n"
-                f"**Question:** Should we conclude the discussion on '{topic}' and move to the next topic?\n\n"
-                f"**Voting Options:**\n"
-                f"• **continue** - Continue discussing this topic\n"
-                f"• **conclude** - Conclude this topic and move forward\n\n"
-                f"**Instructions:** Please respond with your vote and brief reasoning. "
-                f"Each participant gets one vote. The poll will close automatically when the time expires "
-                f"or when all eligible voters have participated.\n\n"
-                f"**Vote Format:** 'I vote [continue/conclude] because [your reasoning]'"
-            )
+        logger.info(
+            f"ModeratorAgent {self.agent_id} initiated conclusion poll for topic '{topic}' "
+            f"with {len(eligible_voters)} eligible voters"
+        )
 
-            logger.info(
-                f"ModeratorAgent {self.agent_id} initiated conclusion poll for topic '{topic}' "
-                f"with {len(eligible_voters)} eligible voters"
-            )
-
-            return {
-                "poll_id": poll_id,
-                "announcement": poll_announcement,
-                "poll_data": poll_data,
-                "status": "initiated",
-            }
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
+        return {
+            "poll_id": poll_id,
+            "announcement": poll_announcement,
+            "poll_data": poll_data,
+            "status": "initiated",
+        }
 
     def cast_vote(
         self,
@@ -2160,146 +1440,6 @@ class ModeratorAgent(LLMAgent):
             "votes_received": votes_received,
             "votes_required": poll_data["required_votes"],
         }
-
-    def tally_poll_results(self, poll_id: str) -> Dict[str, Any]:
-        """Tally the results of a conclusion poll and determine the outcome.
-
-        Args:
-            poll_id: ID of the poll to tally
-
-        Returns:
-            Dictionary containing poll results and decision
-        """
-        poll_key = f"active_poll_{poll_id}"
-        poll_data = self.get_conversation_context(poll_key)
-
-        if not poll_data:
-            return {"success": False, "error": f"Poll {poll_id} not found"}
-
-        # Switch to synthesis mode for result analysis
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
-        try:
-            votes_cast = poll_data["votes_cast"]
-            total_votes = len(votes_cast)
-
-            if total_votes == 0:
-                return {
-                    "success": False,
-                    "error": "no_votes",
-                    "message": "❌ No votes were cast in this poll.",
-                }
-
-            # Count votes
-            vote_counts = {}
-            for option in poll_data["options"]:
-                vote_counts[option] = 0
-
-            for vote_data in votes_cast.values():
-                choice = vote_data["choice"]
-                if choice in vote_counts:
-                    vote_counts[choice] += 1
-
-            # Determine winner (simple majority)
-            conclude_votes = vote_counts.get("conclude", 0)
-            continue_votes = vote_counts.get("continue", 0)
-
-            # Calculate percentages
-            conclude_percentage = (conclude_votes / total_votes) * 100
-            continue_percentage = (continue_votes / total_votes) * 100
-
-            # Determine decision
-            if conclude_votes > continue_votes:
-                decision = "conclude"
-                winning_percentage = conclude_percentage
-                margin = conclude_votes - continue_votes
-            elif continue_votes > conclude_votes:
-                decision = "continue"
-                winning_percentage = continue_percentage
-                margin = continue_votes - conclude_votes
-            else:
-                # Tie - default to continue discussion
-                decision = "continue"
-                winning_percentage = continue_percentage
-                margin = 0
-
-            # Mark poll as completed
-            poll_data["status"] = "completed"
-            poll_data["results"] = {
-                "decision": decision,
-                "vote_counts": vote_counts,
-                "total_votes": total_votes,
-                "winning_percentage": winning_percentage,
-                "margin": margin,
-                "tally_time": datetime.now(),
-            }
-
-            self.update_conversation_context(poll_key, poll_data)
-
-            # Generate detailed results message
-            results_message = (
-                f"📊 **Poll Results: {poll_data['topic']}**\n\n"
-                f"**Poll ID:** {poll_id}\n"
-                f"**Total Votes:** {total_votes}/{poll_data['required_votes']}\n\n"
-                f"**Vote Breakdown:**\n"
-                f"• **Conclude:** {conclude_votes} votes ({conclude_percentage:.1f}%)\n"
-                f"• **Continue:** {continue_votes} votes ({continue_percentage:.1f}%)\n\n"
-                f"**Decision:** {decision.upper()}\n"
-                f"**Margin:** {margin} vote{'s' if margin != 1 else ''}\n\n"
-            )
-
-            # Add reasoning summary
-            if votes_cast:
-                results_message += "**Voting Reasoning Summary:**\n"
-                for voter_id, vote_data in votes_cast.items():
-                    results_message += f"• **{voter_id}** ({vote_data['choice']}): {vote_data['reasoning']}\n"
-                results_message += "\n"
-
-            # Add decision explanation
-            if decision == "conclude":
-                if margin == 0:
-                    results_message += (
-                        "**Next Steps:** Despite the tie, the default decision is to continue discussion. "
-                        "However, given the split opinion, we will conclude this topic to maintain "
-                        "progress while ensuring all perspectives have been heard.\n\n"
-                    )
-                else:
-                    results_message += (
-                        f"**Next Steps:** The majority has voted to conclude discussion on '{poll_data['topic']}'. "
-                        f"We will now move to topic summarization and transition to the next agenda item.\n\n"
-                    )
-            else:
-                if margin == 0:
-                    results_message += (
-                        "**Next Steps:** With a tied vote, we will continue the discussion to allow "
-                        "for further exploration of the topic and potential consensus building.\n\n"
-                    )
-                else:
-                    results_message += (
-                        f"**Next Steps:** The majority has voted to continue discussion on '{poll_data['topic']}'. "
-                        f"The discussion will proceed with consideration of the points raised in the voting.\n\n"
-                    )
-
-            logger.info(
-                f"ModeratorAgent {self.agent_id} tallied poll {poll_id}: "
-                f"{decision} ({conclude_votes} conclude, {continue_votes} continue)"
-            )
-
-            return {
-                "success": True,
-                "decision": decision,
-                "vote_counts": vote_counts,
-                "total_votes": total_votes,
-                "winning_percentage": winning_percentage,
-                "margin": margin,
-                "message": results_message,
-                "poll_data": poll_data,
-            }
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
 
     def handle_minority_considerations(
         self, poll_results: Dict[str, Any], topic: str
@@ -2491,136 +1631,6 @@ class ModeratorAgent(LLMAgent):
             )
             return None
 
-    async def incorporate_minority_views(
-        self, existing_summary: str, minority_considerations: List[str], topic: str
-    ) -> Optional[str]:
-        """Incorporate minority views into topic summary.
-
-        Args:
-            existing_summary: Current topic summary
-            minority_considerations: List of minority considerations
-            topic: The topic name
-
-        Returns:
-            Updated summary incorporating minority views
-        """
-        # Switch to synthesis mode for this operation
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
-        try:
-            prompt = (
-                f"Please update the following topic summary to incorporate minority viewpoints "
-                f"that were expressed during the final considerations phase.\n\n"
-                f"**Topic:** {topic}\n\n"
-                f"**Current Summary:**\n{existing_summary}\n\n"
-                f"**Minority Considerations:**\n"
-            )
-
-            for i, consideration in enumerate(minority_considerations, 1):
-                prompt += f"{i}. {consideration}\n"
-
-            prompt += (
-                "\n\nPlease revise the summary to ensure that the minority perspectives are "
-                "properly represented while maintaining the overall coherence and balance of the summary."
-            )
-
-            response = await self.generate_response(prompt)
-
-            if response:
-                logger.info(
-                    f"Successfully incorporated minority views into summary for {topic}"
-                )
-                return response
-            else:
-                logger.warning(f"Failed to generate updated summary for {topic}")
-                return None
-
-        except Exception as e:
-            logger.error(f"Error incorporating minority views: {e}")
-            return None
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
-    # Story 3.8: Report Writer Mode methods
-
-    async def define_report_structure(
-        self, topic_summaries: Dict[str, str]
-    ) -> Optional[List[str]]:
-        """Define the structure for the final report based on topic summaries.
-
-        Args:
-            topic_summaries: Dictionary mapping topic names to their summaries
-
-        Returns:
-            Ordered list of report section titles, or None if failed
-        """
-        # Switch to writer mode for this operation
-        original_mode = self.current_mode
-        self.set_mode("writer")
-
-        try:
-            # Use existing generate_report_structure method but adapt for dict input
-            summaries_list = list(topic_summaries.values())
-            sections = self.generate_report_structure(summaries_list)
-
-            logger.info(f"Defined report structure with {len(sections)} sections")
-            return sections
-
-        except Exception as e:
-            logger.error(f"Failed to define report structure: {e}")
-            return None
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
-    async def generate_report_section(
-        self,
-        section_title: str,
-        topic_summaries: Dict[str, str],
-        report_structure: List[str],
-    ) -> Optional[str]:
-        """Generate content for a specific report section.
-
-        Args:
-            section_title: Title of the section to generate
-            topic_summaries: All topic summaries for reference
-            report_structure: Complete report structure for context
-
-        Returns:
-            Generated section content, or None if failed
-        """
-        # Switch to writer mode for this operation
-        original_mode = self.current_mode
-        self.set_mode("writer")
-
-        try:
-            # Use existing generate_section_content method but adapt for dict input
-            summaries_list = list(topic_summaries.values())
-
-            # Add context about the section's place in the overall structure
-            section_context = f"This is section '{section_title}' in a {len(report_structure)}-section report."
-
-            content = self.generate_section_content(
-                section_title, summaries_list, section_context
-            )
-
-            logger.info(f"Generated content for report section: {section_title}")
-            return content
-
-        except Exception as e:
-            logger.error(f"Failed to generate content for section {section_title}: {e}")
-            return None
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
-
-    # Story 3.9: Agenda Modification Facilitation methods
-
     async def request_agenda_modification(
         self,
         agent_id: str,
@@ -2670,68 +1680,6 @@ class ModeratorAgent(LLMAgent):
         except Exception as e:
             logger.error(f"Failed to collect agenda modification from {agent_id}: {e}")
             return None
-
-    async def synthesize_agenda_modifications(
-        self, modifications: List[str], current_queue: List[str]
-    ) -> Optional[List[str]]:
-        """Synthesize agenda modification suggestions into a new proposed agenda.
-
-        Args:
-            modifications: List of modification suggestions from agents
-            current_queue: Current topic queue
-
-        Returns:
-            New proposed agenda incorporating modifications, or None if failed
-        """
-        # Switch to synthesis mode for this operation
-        original_mode = self.current_mode
-        self.set_mode("synthesis")
-
-        try:
-            prompt = (
-                f"Analyze the following agenda modification suggestions and synthesize them "
-                f"into an updated agenda. Consider the merit of each suggestion and create "
-                f"a balanced approach that incorporates valuable additions while maintaining "
-                f"focus and coherence.\n\n"
-                f"**Current Agenda:**\n"
-            )
-
-            for i, topic in enumerate(current_queue, 1):
-                prompt += f"{i}. {topic}\n"
-
-            prompt += f"\n**Modification Suggestions:**\n"
-
-            for i, modification in enumerate(modifications, 1):
-                prompt += f"{i}. {modification}\n"
-
-            prompt += (
-                f"\n\nPlease synthesize these suggestions into a revised agenda. "
-                f"Return the result as a JSON object with the key 'proposed_agenda' "
-                f"containing an ordered list of topics."
-            )
-
-            # Use existing agenda synthesis method
-            json_response = self.generate_json_response(
-                prompt, model_class=None  # Use basic JSON parsing
-            )
-
-            if "proposed_agenda" in json_response:
-                new_agenda = json_response["proposed_agenda"]
-                logger.info(
-                    f"Synthesized agenda modifications into {len(new_agenda)} topics"
-                )
-                return new_agenda
-            else:
-                logger.warning("Failed to extract proposed_agenda from response")
-                return None
-
-        except Exception as e:
-            logger.error(f"Failed to synthesize agenda modifications: {e}")
-            return None
-
-        finally:
-            # Restore original mode
-            self.set_mode(original_mode)
 
     async def collect_agenda_vote(
         self, agent_id: str, proposed_topics: List[str], state: VirtualAgoraState
@@ -2802,25 +1750,23 @@ class ModeratorAgent(LLMAgent):
 
 
 def create_moderator_agent(
-    agent_id: str, llm: BaseChatModel, mode: ModeratorMode = "facilitation", **kwargs
+    agent_id: str, llm: BaseChatModel, **kwargs
 ) -> ModeratorAgent:
     """Factory function to create a ModeratorAgent with standard configuration.
 
     Args:
         agent_id: Unique identifier for the agent
         llm: LangChain chat model (should be gemini-2.5-pro for optimal performance)
-        mode: Initial operational mode
         **kwargs: Additional arguments for ModeratorAgent
 
     Returns:
         Configured ModeratorAgent instance
     """
-    return ModeratorAgent(agent_id=agent_id, llm=llm, mode=mode, **kwargs)
+    return ModeratorAgent(agent_id=agent_id, llm=llm, **kwargs)
 
 
 def create_gemini_moderator(
     agent_id: str = "moderator",
-    mode: ModeratorMode = "facilitation",
     enable_error_handling: bool = True,
     **llm_kwargs,
 ) -> ModeratorAgent:
@@ -2830,7 +1776,6 @@ def create_gemini_moderator(
 
     Args:
         agent_id: Unique identifier for the agent
-        mode: Initial operational mode
         **llm_kwargs: Arguments for the Gemini LLM (api_key, temperature, etc.)
 
     Returns:
@@ -2847,7 +1792,6 @@ def create_gemini_moderator(
         return ModeratorAgent(
             agent_id=agent_id,
             llm=llm,
-            mode=mode,
             enable_error_handling=enable_error_handling,
         )
 

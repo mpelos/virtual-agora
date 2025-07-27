@@ -54,7 +54,8 @@ from virtual_agora.ui.langgraph_integration import (
     initialize_ui_integration,
     update_ui_from_state_change,
 )
-from virtual_agora.flow.graph import VirtualAgoraFlow
+from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
+from virtual_agora.app_v13 import VirtualAgoraApplicationV13
 
 
 # Install rich traceback handler for better error messages
@@ -313,11 +314,11 @@ async def run_application(args: argparse.Namespace) -> int:
                 save_to_disk=True,
             )
 
-            # Initialize VirtualAgoraFlow
-            console.print("[cyan]Initializing discussion flow...[/cyan]")
-            flow = VirtualAgoraFlow(config, enable_monitoring=True)
+            # Initialize VirtualAgoraFlow v1.3
+            console.print("[cyan]Initializing discussion flow v1.3...[/cyan]")
+            flow = VirtualAgoraV13Flow(config, enable_monitoring=True)
             flow.compile()
-            logger.info("VirtualAgoraFlow initialized and compiled")
+            logger.info("VirtualAgoraV13Flow initialized and compiled")
 
             if args.dry_run:
                 console.print("[green]Configuration validation successful![/green]")

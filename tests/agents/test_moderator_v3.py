@@ -19,7 +19,9 @@ class TestModeratorAgentV3:
     @pytest.fixture
     def moderator(self, moderator_llm):
         """Create test moderator instance."""
-        return ModeratorAgent(agent_id="test_moderator", llm=moderator_llm)
+        return ModeratorAgent(
+            agent_id="test_moderator", llm=moderator_llm, enable_error_handling=False
+        )
 
     def test_initialization_v13_no_mode(self, moderator):
         """Test that v1.3 ModeratorAgent has no mode parameter."""
@@ -167,7 +169,9 @@ class TestModeratorAgentV3:
             def _get_response(self, messages, **kwargs):
                 return "This is not valid JSON"
 
-        bad_moderator = ModeratorAgent(agent_id="bad_moderator", llm=BadJSONLLM())
+        bad_moderator = ModeratorAgent(
+            agent_id="bad_moderator", llm=BadJSONLLM(), enable_error_handling=False
+        )
 
         votes = [{"agent_id": "agent_1", "vote": "Topic A first"}]
 

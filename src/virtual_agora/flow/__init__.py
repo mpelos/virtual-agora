@@ -4,9 +4,9 @@ This module implements the core discussion flow using LangGraph, managing
 complex state transitions and multi-phase workflows.
 """
 
-from .graph import VirtualAgoraFlow
-from .nodes import FlowNodes
-from .edges import FlowConditions
+from .graph_v13 import VirtualAgoraV13Flow as VirtualAgoraFlow
+from .nodes_v13 import FlowNodesV13 as FlowNodes
+from .edges_v13 import FlowConditionsV13 as FlowConditions
 from .monitoring import (
     FlowMonitor,
     FlowDebugger,
