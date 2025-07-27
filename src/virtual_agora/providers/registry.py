@@ -457,13 +457,8 @@ class ProviderRegistry:
         if not self.is_provider_supported(provider_type):
             return False, f"Provider '{provider_type}' is not supported"
 
-        if not self.is_model_supported(provider_type, model_name):
-            available_models = self.list_models_for_provider(provider_type)
-            return False, (
-                f"Model '{model_name}' is not supported for provider '{provider_type}'. "
-                f"Available models: {', '.join(available_models)}"
-            )
-
+        # Model validation has been removed - any model name is now allowed
+        # to be passed directly to LangGraph/LangChain
         return True, None
 
     def get_model_capabilities(

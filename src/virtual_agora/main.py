@@ -337,7 +337,7 @@ async def run_application(args: argparse.Namespace) -> int:
 
             # Update UI with topic
             flow_state_manager = flow.get_state_manager()
-            current_state = flow_state_manager.get_state()
+            current_state = flow_state_manager.state
             ui_integration.update_ui_from_state(current_state)
 
             recovery_manager.create_checkpoint(
@@ -358,7 +358,7 @@ async def run_application(args: argparse.Namespace) -> int:
                         logger.debug(f"Flow update: {update}")
 
                         # Update UI with each step
-                        current_state = flow_state_manager.get_state()
+                        current_state = flow_state_manager.state
                         ui_integration.update_ui_from_state(current_state)
 
                         # Create checkpoints at key phases
@@ -372,7 +372,7 @@ async def run_application(args: argparse.Namespace) -> int:
                     console.print("[green]Discussion completed successfully![/green]")
 
                     # Get final state and show summary
-                    final_state = flow_state_manager.get_state()
+                    final_state = flow_state_manager.state
                     console.print(
                         f"[dim]Final session ID: {final_state['session_id']}[/dim]"
                     )

@@ -70,21 +70,23 @@ class TestEnvironmentManager:
         # Value should still be the first one (not reloaded)
         assert manager._loaded is True
 
-    def test_get_api_key(self, monkeypatch):
+    def test_get_api_key(self, monkeypatch, tmp_path):
         """Test getting API keys for providers."""
         monkeypatch.setenv("GOOGLE_API_KEY", "test_google_key")
         monkeypatch.setenv("OPENAI_API_KEY", "test_openai_key")
         # Ensure ANTHROPIC_API_KEY is not set
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-        manager = EnvironmentManager()
+        # Create manager with non-existent env file to prevent loading system .env
+        manager = EnvironmentManager(env_file=tmp_path / "nonexistent.env")
+        manager._loaded = True  # Mark as loaded to prevent auto-loading
 
         assert manager.get_api_key("Google") == "test_google_key"
         assert manager.get_api_key("OpenAI") == "test_openai_key"
         assert manager.get_api_key("Anthropic") is None
         assert manager.get_api_key("Unknown") is None
 
-    def test_get_all_api_keys(self, monkeypatch):
+    def test_get_all_api_keys(self, monkeypatch, tmp_path):
         """Test getting all API keys."""
         monkeypatch.setenv("GOOGLE_API_KEY", "google_key")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic_key")
@@ -92,7 +94,9 @@ class TestEnvironmentManager:
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("GROK_API_KEY", raising=False)
 
-        manager = EnvironmentManager()
+        # Create manager with non-existent env file to prevent loading system .env
+        manager = EnvironmentManager(env_file=tmp_path / "nonexistent.env")
+        manager._loaded = True  # Mark as loaded to prevent auto-loading
         keys = manager.get_all_api_keys()
 
         assert keys["GOOGLE_API_KEY"] == "google_key"

@@ -261,13 +261,10 @@ class TestProviderRegistry:
         assert is_valid is True
         assert error is None
 
-        # Invalid model
-        is_valid, error = reg.validate_model_config(
-            ProviderType.GOOGLE, "invalid-model"
-        )
-        assert is_valid is False
-        assert "not supported" in error
-        assert "Available models:" in error
+        # Any model should now be valid (model validation removed)
+        is_valid, error = reg.validate_model_config(ProviderType.GOOGLE, "custom-model")
+        assert is_valid is True
+        assert error is None
 
 
 class TestGlobalRegistry:

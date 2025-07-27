@@ -218,15 +218,18 @@ class ReportFileManager:
         if "duration_minutes" in metadata:
             readme_lines.append(f"**Duration**: {metadata['duration_minutes']} minutes")
         if "topics_discussed" in metadata:
-            readme_lines.extend(
-                [
-                    "",
-                    "## Topics Discussed",
-                    "",
-                ]
-            )
-            for topic in metadata["topics_discussed"]:
-                readme_lines.append(f"- {topic}")
+            topics = metadata["topics_discussed"]
+            # Ensure topics is iterable (list or tuple)
+            if isinstance(topics, (list, tuple)):
+                readme_lines.extend(
+                    [
+                        "",
+                        "## Topics Discussed",
+                        "",
+                    ]
+                )
+                for topic in topics:
+                    readme_lines.append(f"- {topic}")
 
         readme_path = self.current_report_dir / "README.md"
         readme_path.write_text("\n".join(readme_lines), encoding="utf-8")

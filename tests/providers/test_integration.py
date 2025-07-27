@@ -120,22 +120,6 @@ class TestProviderIntegration:
         assert "thoughtful participant" in messages[0].content  # System prompt
         assert "What do you think about AI ethics?" == messages[1].content
 
-    def test_registry_validation_integration(self):
-        """Test registry validation integration."""
-        # Valid model
-        is_valid, error = registry.validate_model_config(
-            ProviderType.GOOGLE, "gemini-2.5-pro"
-        )
-        assert is_valid is True
-        assert error is None
-
-        # Invalid model should raise error during provider creation
-        with pytest.raises(ConfigurationError) as exc_info:
-            create_provider(
-                provider="google", model="invalid-model", api_key="test-key"
-            )
-        assert "not supported" in str(exc_info.value)
-
     @patch.dict(os.environ, {"OPENAI_API_KEY": "env-api-key"})
     @patch("virtual_agora.providers.factory.init_chat_model")
     def test_environment_api_key_integration(self, mock_init_chat_model):
@@ -232,24 +216,6 @@ class TestProviderIntegration:
         call_args, call_kwargs = mock_init_chat_model.call_args
         assert call_args[0] == "openai:grok-1"  # Grok uses openai provider
         assert call_kwargs["base_url"] == "https://api.x.ai/v1"
-
-    def test_error_propagation(self):
-        """Test that errors propagate correctly through the system."""
-        # Test configuration error
-        with pytest.raises(ConfigurationError):
-            create_provider(
-                provider="google", model="non-existent-model", api_key="test-key"
-            )
-
-        # Test missing API key error
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ConfigurationError) as exc_info:
-                create_provider(
-                    provider="google",
-                    model="gemini-2.5-pro",
-                    # No API key provided
-                )
-            assert "API key not found" in str(exc_info.value)
 
 
 class TestProviderCompatibility:

@@ -33,8 +33,8 @@ class Provider(str, Enum):
 class ModeratorConfig(BaseModel):
     """Configuration for the Moderator agent.
 
-    The moderator is responsible for facilitating the discussion,
-    synthesizing votes, and generating summaries.
+    The moderator is responsible for process facilitation,
+    agenda synthesis, and relevance enforcement.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -49,11 +49,71 @@ class ModeratorConfig(BaseModel):
     )
 
 
-class AgentConfig(BaseModel):
-    """Configuration for a discussion agent or group of agents.
+class SummarizerConfig(BaseModel):
+    """Configuration for the Summarizer agent.
 
-    Each agent configuration can create one or more agents of the
-    same type (provider and model).
+    The summarizer is responsible for compressing round discussions
+    into compacted context for future rounds.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    provider: Provider = Field(
+        ..., description="LLM provider for the summarizer (e.g., OpenAI, Google)"
+    )
+    model: str = Field(
+        ...,
+        description="Model name/ID for the summarizer (e.g., gpt-4o)",
+        min_length=1,
+    )
+
+
+class TopicReportConfig(BaseModel):
+    """Configuration for the Topic Report agent.
+
+    The topic report agent synthesizes concluded agenda items
+    into comprehensive reports.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    provider: Provider = Field(
+        ...,
+        description="LLM provider for the topic report agent (e.g., Anthropic, Google)",
+    )
+    model: str = Field(
+        ...,
+        description="Model name/ID for the topic report agent (e.g., claude-3-opus-20240229)",
+        min_length=1,
+    )
+
+
+class EcclesiaReportConfig(BaseModel):
+    """Configuration for the Ecclesia Report agent.
+
+    The ecclesia report agent creates the final session analysis
+    by synthesizing all individual topic reports.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    provider: Provider = Field(
+        ...,
+        description="LLM provider for the ecclesia report agent (e.g., Google, OpenAI)",
+    )
+    model: str = Field(
+        ...,
+        description="Model name/ID for the ecclesia report agent (e.g., gemini-2.5-pro)",
+        min_length=1,
+    )
+
+
+class AgentConfig(BaseModel):
+    """Configuration for discussing agents (debate participants).
+
+    Each agent configuration can create one or more discussing agents
+    of the same type (provider and model). These are the primary
+    participants who propose agenda items, debate, and vote.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -73,10 +133,10 @@ class AgentConfig(BaseModel):
 
 
 class Config(BaseModel):
-    """Root configuration model for Virtual Agora.
+    """Root configuration model for Virtual Agora v1.3.
 
     This model represents the complete configuration loaded from
-    the YAML file.
+    the YAML file with support for specialized agents.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -84,9 +144,18 @@ class Config(BaseModel):
     moderator: ModeratorConfig = Field(
         ..., description="Configuration for the moderator agent"
     )
+    summarizer: SummarizerConfig = Field(
+        ..., description="Configuration for the summarizer agent"
+    )
+    topic_report: TopicReportConfig = Field(
+        ..., description="Configuration for the topic report agent"
+    )
+    ecclesia_report: EcclesiaReportConfig = Field(
+        ..., description="Configuration for the ecclesia report agent"
+    )
     agents: list[AgentConfig] = Field(
         ...,
-        description="List of agent configurations",
+        description="List of discussing agent configurations",
         min_length=1,  # At least one agent required
     )
 

@@ -215,6 +215,9 @@ class TestReportStructureManager:
             def keys(self):
                 raise RuntimeError("Test error")
 
+            def __len__(self):
+                raise RuntimeError("Test error")
+
         bad_summaries = BadDict()
 
         # Should return standard sections on error

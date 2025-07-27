@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
 import re
+from copy import deepcopy
 
 from ..utils.logging import get_logger
 
@@ -145,7 +146,7 @@ class ReportTemplateManager:
         """
         self.template_dir = template_dir or Path("templates")
         self.custom_templates = {}
-        self.current_template = self.DEFAULT_TEMPLATE.copy()
+        self.current_template = deepcopy(self.DEFAULT_TEMPLATE)
 
         # Load custom templates if directory exists
         if self.template_dir.exists():
@@ -229,8 +230,8 @@ class ReportTemplateManager:
         Returns:
             Customized template dictionary.
         """
-        # Start with base template
-        custom = self.get_template(base_template).copy()
+        # Start with base template - use deepcopy to avoid modifying original
+        custom = deepcopy(self.get_template(base_template))
 
         # Update sections if provided
         if sections:

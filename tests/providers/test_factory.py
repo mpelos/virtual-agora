@@ -180,15 +180,6 @@ class TestProviderFactory:
             assert "API key not found" in str(exc_info.value)
             assert "GOOGLE_API_KEY" in str(exc_info.value)
 
-    def test_invalid_model_raises_error(self):
-        """Test that invalid model raises ConfigurationError."""
-        config = GoogleProviderConfig(model="invalid-model", api_key="test-key")
-
-        with pytest.raises(ConfigurationError) as exc_info:
-            ProviderFactory.create_provider(config, use_cache=False)
-
-        assert "not supported" in str(exc_info.value)
-
     def test_unsupported_provider_raises_error(self):
         """Test that unsupported provider raises ConfigurationError."""
 

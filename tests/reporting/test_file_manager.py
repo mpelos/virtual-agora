@@ -241,7 +241,7 @@ class TestReportFileManager:
 
         assert archive_path.exists()
         assert archive_path.suffix == ".zip"
-        assert archive_path.stem == str(self.manager.current_report_dir)
+        assert archive_path.stem == self.manager.current_report_dir.name
 
     def test_archive_report_no_directory(self):
         """Test archiving without directory."""

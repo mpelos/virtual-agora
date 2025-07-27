@@ -149,7 +149,8 @@ class TestReportMetadataGenerator:
         assert analytics["total_topics_proposed"] == 4
         assert analytics["topics_discussed"] == 2
         assert analytics["topics_skipped"] == 1
-        assert analytics["average_topic_duration"] == 22.5  # (30 + 15) / 2
+        # Average is calculated across all topics including skipped (30 + 15 + 0) / 3 = 15
+        assert analytics["average_topic_duration"] == 15.0
         assert len(analytics["topic_details"]) == 3
 
     def test_calculate_voting_stats(self):

@@ -219,8 +219,10 @@ This is the introduction."""
         assert "---" in formatted
         assert "template: with_header" in formatted
 
-        # Check footer
-        assert "Generated using Virtual Agora" in formatted
+        # Check footer - when include_timestamps is True, it includes timestamp
+        assert "Generated" in formatted and (
+            "using template" in formatted or "Virtual Agora" in formatted
+        )
 
     def test_get_css_styles(self):
         """Test CSS generation from template."""

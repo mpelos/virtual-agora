@@ -68,8 +68,8 @@ class ReportStructureManager:
 
         except Exception as e:
             logger.error(f"Error defining report structure: {e}")
-            # Return default structure on error
-            return self.STANDARD_SECTIONS
+            # Return a copy of default structure on error
+            return list(self.STANDARD_SECTIONS)
 
     def _analyze_content_for_sections(
         self,
@@ -218,18 +218,17 @@ class ReportStructureManager:
         validated = []
 
         for section in sections:
-            # Clean up section names
-            clean_section = section.strip()
-
             # Skip empty sections
-            if not clean_section:
+            if not section or not section.strip():
                 continue
 
             # Handle sub-sections (indented with -)
-            if clean_section.startswith("  -"):
-                # Always include sub-sections
-                validated.append(clean_section)
+            if section.startswith("  -"):
+                # Always include sub-sections (preserve original formatting)
+                validated.append(section)
             else:
+                # Clean up section names for main sections only
+                clean_section = section.strip()
                 # Check for duplicates in main sections
                 if clean_section not in seen:
                     seen.add(clean_section)

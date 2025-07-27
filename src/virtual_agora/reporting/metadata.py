@@ -39,6 +39,15 @@ class ReportMetadataGenerator:
             Dictionary containing session metadata and analytics.
         """
         try:
+            # Validate minimum required state fields
+            if not isinstance(state, dict):
+                raise ValueError("State must be a dictionary")
+
+            # Check for essential fields that indicate a valid state
+            required_fields = ["session_id", "start_time", "messages", "agents"]
+            if not any(field in state for field in required_fields):
+                raise ValueError("State missing all required fields")
+
             # Basic session information
             metadata = self._extract_session_info(state)
 

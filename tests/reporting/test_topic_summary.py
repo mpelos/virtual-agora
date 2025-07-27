@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 import tempfile
 import shutil
 
@@ -203,6 +203,10 @@ class TestTopicSummaryGenerator:
 
     def test_voting_statistics_extraction(self):
         """Test extraction of voting statistics."""
+        # Create timestamps so message is after vote
+        vote_time = datetime.now() - timedelta(minutes=20)
+        message_time = datetime.now() - timedelta(minutes=15)  # After vote
+
         state = {
             "topics_info": {
                 "Test Topic": {
@@ -212,14 +216,14 @@ class TestTopicSummaryGenerator:
             "messages": [
                 {
                     "topic": "Test Topic",
-                    "timestamp": datetime.now(),
+                    "timestamp": message_time,  # Message after vote
                     "speaker_id": "agent-1",
                 }
             ],
             "vote_history": [
                 {
                     "vote_type": "continue_discussion",
-                    "start_time": datetime.now(),
+                    "start_time": vote_time,  # Vote before message
                     "result": "continue",
                 }
             ],

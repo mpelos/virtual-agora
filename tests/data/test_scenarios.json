@@ -1,0 +1,186 @@
+{
+  "scenarios": {
+    "quick_consensus": {
+      "description": "Agents quickly reach consensus on all topics",
+      "agent_behaviors": {
+        "agent_1": "always_agree",
+        "agent_2": "always_agree", 
+        "agent_3": "always_agree"
+      },
+      "expected_rounds_per_topic": 3,
+      "expected_conclusion_votes": "unanimous_yes"
+    },
+    
+    "extended_debate": {
+      "description": "Agents engage in longer discussions before concluding",
+      "agent_behaviors": {
+        "agent_1": "thorough_analyzer",
+        "agent_2": "devil_advocate",
+        "agent_3": "mediator"
+      },
+      "expected_rounds_per_topic": 6,
+      "expected_conclusion_votes": "mixed_initially_then_yes"
+    },
+    
+    "minority_dissent": {
+      "description": "One agent consistently provides dissenting views",
+      "agent_behaviors": {
+        "agent_1": "contrarian",
+        "agent_2": "supporter",
+        "agent_3": "supporter"
+      },
+      "expected_rounds_per_topic": 4,
+      "expected_conclusion_votes": "one_dissenter"
+    },
+    
+    "technical_focus": {
+      "description": "Discussion heavily focused on technical implementation",
+      "agent_behaviors": {
+        "agent_1": "technical_expert",
+        "agent_2": "technical_expert",
+        "agent_3": "technical_expert"
+      },
+      "topic_preferences": ["technical", "implementation", "architecture"],
+      "expected_rounds_per_topic": 5
+    },
+    
+    "multi_perspective": {
+      "description": "Agents represent different stakeholder perspectives",
+      "agent_behaviors": {
+        "agent_1": "business_focused",
+        "agent_2": "user_focused", 
+        "agent_3": "technical_focused",
+        "agent_4": "regulatory_focused"
+      },
+      "expected_rounds_per_topic": 7,
+      "expected_agenda_modifications": 2
+    }
+  },
+  
+  "test_topics": {
+    "simple": [
+      "Future of Remote Work",
+      "Sustainable Energy Solutions",
+      "Digital Privacy Rights"
+    ],
+    
+    "complex": [
+      "Artificial Intelligence Ethics and Governance",
+      "Blockchain Technology in Financial Systems", 
+      "Climate Change Mitigation Strategies",
+      "Universal Basic Income Implementation"
+    ],
+    
+    "technical": [
+      "Microservices Architecture Design Patterns",
+      "Quantum Computing Applications",
+      "Edge Computing Infrastructure",
+      "Machine Learning Model Deployment"
+    ]
+  },
+  
+  "response_templates": {
+    "topic_proposals": {
+      "optimistic": [
+        "Opportunities and potential benefits",
+        "Innovation drivers and success factors",
+        "Positive societal impact assessment", 
+        "Best practices and case studies"
+      ],
+      "skeptical": [
+        "Risk assessment and mitigation strategies",
+        "Implementation challenges and barriers",
+        "Unintended consequences analysis",
+        "Resource constraints and limitations"
+      ],
+      "technical": [
+        "Technical architecture and requirements",
+        "Performance and scalability considerations",
+        "Security and reliability measures",
+        "Integration and compatibility issues"
+      ],
+      "balanced": [
+        "Comprehensive requirements analysis",
+        "Stakeholder impact assessment", 
+        "Cost-benefit evaluation",
+        "Implementation roadmap and timeline"
+      ]
+    },
+    
+    "discussion_responses": {
+      "agreement": [
+        "I completely agree with the previous points.",
+        "This aligns well with my understanding.",
+        "I support this direction based on the evidence."
+      ],
+      "disagreement": [
+        "I have concerns about this approach.",
+        "I see potential issues that need addressing.",
+        "I would like to propose an alternative perspective."
+      ],
+      "elaboration": [
+        "Let me expand on this idea with additional details.",
+        "There are several important aspects to consider here.",
+        "This raises some interesting implications we should explore."
+      ],
+      "question": [
+        "How would this work in practice?",
+        "What are the implementation requirements?",
+        "Have we considered the long-term implications?"
+      ]
+    },
+    
+    "conclusion_votes": {
+      "early_yes": "Yes, I believe we've covered the essential points.",
+      "early_no": "No, there are still important aspects to discuss.",
+      "late_yes": "Yes, after thorough discussion, I'm ready to conclude.",
+      "late_no": "No, I think we need to examine this topic more deeply.",
+      "conditional_yes": "Yes, provided we address the concerns raised.",
+      "conditional_no": "No, unless we can resolve the outstanding issues."
+    }
+  },
+  
+  "validation_rules": {
+    "agenda_synthesis": {
+      "required_format": "json",
+      "required_fields": ["proposed_agenda"],
+      "min_topics": 2,
+      "max_topics": 6
+    },
+    
+    "topic_summary": {
+      "min_length": 200,
+      "required_sections": ["overview", "key_points", "conclusions"],
+      "format": "markdown"
+    },
+    
+    "report_structure": {
+      "required_format": "json", 
+      "min_sections": 3,
+      "max_sections": 8,
+      "required_sections": ["summary", "analysis", "recommendations"]
+    },
+    
+    "state_transitions": {
+      "valid_phases": [
+        "initialization",
+        "agenda_setting", 
+        "agenda_approval",
+        "discussion",
+        "conclusion_poll",
+        "minority_considerations",
+        "topic_summary",
+        "continuation_approval",
+        "agenda_modification",
+        "report_generation",
+        "completed"
+      ],
+      "required_data_by_phase": {
+        "agenda_setting": ["agents", "main_topic"],
+        "discussion": ["agenda", "current_topic_index", "speaking_order"],
+        "conclusion_poll": ["voting_rounds"],
+        "topic_summary": ["topic_summaries"]
+      }
+    }
+  }
+}

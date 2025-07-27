@@ -1,0 +1,23 @@
+# Integration Test Configuration for Virtual Agora
+# This configuration uses fake models for testing without external API calls
+
+moderator:
+  provider: google
+  model: fake-moderator-llm
+
+agents:
+  - provider: openai
+    model: fake-agent-optimistic
+    count: 1
+    
+  - provider: anthropic  
+    model: fake-agent-skeptical
+    count: 1
+    
+  - provider: google
+    model: fake-agent-technical
+    count: 1
+    
+  - provider: openai
+    model: fake-agent-balanced
+    count: 1

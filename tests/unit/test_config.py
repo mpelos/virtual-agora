@@ -30,12 +30,6 @@ class TestConfigSchema:
         assert config.provider == Provider.GOOGLE
         assert config.model == "gemini-2.5-pro"
 
-    def test_moderator_config_invalid_model(self):
-        """Test moderator configuration with invalid model."""
-        with pytest.raises(ValidationError) as exc_info:
-            ModeratorConfig(provider="Google", model="invalid-model")
-        assert "Invalid Google model" in str(exc_info.value)
-
     def test_agent_config_valid(self):
         """Test valid agent configuration."""
         config = AgentConfig(provider="OpenAI", model="gpt-4o", count=2)
