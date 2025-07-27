@@ -13,9 +13,21 @@ Each node function:
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from pathlib import Path
 
 from ..state.schema import VirtualAgoraState, VoteRound, Message
 from .moderator import ModeratorAgent
+from ..reporting import (
+    TopicSummaryGenerator,
+    ReportStructureManager,
+    ReportSectionWriter,
+    ReportFileManager,
+    ReportMetadataGenerator,
+    ReportQualityValidator,
+    ReportExporter,
+    ReportTemplateManager,
+    EnhancedSessionLogger,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +35,56 @@ logger = logging.getLogger(__name__)
 class ModeratorNodes:
     """LangGraph node functions for moderator operations."""
 
-    def __init__(self, moderator_agent: ModeratorAgent):
+    def __init__(
+        self,
+        moderator_agent: ModeratorAgent,
+        reports_dir: Optional[Path] = None,
+        summaries_dir: Optional[Path] = None,
+        logs_dir: Optional[Path] = None,
+    ):
         """Initialize with a ModeratorAgent instance.
 
         Args:
             moderator_agent: The ModeratorAgent instance to use
+            reports_dir: Directory for report files (default: ./reports)
+            summaries_dir: Directory for topic summaries (default: ./summaries)
+            logs_dir: Directory for session logs (default: ./logs)
         """
         self.moderator = moderator_agent
+
+        # Initialize reporting components
+        self.reports_dir = reports_dir or Path("./reports")
+        self.summaries_dir = summaries_dir or Path("./summaries")
+        self.logs_dir = logs_dir or Path("./logs")
+
+        # Create directories if they don't exist
+        for dir_path in [self.reports_dir, self.summaries_dir, self.logs_dir]:
+            dir_path.mkdir(parents=True, exist_ok=True)
+
+        # Initialize reporting components
+        self.topic_generator = TopicSummaryGenerator(self.summaries_dir)
+        self.structure_manager = ReportStructureManager()
+        self.section_writer = ReportSectionWriter()
+        self.file_manager = ReportFileManager(self.reports_dir)
+        self.metadata_generator = ReportMetadataGenerator()
+        self.quality_validator = ReportQualityValidator()
+        self.exporter = ReportExporter()
+        self.template_manager = ReportTemplateManager()
+
+        # Session logger will be initialized when session starts
+        self.session_logger: Optional[EnhancedSessionLogger] = None
+
+    def initialize_session_logging(self, session_id: str) -> None:
+        """Initialize session logging for a new session.
+
+        Args:
+            session_id: Unique identifier for the session
+        """
+        if self.session_logger:
+            self.session_logger.close()
+
+        self.session_logger = EnhancedSessionLogger(session_id, self.logs_dir)
+        logger.info(f"Initialized session logging for session {session_id}")
 
     # Story 3.7: Minority Considerations Management
 
@@ -608,20 +663,329 @@ class ModeratorNodes:
                 "error_count": state.get("error_count", 0) + 1,
             }
 
+    # Epic 8: Reporting & Documentation - Integration Methods
+
+    async def generate_topic_summary_with_reporting_node(
+        self, state: VirtualAgoraState
+    ) -> Dict[str, Any]:
+        """Enhanced topic summary generation using Epic 8 reporting functionality.
+
+        Generates topic summaries using both the moderator agent and the
+        new TopicSummaryGenerator with proper file management.
+
+        Args:
+            state: Current VirtualAgoraState
+
+        Returns:
+            Dict with updated topic summaries and summary file paths
+        """
+        try:
+            active_topic = state.get("active_topic")
+            if not active_topic:
+                logger.warning("No active topic for summary generation")
+                return {"warnings": ["No active topic found"]}
+
+            # Get all messages for this topic
+            all_messages = state.get("messages", [])
+            topic_messages = [
+                msg for msg in all_messages if msg.get("topic") == active_topic
+            ]
+
+            if not topic_messages:
+                logger.warning(f"No messages found for topic '{active_topic}'")
+                return {"warnings": [f"No messages found for topic '{active_topic}'"]}
+
+            # Generate summary using moderator agent
+            summary_content = self.moderator.generate_topic_summary(
+                active_topic, all_messages
+            )
+
+            # Use Epic 8 TopicSummaryGenerator to create structured summary file
+            summary_path = self.topic_generator.generate_summary(
+                active_topic, summary_content, state
+            )
+
+            # Log the summary generation
+            if self.session_logger:
+                self.session_logger.log_topic_event(
+                    f"Generated summary for topic: {active_topic}",
+                    active_topic,
+                    metadata={
+                        "summary_file": str(summary_path),
+                        "message_count": len(topic_messages),
+                    },
+                )
+
+            # Update state with both the summary content and file path
+            topic_summaries = state.get("topic_summaries", {})
+            topic_summaries[active_topic] = summary_content
+
+            summary_files = state.get("topic_summary_files", {})
+            summary_files[active_topic] = str(summary_path)
+
+            logger.info(
+                f"Generated structured topic summary for '{active_topic}' at {summary_path}"
+            )
+
+            return {
+                "topic_summaries": topic_summaries,
+                "topic_summary_files": summary_files,
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating topic summary with reporting: {e}")
+            return {
+                "last_error": f"Failed to generate topic summary: {str(e)}",
+                "error_count": state.get("error_count", 0) + 1,
+            }
+
+    async def generate_session_report_node(
+        self, state: VirtualAgoraState
+    ) -> Dict[str, Any]:
+        """Generate a complete session report using Epic 8 reporting functionality.
+
+        Creates a comprehensive multi-file report with metadata, quality validation,
+        and export capabilities.
+
+        Args:
+            state: Current VirtualAgoraState
+
+        Returns:
+            Dict with report generation results and file paths
+        """
+        try:
+            topic_summaries = state.get("topic_summaries", {})
+            session_id = state.get("session_id", "unknown-session")
+            main_topic = state.get("main_topic", "Virtual Agora Discussion")
+
+            if not topic_summaries:
+                logger.warning("No topic summaries available for report generation")
+                return {
+                    "warnings": ["No topic summaries available for report generation"]
+                }
+
+            # Step 1: Define report structure
+            report_structure = self.structure_manager.define_structure(
+                topic_summaries, main_topic=main_topic
+            )
+
+            # Step 2: Set up section writer context
+            self.section_writer.set_context(
+                topic_summaries, report_structure, main_topic=main_topic
+            )
+
+            # Step 3: Create report directory
+            report_dir = self.file_manager.create_report_directory(
+                session_id, main_topic
+            )
+
+            # Step 4: Generate report sections
+            generated_sections = []
+            for i, section_title in enumerate(report_structure, 1):
+                if section_title.startswith("  -"):
+                    continue  # Skip subsections
+
+                section_content = self.section_writer.write_section(section_title)
+                section_path = self.file_manager.save_report_section(
+                    i, section_title, section_content
+                )
+                generated_sections.append(
+                    {"title": section_title, "path": str(section_path)}
+                )
+
+            # Step 5: Generate metadata
+            metadata = self.metadata_generator.generate_metadata(state, topic_summaries)
+            metadata_path = self.file_manager.create_metadata_file(metadata)
+
+            # Step 6: Create supporting files
+            toc_path = self.file_manager.create_table_of_contents(report_structure)
+            manifest_path = self.file_manager.create_report_manifest()
+
+            # Step 7: Validate report quality
+            validation_results = self.quality_validator.validate_report(report_dir)
+
+            # Step 8: Export in multiple formats
+            export_results = {}
+            try:
+                exports = self.exporter.export_report(
+                    report_dir, report_dir.parent / "exports", format="combined"
+                )
+                export_results = {
+                    "markdown": str(exports.get("markdown", "")),
+                    "html": str(exports.get("html", "")),
+                    "archive": str(exports.get("archive", "")),
+                }
+            except Exception as e:
+                logger.warning(f"Export failed: {e}")
+                export_results = {"error": f"Export failed: {str(e)}"}
+
+            # Log the report generation
+            if self.session_logger:
+                self.session_logger.log_system_event(
+                    "Generated complete session report",
+                    metadata={
+                        "report_dir": str(report_dir),
+                        "sections_count": len(generated_sections),
+                        "validation_score": validation_results.get("overall_score", 0),
+                        "exports": list(export_results.keys()),
+                    },
+                )
+
+            logger.info(
+                f"Generated complete session report at {report_dir} with "
+                f"{len(generated_sections)} sections (score: {validation_results.get('overall_score', 0)})"
+            )
+
+            return {
+                "report_directory": str(report_dir),
+                "report_structure": report_structure,
+                "generated_sections": generated_sections,
+                "metadata_file": str(metadata_path),
+                "table_of_contents": str(toc_path),
+                "manifest_file": str(manifest_path),
+                "validation_results": validation_results,
+                "export_results": export_results,
+                "report_generation_status": "completed",
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating session report: {e}")
+            return {
+                "report_generation_status": "failed",
+                "last_error": f"Failed to generate session report: {str(e)}",
+                "error_count": state.get("error_count", 0) + 1,
+            }
+
+    async def log_discussion_event_node(
+        self, state: VirtualAgoraState
+    ) -> Dict[str, Any]:
+        """Log discussion events using Enhanced Session Logger.
+
+        Logs various discussion events with proper categorization and metadata.
+
+        Args:
+            state: Current VirtualAgoraState
+
+        Returns:
+            Dict with logging status
+        """
+        try:
+            if not self.session_logger:
+                logger.warning("Session logger not initialized")
+                return {"warnings": ["Session logger not initialized"]}
+
+            # Log recent messages
+            recent_messages = state.get("recent_messages", [])
+            for msg in recent_messages:
+                self.session_logger.log_agent_event(
+                    f"Message from {msg.get('speaker_id', 'unknown')}",
+                    msg.get("speaker_id", "unknown"),
+                    msg.get("content", ""),
+                    metadata={
+                        "topic": msg.get("topic"),
+                        "timestamp": msg.get("timestamp"),
+                        "round": state.get("current_round"),
+                    },
+                )
+
+            # Log voting events
+            recent_votes = state.get("recent_votes", [])
+            for vote in recent_votes:
+                self.session_logger.log_vote_event(
+                    f"Vote: {vote.get('choice')} for {vote.get('vote_type')}",
+                    vote.get("voter_id", "unknown"),
+                    vote.get("choice", "unknown"),
+                    metadata={
+                        "vote_type": vote.get("vote_type"),
+                        "phase": vote.get("phase"),
+                    },
+                )
+
+            # Log system events
+            if state.get("active_topic"):
+                self.session_logger.log_topic_event(
+                    f"Topic active: {state['active_topic']}",
+                    state["active_topic"],
+                    metadata={"round": state.get("current_round")},
+                )
+
+            return {"logging_status": "completed"}
+
+        except Exception as e:
+            logger.error(f"Error logging discussion events: {e}")
+            return {
+                "logging_status": "failed",
+                "last_error": f"Failed to log discussion events: {str(e)}",
+                "error_count": state.get("error_count", 0) + 1,
+            }
+
+    async def finalize_session_reporting_node(
+        self, state: VirtualAgoraState
+    ) -> Dict[str, Any]:
+        """Finalize all session reporting and close logging.
+
+        Performs final reporting tasks and closes the session logger.
+
+        Args:
+            state: Current VirtualAgoraState
+
+        Returns:
+            Dict with finalization results
+        """
+        try:
+            session_id = state.get("session_id", "unknown-session")
+
+            # Get session analytics if logger is available
+            analytics = {}
+            if self.session_logger:
+                analytics = self.session_logger.get_session_analytics()
+
+                # Generate analytics summary
+                summary = self.metadata_generator.generate_analytics_summary()
+                if summary and summary != "No metadata available":
+                    analytics["summary"] = summary
+
+                # Close the session logger
+                self.session_logger.close()
+                self.session_logger = None
+                logger.info(f"Closed session logging for session {session_id}")
+
+            return {
+                "session_analytics": analytics,
+                "reporting_finalized": True,
+                "session_closed": True,
+            }
+
+        except Exception as e:
+            logger.error(f"Error finalizing session reporting: {e}")
+            return {
+                "reporting_finalized": False,
+                "last_error": f"Failed to finalize session reporting: {str(e)}",
+                "error_count": state.get("error_count", 0) + 1,
+            }
+
 
 # Convenience functions for creating node instances
 
 
-def create_moderator_nodes(moderator_agent: ModeratorAgent) -> ModeratorNodes:
+def create_moderator_nodes(
+    moderator_agent: ModeratorAgent,
+    reports_dir: Optional[Path] = None,
+    summaries_dir: Optional[Path] = None,
+    logs_dir: Optional[Path] = None,
+) -> ModeratorNodes:
     """Create a ModeratorNodes instance with the given moderator agent.
 
     Args:
         moderator_agent: The ModeratorAgent instance
+        reports_dir: Directory for report files (optional)
+        summaries_dir: Directory for topic summaries (optional)
+        logs_dir: Directory for session logs (optional)
 
     Returns:
-        ModeratorNodes instance ready for use in LangGraph
+        ModeratorNodes instance ready for use in LangGraph with Epic 8 reporting
     """
-    return ModeratorNodes(moderator_agent)
+    return ModeratorNodes(moderator_agent, reports_dir, summaries_dir, logs_dir)
 
 
 # Node function aliases for direct LangGraph usage
@@ -697,3 +1061,38 @@ async def facilitate_agenda_revote(
     """Direct node function for agenda re-voting facilitation."""
     nodes = ModeratorNodes(moderator_agent)
     return await nodes.facilitate_agenda_revote_node(state)
+
+
+# Epic 8: Reporting & Documentation Node Functions
+
+
+async def generate_topic_summary_with_reporting(
+    state: VirtualAgoraState, moderator_agent: ModeratorAgent
+) -> Dict[str, Any]:
+    """Direct node function for enhanced topic summary generation."""
+    nodes = ModeratorNodes(moderator_agent)
+    return await nodes.generate_topic_summary_with_reporting_node(state)
+
+
+async def generate_session_report(
+    state: VirtualAgoraState, moderator_agent: ModeratorAgent
+) -> Dict[str, Any]:
+    """Direct node function for complete session report generation."""
+    nodes = ModeratorNodes(moderator_agent)
+    return await nodes.generate_session_report_node(state)
+
+
+async def log_discussion_event(
+    state: VirtualAgoraState, moderator_agent: ModeratorAgent
+) -> Dict[str, Any]:
+    """Direct node function for discussion event logging."""
+    nodes = ModeratorNodes(moderator_agent)
+    return await nodes.log_discussion_event_node(state)
+
+
+async def finalize_session_reporting(
+    state: VirtualAgoraState, moderator_agent: ModeratorAgent
+) -> Dict[str, Any]:
+    """Direct node function for session reporting finalization."""
+    nodes = ModeratorNodes(moderator_agent)
+    return await nodes.finalize_session_reporting_node(state)
