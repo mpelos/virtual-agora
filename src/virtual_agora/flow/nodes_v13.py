@@ -38,8 +38,122 @@ from virtual_agora.ui.human_in_the_loop import (
 )
 from virtual_agora.ui.preferences import get_user_preferences
 from virtual_agora.ui.components import LoadingSpinner
+import time
 
 logger = get_logger(__name__)
+
+
+def retry_agent_call(agent, state, prompt, max_attempts=3, base_delay=1.0):
+    """Retry agent calls with exponential backoff.
+
+    Args:
+        agent: The agent to call
+        state: Current state
+        prompt: Prompt to send to agent
+        max_attempts: Maximum number of retry attempts
+        base_delay: Base delay in seconds between attempts
+
+    Returns:
+        Response dict or None if all attempts fail
+    """
+    for attempt in range(max_attempts):
+        try:
+            response_dict = agent(state, prompt=prompt)
+            return response_dict
+        except Exception as e:
+            logger.warning(
+                f"Agent {agent.agent_id} attempt {attempt + 1}/{max_attempts} failed: {e}"
+            )
+            if attempt < max_attempts - 1:
+                delay = base_delay * (2**attempt)  # Exponential backoff
+                logger.info(f"Retrying agent {agent.agent_id} in {delay:.1f}s...")
+                time.sleep(delay)
+            else:
+                logger.error(
+                    f"All {max_attempts} attempts failed for agent {agent.agent_id}"
+                )
+                return None
+
+
+def extract_message_info(msg):
+    """Extract speaker and content information from message objects safely.
+
+    Handles both LangChain BaseMessage and Virtual Agora dict formats.
+
+    Args:
+        msg: Message object (BaseMessage or dict)
+
+    Returns:
+        tuple: (speaker_id, content, metadata_dict)
+    """
+    if hasattr(msg, "content"):  # LangChain BaseMessage
+        speaker_id = getattr(msg, "additional_kwargs", {}).get("speaker_id", "unknown")
+        content = msg.content
+        metadata = getattr(msg, "additional_kwargs", {})
+    else:  # Virtual Agora dict format
+        speaker_id = msg.get("speaker_id", "unknown")
+        content = msg.get("content", "")
+        metadata = {k: v for k, v in msg.items() if k not in ["speaker_id", "content"]}
+
+    return speaker_id, content, metadata
+
+
+def get_message_attribute(msg, attr_name, default=None):
+    """Get attribute from message in a standardized way.
+
+    Args:
+        msg: Message object (BaseMessage or dict)
+        attr_name: Name of attribute to get
+        default: Default value if attribute not found
+
+    Returns:
+        Attribute value or default
+    """
+    if hasattr(msg, "content"):  # LangChain BaseMessage
+        return getattr(msg, "additional_kwargs", {}).get(attr_name, default)
+    else:  # Virtual Agora dict format
+        return msg.get(attr_name, default)
+
+
+def validate_agent_context(theme, current_topic, topic_summaries, round_messages):
+    """Validate that agent context contains all required elements per Phase 2 spec.
+
+    According to spec, agents must receive:
+    1. The initial user-provided theme
+    2. The specific agenda item being discussed
+    3. A collection of all compacted summaries from previous rounds
+    4. The live, verbatim comments from current round participants
+
+    Args:
+        theme: Discussion theme
+        current_topic: Current agenda item
+        topic_summaries: Previous round summaries
+        round_messages: Current round messages
+
+    Returns:
+        tuple: (is_valid, missing_elements, completeness_score)
+    """
+    missing_elements = []
+
+    # Check required elements
+    if not theme or theme.strip() == "":
+        missing_elements.append("theme")
+
+    if not current_topic or current_topic.strip() == "":
+        missing_elements.append("current_topic")
+
+    # Note: topic_summaries and round_messages can be empty lists (valid for early rounds)
+    # but they should be provided as lists, not None
+    if topic_summaries is None:
+        missing_elements.append("topic_summaries")
+
+    if round_messages is None:
+        missing_elements.append("round_messages")
+
+    is_valid = len(missing_elements) == 0
+    completeness_score = 1.0 - (len(missing_elements) / 4.0)
+
+    return is_valid, missing_elements, completeness_score
 
 
 def create_langchain_message(
@@ -685,6 +799,21 @@ class V13FlowNodes:
             # Find the agent
             agent = next(a for a in self.discussing_agents if a.agent_id == agent_id)
 
+            # Validate context completeness before building context
+            is_valid, missing_elements, completeness_score = validate_agent_context(
+                theme, current_topic, topic_summaries, round_messages
+            )
+
+            if not is_valid:
+                logger.warning(
+                    f"Context validation failed for agent {agent_id}. Missing: {missing_elements}. Completeness: {completeness_score:.2f}"
+                )
+                # Log for debugging but continue with available context
+            else:
+                logger.debug(
+                    f"Context validation passed for agent {agent_id}. Completeness: 100%"
+                )
+
             # Build context for agent
             context = f"""
             Theme: {theme}
@@ -698,39 +827,50 @@ class V13FlowNodes:
                 context += "\n\nPrevious Round Summaries:\n"
                 # Last 3 summaries
                 for j, summary in enumerate(topic_summaries[-3:]):
-                    context += f"Round {summary.get('round_number', j+1)}: {summary.get('summary', '')}\n"
+                    # Fix: Use 'summary_text' field as defined in RoundSummary schema
+                    summary_text = (
+                        summary.get("summary_text", "")
+                        if isinstance(summary, dict)
+                        else getattr(summary, "summary_text", "")
+                    )
+                    round_num = (
+                        summary.get("round_number", j + 1)
+                        if isinstance(summary, dict)
+                        else getattr(summary, "round_number", j + 1)
+                    )
+                    context += f"Round {round_num}: {summary_text}\n"
 
             # Add current round comments
             if round_messages:
                 context += "\n\nCurrent Round Comments:\n"
                 for msg in round_messages:
-                    # Handle both LangChain BaseMessage and Virtual Agora dict formats
-                    if hasattr(msg, "content"):  # LangChain BaseMessage
-                        speaker_id = getattr(msg, "additional_kwargs", {}).get(
-                            "speaker_id", "unknown"
-                        )
-                        content = msg.content
-                    else:  # Virtual Agora dict format
-                        speaker_id = msg.get("speaker_id", "unknown")
-                        content = msg.get("content", "")
-                    context += f"{speaker_id}: {content[:200]}...\n"
+                    # Use standardized message extraction
+                    speaker_id, content, _ = extract_message_info(msg)
+                    # Preserve full context as required by spec - "live, verbatim comments"
+                    context += f"{speaker_id}: {content}\n"
 
             context += f"\n\nPlease provide your thoughts on '{current_topic}'. Keep your response focused and substantive (2-4 sentences)."
 
             try:
-                # Get agent response
-                response_dict = agent(state, prompt=context)
+                # Get agent response with retry logic
+                response_dict = retry_agent_call(agent, state, context)
 
-                # Extract response
-                messages = response_dict.get("messages", [])
-                if messages:
+                if response_dict is None:
+                    # All retry attempts failed
                     response_content = (
-                        messages[-1].content
-                        if hasattr(messages[-1], "content")
-                        else str(messages[-1])
+                        f"[Failed to get response from {agent_id} after retries]"
                     )
                 else:
-                    response_content = f"[No response from {agent_id}]"
+                    # Extract response
+                    messages = response_dict.get("messages", [])
+                    if messages:
+                        response_content = (
+                            messages[-1].content
+                            if hasattr(messages[-1], "content")
+                            else str(messages[-1])
+                        )
+                    else:
+                        response_content = f"[No response from {agent_id}]"
 
                 # Check relevance with moderator
                 relevance_check = moderator.evaluate_message_relevance(
@@ -848,29 +988,16 @@ class V13FlowNodes:
         current_round = state["current_round"]
         current_topic = state["active_topic"]
 
-        # Get messages from current round
+        # Get messages from current round using standardized attribute access
         all_messages = state.get("messages", [])
         round_messages = [
             msg
             for msg in all_messages
             if (
-                getattr(msg, "additional_kwargs", {}).get("round")
-                if hasattr(msg, "content")
-                else msg.get("round")
-            )
-            == current_round
-            and (
-                getattr(msg, "additional_kwargs", {}).get("topic")
-                if hasattr(msg, "content")
-                else msg.get("topic")
-            )
-            == current_topic
-            and (
-                getattr(msg, "additional_kwargs", {}).get("speaker_role")
-                if hasattr(msg, "content")
-                else msg.get("speaker_role")
-            )
-            == "participant"  # Only participant messages
+                get_message_attribute(msg, "round") == current_round
+                and get_message_attribute(msg, "topic") == current_topic
+                and get_message_attribute(msg, "speaker_role") == "participant"
+            )  # Only participant messages
         ]
 
         if not round_messages:
@@ -941,7 +1068,14 @@ class V13FlowNodes:
             Please respond with 'Yes' or 'No' and provide a short justification."""
 
             try:
-                response_dict = agent(state, prompt=prompt)
+                response_dict = retry_agent_call(agent, state, prompt)
+
+                if response_dict is None:
+                    # All retry attempts failed - exclude from vote
+                    logger.warning(
+                        f"Agent {agent.agent_id} excluded from topic conclusion vote due to repeated failures"
+                    )
+                    continue
 
                 # Extract vote
                 messages = response_dict.get("messages", [])
@@ -971,14 +1105,12 @@ class V13FlowNodes:
 
             except Exception as e:
                 logger.error(f"Failed to get vote from {agent.agent_id}: {e}")
-                votes.append(
-                    {
-                        "agent_id": agent.agent_id,
-                        "vote": "no",  # Default to continue
-                        "justification": "Failed to vote",
-                        "error": str(e),
-                    }
+                # Fix: Don't add biased vote - let the agent be excluded from count
+                # This prevents systematic bias toward continuing discussions
+                logger.warning(
+                    f"Agent {agent.agent_id} excluded from vote due to error: {e}"
                 )
+                # Note: Not adding to votes list - this agent simply doesn't participate in this vote
 
         # Tally votes
         yes_votes = sum(1 for v in votes if v["vote"] == "yes")
@@ -1379,7 +1511,14 @@ class V13FlowNodes:
             Please respond with 'End' to conclude or 'Continue' to discuss remaining topics."""
 
             try:
-                response_dict = agent(state, prompt=prompt)
+                response_dict = retry_agent_call(agent, state, prompt)
+
+                if response_dict is None:
+                    # All retry attempts failed - exclude from session vote
+                    logger.warning(
+                        f"Agent {agent.agent_id} excluded from session vote due to repeated failures"
+                    )
+                    continue
 
                 # Extract vote
                 messages = response_dict.get("messages", [])
@@ -1403,7 +1542,12 @@ class V13FlowNodes:
 
             except Exception as e:
                 logger.error(f"Failed to get session vote from {agent.agent_id}: {e}")
-                votes_to_continue += 1  # Default to continue
+                # Fix: Don't add biased vote - exclude failed agents from session vote count
+                # This prevents systematic bias toward continuing sessions
+                logger.warning(
+                    f"Agent {agent.agent_id} excluded from session vote due to error: {e}"
+                )
+                # Note: Not incrementing any counter - this agent simply doesn't participate
 
         # Determine outcome (majority wins)
         agents_vote_end = votes_to_end > votes_to_continue
