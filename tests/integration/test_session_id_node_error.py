@@ -48,7 +48,7 @@ class TestSessionIdNodeError:
             ],
         )
 
-    @patch.dict('os.environ', {'GOOGLE_API_KEY': 'fake-key-for-testing'})
+    @patch.dict("os.environ", {"GOOGLE_API_KEY": "fake-key-for-testing"})
     @patch("virtual_agora.providers.create_provider")
     def test_reproduce_session_id_node_error(self, mock_create_provider, test_config):
         """Test that reproduces the session_id node error."""
@@ -70,7 +70,7 @@ class TestSessionIdNodeError:
         # This should now work correctly with the fix:
         # Pass actual state data instead of empty dict or {'__start__': True}
         # Try both invoke and stream to verify the fix works
-        
+
         # First try invoke
         try:
             result = flow.invoke()
@@ -78,9 +78,12 @@ class TestSessionIdNodeError:
         except Exception as e:
             invoke_error = str(e)
             invoke_success = False
-            if "Expected node session_id to update" in invoke_error and "__start__" in invoke_error:
+            if (
+                "Expected node session_id to update" in invoke_error
+                and "__start__" in invoke_error
+            ):
                 pytest.fail(f"invoke() reproduced the error: {invoke_error}")
-        
+
         # Now try stream (like the real application does)
         try:
             config_dict = {"configurable": {"thread_id": session_id}}
@@ -89,12 +92,17 @@ class TestSessionIdNodeError:
         except Exception as e:
             stream_error = str(e)
             stream_success = False
-            if "Expected node session_id to update" in stream_error and "__start__" in stream_error:
+            if (
+                "Expected node session_id to update" in stream_error
+                and "__start__" in stream_error
+            ):
                 pytest.fail(f"stream() reproduced the error: {stream_error}")
-        
+
         # If neither reproduced the error, we need to investigate further
         if invoke_success and stream_success:
-            pytest.skip("Could not reproduce the session_id node error with current test setup")
+            pytest.skip(
+                "Could not reproduce the session_id node error with current test setup"
+            )
 
     @patch("virtual_agora.providers.create_provider")
     def test_session_creation_and_state_initialization(

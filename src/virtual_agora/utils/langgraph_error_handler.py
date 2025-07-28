@@ -141,7 +141,6 @@ class LangGraphErrorHandler:
             chain = chain.with_fallbacks(
                 fallback_chains,
                 exceptions_to_handle=(Exception,),
-                exception_key="error",
             )
 
         return chain
@@ -163,17 +162,25 @@ class LangGraphErrorHandler:
             Self-correcting chain
         """
 
-        def insert_error_context(inputs: Dict[str, Any]) -> Dict[str, Any]:
+        def insert_error_context(
+            inputs: Union[Dict[str, Any], List, Any],
+        ) -> Union[Dict[str, Any], List, Any]:
             """Insert error context into messages."""
-            error = inputs.pop("error", None)
-            if error and include_error_context:
-                messages = inputs.get("messages", [])
-                error_msg = HumanMessage(
-                    content=f"The previous attempt failed with error: {str(error)}. "
-                    f"Please correct your response and try again."
-                )
-                inputs["messages"] = messages + [error_msg]
-            return inputs
+            # Handle different input types
+            if isinstance(inputs, dict):
+                error = inputs.pop("error", None)
+                if error and include_error_context:
+                    messages = inputs.get("messages", [])
+                    error_msg = HumanMessage(
+                        content=f"The previous attempt failed with error: {str(error)}. "
+                        f"Please correct your response and try again."
+                    )
+                    inputs["messages"] = messages + [error_msg]
+                return inputs
+            else:
+                # For non-dict inputs (like lists), pass through unchanged
+                # This happens when LangGraph passes raw message lists
+                return inputs
 
         # Create fallback chain that includes error context
         # Use RunnableLambda to make the function compatible with pipe operator
@@ -181,10 +188,8 @@ class LangGraphErrorHandler:
 
         fallback_chain = RunnableLambda(insert_error_context) | llm
 
-        # Apply retries with the fallback
-        return llm.with_fallbacks(
-            fallbacks=[fallback_chain] * max_retries, exception_key="error"
-        )
+        # Apply retries with the fallback (without exception_key to avoid dict requirement)
+        return llm.with_fallbacks(fallbacks=[fallback_chain] * max_retries)
 
     @staticmethod
     def with_retry_policy(
@@ -334,7 +339,6 @@ class LangGraphErrorHandler:
         # Apply fallbacks for retry
         return llm_with_tools.with_fallbacks(
             fallbacks=[validation_chain] * (max_attempts - 1),
-            exception_key="error",
             exceptions_to_handle=(ValidationError,),
         )
 

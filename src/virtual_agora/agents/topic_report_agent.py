@@ -100,8 +100,11 @@ Your report MUST follow this structure precisely. Use Markdown for formatting.
         # Include final considerations if any
         considerations_text = ""
         if final_considerations:
-            considerations_text = "\n\n**Dissenting Final Considerations:**\n" + "\n".join(
-                [f"- {consideration}" for consideration in final_considerations]
+            considerations_text = (
+                "\n\n**Dissenting Final Considerations:**\n"
+                + "\n".join(
+                    [f"- {consideration}" for consideration in final_considerations]
+                )
             )
 
         # Generate comprehensive report

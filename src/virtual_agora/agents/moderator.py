@@ -11,8 +11,9 @@ from typing import Optional, List, Dict, Any, Literal, Union
 from datetime import datetime
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.tools import BaseTool
+from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, ValidationError
 
 from virtual_agora.agents.llm_agent import LLMAgent
@@ -456,9 +457,13 @@ class ModeratorAgent(LLMAgent):
             # For v1.3, use generate_response which handles LLM invocation properly
             response_text = self.generate_response(prompt)
 
-            # Parse JSON response
+            # Parse JSON response using LangChain's JsonOutputParser which handles markdown code blocks
             try:
-                result = json.loads(response_text)
+                parser = JsonOutputParser()
+                # Create an AIMessage from the response text for the parser
+                ai_message = AIMessage(content=response_text)
+                result = parser.invoke(ai_message)
+
                 if not isinstance(result, dict) or "proposed_agenda" not in result:
                     raise ValueError("Response missing 'proposed_agenda' key")
                 if not isinstance(result["proposed_agenda"], list):
@@ -470,7 +475,7 @@ class ModeratorAgent(LLMAgent):
 
                 return result
 
-            except json.JSONDecodeError as e:
+            except Exception as e:
                 logger.error(f"Failed to parse JSON response: {e}")
                 logger.error(f"Raw response: {response_text}")
                 # Fallback: return a reasonable default

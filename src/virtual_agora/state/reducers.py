@@ -8,6 +8,24 @@ from typing import Any, List, Dict, Optional
 from datetime import datetime
 
 
+def safe_list_append(current_list: Optional[List[Any]], new_item: Any) -> List[Any]:
+    """Safely append to a list, handling None values.
+
+    This is a robust version of list.append that ensures the list is never None.
+    If current_list is None, it creates a new list with the item.
+
+    Args:
+        current_list: Current list value (may be None)
+        new_item: Item to append
+
+    Returns:
+        List with the new item appended
+    """
+    if current_list is None:
+        return [new_item]
+    return current_list + [new_item]
+
+
 def merge_hitl_state(
     existing: Optional[Dict[str, Any]], updates: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:

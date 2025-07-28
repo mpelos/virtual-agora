@@ -355,7 +355,9 @@ async def run_application(args: argparse.Namespace) -> int:
                     # Stream the graph execution to get real-time updates
                     config_dict = {"configurable": {"thread_id": session_id}}
                     logger.info(f"Starting graph stream with config: {config_dict}")
-                    logger.debug(f"Current state before stream: {flow_state_manager.state.get('session_id')}")
+                    logger.debug(
+                        f"Current state before stream: {flow_state_manager.state.get('session_id')}"
+                    )
 
                     for update in flow.stream(config_dict):
                         logger.debug(f"Flow update: {update}")
@@ -390,9 +392,12 @@ async def run_application(args: argparse.Namespace) -> int:
                     logger.error(f"Discussion flow error: {e}", exc_info=True)
                     logger.error(f"Error type: {type(e).__name__}")
                     logger.error(f"Error args: {e.args}")
-                    if hasattr(e, '__traceback__'):
+                    if hasattr(e, "__traceback__"):
                         import traceback
-                        logger.error(f"Full traceback: {traceback.format_exception(type(e), e, e.__traceback__)}")
+
+                        logger.error(
+                            f"Full traceback: {traceback.format_exception(type(e), e, e.__traceback__)}"
+                        )
                     console.print(f"[red]Discussion flow error: {e}[/red]")
 
                     # Attempt recovery

@@ -458,13 +458,17 @@ class VirtualAgoraV13Flow:
             }
 
         logger.info(f"VirtualAgoraV13Flow.stream called with config: {config}")
-        logger.debug(f"State manager session_id: {self.state_manager.state.get('session_id')}")
+        logger.debug(
+            f"State manager session_id: {self.state_manager.state.get('session_id')}"
+        )
         logger.debug(f"Compiled graph type: {type(self.compiled_graph)}")
 
         # For a fresh start, we need to pass the current state from state manager
         # The checkpointer will handle state persistence across the execution
         input_data = self.state_manager.state
-        logger.debug(f"Input data for stream: session_id={input_data.get('session_id')}, keys_count={len(input_data.keys())}")
+        logger.debug(
+            f"Input data for stream: session_id={input_data.get('session_id')}, keys_count={len(input_data.keys())}"
+        )
 
         try:
             # Stream graph execution with current state

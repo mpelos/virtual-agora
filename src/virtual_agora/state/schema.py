@@ -25,6 +25,7 @@ from .reducers import (
     merge_agent_info,
     update_topic_info,
     merge_specialized_agents,
+    safe_list_append,
 )
 
 
@@ -270,14 +271,14 @@ class VirtualAgoraState(TypedDict):
     # Phase management (0-5)
     # 0: Initialization, 1: Agenda Setting, 2: Discussion, 3: Topic Conclusion, 4: Agenda Re-evaluation, 5: Final Report
     current_phase: int
-    phase_history: Annotated[List[PhaseTransition], list.append]
+    phase_history: Annotated[List[PhaseTransition], safe_list_append]
     phase_start_time: datetime
 
     # Epic 6: Round management and orchestration
     current_round: int
-    round_history: Annotated[List[RoundInfo], list.append]
+    round_history: Annotated[List[RoundInfo], safe_list_append]
     turn_order_history: Annotated[
-        List[List[str]], list.append
+        List[List[str]], safe_list_append
     ]  # History of turn orders
     rounds_per_topic: Annotated[
         Dict[str, int], update_rounds_per_topic
@@ -294,10 +295,11 @@ class VirtualAgoraState(TypedDict):
     active_topic: Optional[str]
     topic_queue: List[str]  # Topics to be discussed
     proposed_topics: List[str]  # All proposed topics (Phase 1)
+    proposed_agenda: NotRequired[List[str]]  # Proposed agenda for HITL approval
     topics_info: Annotated[
         Dict[str, TopicInfo], update_topic_info
     ]  # Detailed info about each topic
-    completed_topics: Annotated[List[str], list.append]
+    completed_topics: Annotated[List[str], safe_list_append]
     agenda: NotRequired[Agenda]  # Added Agenda TypedDict
 
     # Agent management
@@ -313,8 +315,8 @@ class VirtualAgoraState(TypedDict):
 
     # Voting system
     active_vote: Optional[VoteRound]
-    vote_history: Annotated[List[VoteRound], list.append]
-    votes: Annotated[List[Vote], list.append]  # All individual votes
+    vote_history: Annotated[List[VoteRound], safe_list_append]
+    votes: Annotated[List[Vote], safe_list_append]  # All individual votes
 
     # Consensus tracking
     consensus_proposals: Dict[str, List[str]]  # topic -> list of proposals
@@ -350,11 +352,11 @@ class VirtualAgoraState(TypedDict):
     agenda_synthesis_attempts: NotRequired[int]  # Number of synthesis attempts
     agenda_modifications_count: NotRequired[int]  # Count of modifications made
     topic_transition_history: NotRequired[
-        Annotated[List[Dict[str, Any]], list.append]
+        Annotated[List[Dict[str, Any]], safe_list_append]
     ]  # Transition records
     agenda_analytics_data: NotRequired[Dict[str, Any]]  # Analytics summary
     edge_cases_encountered: NotRequired[
-        Annotated[List[Dict[str, Any]], list.append]
+        Annotated[List[Dict[str, Any]], safe_list_append]
     ]  # Edge case records
 
     # Runtime statistics
@@ -365,7 +367,7 @@ class VirtualAgoraState(TypedDict):
     vote_participation_rate: Dict[str, float]  # vote_id -> participation %
 
     # Tool execution tracking
-    tool_calls: Annotated[List[ToolCallInfo], list.append]
+    tool_calls: Annotated[List[ToolCallInfo], safe_list_append]
     active_tool_calls: Dict[str, ToolCallInfo]  # tool_call_id -> info
     tool_metrics: ToolExecutionMetrics
     tools_enabled_agents: List[str]  # List of agent IDs with tools enabled
@@ -389,27 +391,27 @@ class VirtualAgoraState(TypedDict):
         Dict[str, str], merge_specialized_agents
     ]  # agent_type -> agent_id
     agent_invocations: Annotated[
-        List[AgentInvocation], list.append
+        List[AgentInvocation], safe_list_append
     ]  # Track which agents were called when
 
     # Enhanced context flow (v1.3)
     round_summaries: Annotated[
-        List[RoundSummary], list.append
+        List[RoundSummary], safe_list_append
     ]  # Compacted summaries per round
     agent_contexts: Annotated[
-        List[AgentContext], list.append
+        List[AgentContext], safe_list_append
     ]  # Context provided to each agent
 
     # Periodic HITL stops (v1.3)
     periodic_stop_counter: int  # Tracks rounds for 5-round stops
     user_stop_history: Annotated[
-        List[UserStop], list.append
+        List[UserStop], safe_list_append
     ]  # When user was asked to stop
 
     # Error tracking (for recovery)
     last_error: Optional[str]
     error_count: int
-    warnings: Annotated[List[str], list.append]
+    warnings: Annotated[List[str], safe_list_append]
 
 
 class MessagesState(TypedDict):
@@ -430,7 +432,7 @@ class ToolEnabledState(TypedDict):
     """
 
     messages: Annotated[List[BaseMessage], add_messages]
-    tool_calls: Annotated[List[ToolCallInfo], list.append]
+    tool_calls: Annotated[List[ToolCallInfo], safe_list_append]
     active_tool_calls: Dict[str, ToolCallInfo]
     tool_metrics: NotRequired[ToolExecutionMetrics]
     last_tool_error: NotRequired[str]
