@@ -5,7 +5,7 @@
 # A powerful model is recommended for complex analytical tasks.
 moderator:
   provider: google
-  model: gemini-2.5-flash
+  model: gemini-2.5-flash-lite
 
 # The Summarizer compresses round discussions into compacted context.
 # Consistent summarization quality is important for context flow.

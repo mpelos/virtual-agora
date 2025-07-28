@@ -441,36 +441,35 @@ class V13FlowNodes:
     def agenda_approval_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """HITL node for user agenda approval.
 
-        Uses enhanced HITL system for approval with editing capability.
+        Uses LangGraph interrupt mechanism to pause execution and wait for user input.
         """
         logger.info("Node: agenda_approval - Requesting user approval")
 
         proposed_agenda = state.get("proposed_agenda", [])
 
-        # Get user preferences
-        prefs = get_user_preferences()
-
-        # If no proposed agenda, auto-approve an empty one to prevent infinite loops
+        # If no proposed agenda, create a fallback to prevent infinite loops
         if not proposed_agenda:
-            logger.info(
-                "No proposed agenda, auto-approving empty agenda to prevent infinite loops"
-            )
+            logger.warning("No proposed agenda, creating fallback with main topic")
+            fallback_agenda = [state.get("main_topic", "General Discussion")]
             return {
                 "agenda_approved": True,
-                "topic_queue": [state.get("main_topic", "General Discussion")],
-                "final_agenda": [state.get("main_topic", "General Discussion")],
+                "topic_queue": fallback_agenda,
+                "final_agenda": fallback_agenda,
                 "hitl_state": {
                     "awaiting_approval": False,
                     "approval_type": "agenda_approval",
                 },
             }
 
-        # Check for auto-approval conditions
+        # Get user preferences for auto-approval
+        prefs = get_user_preferences()
+
+        # Check for auto-approval conditions (only unanimous consensus)
         if prefs.auto_approve_agenda_on_consensus and state.get(
             "unanimous_agenda_vote", False
         ):
             logger.info("Auto-approving agenda due to unanimous vote")
-            updates = {
+            return {
                 "agenda_approved": True,
                 "topic_queue": proposed_agenda,
                 "final_agenda": proposed_agenda,
@@ -489,35 +488,92 @@ class V13FlowNodes:
                     ],
                 },
             }
-        else:
-            # For testing purposes, auto-approve if we have a valid proposed agenda
-            # In a real scenario, this would await user interaction
-            if proposed_agenda:
-                logger.info("Auto-approving agenda for testing purposes")
-                updates = {
-                    "agenda_approved": True,
-                    "topic_queue": proposed_agenda,
-                    "final_agenda": proposed_agenda,
-                    "hitl_state": {
-                        "awaiting_approval": False,
-                        "approval_type": "agenda_approval",
-                    },
-                }
-            else:
-                # Set up HITL state for user interaction
-                updates = {
-                    "hitl_state": {
-                        "awaiting_approval": True,
-                        "approval_type": "agenda_approval",
-                        "prompt_message": "Please review and approve the proposed discussion agenda.",
-                        "options": ["approve", "edit", "reorder", "reject"],
-                        "approval_history": state.get("hitl_state", {}).get(
-                            "approval_history", []
-                        ),
-                    },
-                }
 
-        return updates
+        # Use LangGraph interrupt to pause execution and wait for user input
+        logger.info("Interrupting for user agenda approval")
+        user_input = interrupt(
+            {
+                "type": "agenda_approval",
+                "proposed_agenda": proposed_agenda,
+                "message": "Please review and approve the proposed discussion agenda.",
+                "options": ["approve", "edit", "reorder", "reject"],
+            }
+        )
+
+        # Process user input (this will be called when execution resumes)
+        if user_input is None:
+            # This should not happen in normal flow, but provides a fallback
+            logger.error("No user input received for agenda approval")
+            return {
+                "agenda_approved": False,
+                "agenda_rejected": True,
+            }
+
+        action = user_input.get("action", "approve")
+        final_agenda = user_input.get("agenda", proposed_agenda)
+
+        if action == "approve":
+            logger.info("User approved the agenda")
+            return {
+                "agenda_approved": True,
+                "topic_queue": final_agenda,
+                "final_agenda": final_agenda,
+                "hitl_state": {
+                    "awaiting_approval": False,
+                    "approval_type": "agenda_approval",
+                    "approval_history": state.get("hitl_state", {}).get(
+                        "approval_history", []
+                    )
+                    + [
+                        {
+                            "type": "agenda_approval",
+                            "result": "approved",
+                            "timestamp": datetime.now(),
+                        }
+                    ],
+                },
+            }
+        elif action == "edit":
+            logger.info("User edited the agenda")
+            return {
+                "agenda_approved": True,
+                "topic_queue": final_agenda,
+                "final_agenda": final_agenda,
+                "hitl_state": {
+                    "awaiting_approval": False,
+                    "approval_type": "agenda_approval",
+                    "approval_history": state.get("hitl_state", {}).get(
+                        "approval_history", []
+                    )
+                    + [
+                        {
+                            "type": "agenda_approval",
+                            "result": "edited",
+                            "timestamp": datetime.now(),
+                        }
+                    ],
+                },
+            }
+        else:  # reject or other
+            logger.info("User rejected the agenda")
+            return {
+                "agenda_approved": False,
+                "agenda_rejected": True,
+                "hitl_state": {
+                    "awaiting_approval": False,
+                    "approval_type": "agenda_approval",
+                    "approval_history": state.get("hitl_state", {}).get(
+                        "approval_history", []
+                    )
+                    + [
+                        {
+                            "type": "agenda_approval",
+                            "result": "rejected",
+                            "timestamp": datetime.now(),
+                        }
+                    ],
+                },
+            }
 
     # ===== Phase 2: Discussion Loop Nodes =====
 
@@ -526,6 +582,10 @@ class V13FlowNodes:
 
         Simple announcement, no complex logic.
         """
+        logger.info("=== FLOW DEBUG: Entering announce_item_node ===")
+        logger.info(f"State keys available: {list(state.keys())}")
+        logger.info(f"topic_queue length: {len(state.get('topic_queue', []))}")
+        logger.info(f"active_topic: {state.get('active_topic')}")
         logger.info("Node: announce_item - Announcing current topic")
 
         # Get current topic
@@ -551,10 +611,17 @@ class V13FlowNodes:
             announcement = f"We will now begin discussing: {current_topic}"
             logger.info(f"Moderator announcement: {announcement}")
 
+            logger.info(
+                f"=== FLOW DEBUG: Exiting announce_item_node with updates: {updates} ==="
+            )
             return updates
 
         # Topic is already active, just confirm it's still current
-        return {"active_topic": state.get("active_topic")}
+        result = {"active_topic": state.get("active_topic")}
+        logger.info(
+            f"=== FLOW DEBUG: Exiting announce_item_node (topic already active) with: {result} ==="
+        )
+        return result
 
     def discussion_round_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """Execute one round of discussion.
@@ -564,12 +631,31 @@ class V13FlowNodes:
         2. Collects agent responses
         3. Enforces relevance
         """
+        logger.info("=== FLOW DEBUG: Entering discussion_round_node ===")
+        logger.info(f"State keys available: {list(state.keys())}")
+        logger.info(f"current_round: {state.get('current_round', 0)}")
+        logger.info(f"active_topic: {state.get('active_topic')}")
+        logger.info(f"speaking_order: {state.get('speaking_order')}")
         logger.info("Node: discussion_round - Executing discussion round")
 
-        current_topic = state["active_topic"]
+        # Ensure we have an active topic
+        current_topic = state.get("active_topic")
+        if not current_topic:
+            logger.error("No active topic set for discussion round")
+            return {
+                "last_error": "No active topic for discussion",
+                "error_count": state.get("error_count", 0) + 1,
+            }
         current_round = state.get("current_round", 0) + 1
-        theme = state["main_topic"]
-        moderator = self.specialized_agents["moderator"]
+        theme = state.get("main_topic", "Unknown Topic")
+        moderator = self.specialized_agents.get("moderator")
+
+        if not moderator:
+            logger.error("No moderator agent available")
+            return {
+                "last_error": "No moderator agent available",
+                "error_count": state.get("error_count", 0) + 1,
+            }
 
         # Get round summaries for context
         round_summaries = state.get("round_summaries", [])
@@ -580,7 +666,13 @@ class V13FlowNodes:
         ]
 
         # Rotate speaking order
-        speaking_order = state["speaking_order"].copy()
+        speaking_order = state.get("speaking_order", [])
+        if not speaking_order:
+            # Initialize speaking order if not set
+            speaking_order = [agent.agent_id for agent in self.discussing_agents]
+            logger.info(f"Initialized speaking order: {speaking_order}")
+        else:
+            speaking_order = speaking_order.copy()
         if current_round > 1:
             # Rotate: [A,B,C] -> [B,C,A]
             speaking_order = speaking_order[1:] + [speaking_order[0]]
@@ -929,38 +1021,75 @@ class V13FlowNodes:
     def periodic_user_stop_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """HITL node for 5-round periodic stops.
 
-        New in v1.3 - gives user periodic control.
-        Uses enhanced HITL system for interaction.
+        New in v1.3 - gives user periodic control every 5 rounds.
+        Uses LangGraph interrupt mechanism to pause execution.
         """
         logger.info("Node: periodic_user_stop - User checkpoint")
 
         current_round = state["current_round"]
         current_topic = state["active_topic"]
 
-        # Set up HITL state for interaction
-        updates = {
-            "hitl_state": {
-                "awaiting_approval": True,
-                "approval_type": "periodic_stop",
-                "prompt_message": (
+        # Use LangGraph interrupt to pause execution and wait for user input
+        logger.info(
+            f"Interrupting for periodic user checkpoint at round {current_round}"
+        )
+        user_input = interrupt(
+            {
+                "type": "periodic_stop",
+                "current_round": current_round,
+                "current_topic": current_topic,
+                "message": (
                     f"You've reached a 5-round checkpoint (Round {current_round}).\n"
                     f"Currently discussing: {current_topic}\n\n"
-                    "Would you like to:\n"
-                    "- Continue the discussion\n"
-                    "- End the current topic\n"
-                    "- Modify discussion parameters\n"
-                    "- Skip to final report"
+                    "What would you like to do?"
                 ),
                 "options": ["continue", "end_topic", "modify", "skip"],
+            }
+        )
+
+        # Process user input (this will be called when execution resumes)
+        if user_input is None:
+            # Fallback to continue discussion
+            logger.warning(
+                "No user input received for periodic stop, continuing discussion"
+            )
+            return {
+                "user_periodic_decision": "continue",
+                "periodic_stop_counter": state.get("periodic_stop_counter", 0) + 1,
+            }
+
+        decision = user_input.get("action", "continue")
+
+        logger.info(f"User periodic decision: {decision}")
+
+        # Store decision for conditional routing
+        updates = {
+            "user_periodic_decision": decision,
+            "periodic_stop_counter": state.get("periodic_stop_counter", 0) + 1,
+            "hitl_state": {
+                "awaiting_approval": False,
+                "approval_type": "periodic_stop",
                 "approval_history": state.get("hitl_state", {}).get(
                     "approval_history", []
-                ),
+                )
+                + [
+                    {
+                        "type": "periodic_stop",
+                        "result": decision,
+                        "round": current_round,
+                        "timestamp": datetime.now(),
+                    }
+                ],
             },
-            "periodic_stop_counter": state.get("periodic_stop_counter", 0) + 1,
         }
 
-        # The actual user interaction will be handled by the application's
-        # handle_hitl_gate method when it detects awaiting_approval = True
+        # Handle different user decisions
+        if decision == "end_topic":
+            updates["user_forced_conclusion"] = True
+        elif decision == "modify":
+            updates["user_requested_modification"] = True
+        elif decision == "skip":
+            updates["user_skip_to_final"] = True
 
         return updates
 
@@ -1262,34 +1391,73 @@ class V13FlowNodes:
     def user_approval_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """HITL: Get user approval to continue with next topic.
 
-        Uses enhanced HITL system for continuation approval.
+        Uses LangGraph interrupt mechanism to get user continuation decision.
         User has final say regardless of agent vote.
         """
         logger.info("Node: user_approval - Getting user continuation approval")
 
-        completed_topic = (
-            state["completed_topics"][-1]
-            if state.get("completed_topics")
-            else "Unknown"
-        )
+        # Handle potentially nested completed_topics structure
+        completed_topics = state.get("completed_topics", [])
+        flattened_completed = []
+        for item in completed_topics:
+            if isinstance(item, list):
+                flattened_completed.extend(item)
+            elif isinstance(item, str):
+                flattened_completed.append(item)
+
+        completed_topic = flattened_completed[-1] if flattened_completed else "Unknown"
         remaining_topics = state.get("topic_queue", [])
         agents_vote_end = state.get("agents_vote_end_session", False)
 
-        # Set up HITL state for interaction
-        updates = {
-            "hitl_state": {
-                "awaiting_approval": True,
-                "approval_type": "topic_continuation",
-                "prompt_message": (
+        # Use LangGraph interrupt to pause execution and wait for user input
+        logger.info("Interrupting for user continuation approval")
+        user_input = interrupt(
+            {
+                "type": "topic_continuation",
+                "completed_topic": completed_topic,
+                "remaining_topics": remaining_topics,
+                "agent_recommendation": (
+                    "end_session" if agents_vote_end else "continue"
+                ),
+                "message": (
                     f"Topic '{completed_topic}' has been concluded.\n"
                     f"Remaining topics: {len(remaining_topics)}\n"
                     f"Agent recommendation: {'End session' if agents_vote_end else 'Continue'}\n\n"
                     "What would you like to do?"
                 ),
                 "options": ["continue", "end_session", "modify_agenda"],
+            }
+        )
+
+        # Process user input (this will be called when execution resumes)
+        if user_input is None:
+            # Fallback: continue if there are remaining topics, otherwise end
+            logger.warning("No user input received for continuation approval")
+            decision = "continue" if remaining_topics else "end_session"
+        else:
+            decision = user_input.get("action", "continue")
+
+        logger.info(f"User continuation decision: {decision}")
+
+        # Process user decision
+        updates = {
+            "user_approves_continuation": decision == "continue",
+            "user_requests_end": decision == "end_session",
+            "user_requested_modification": decision == "modify_agenda",
+            "hitl_state": {
+                "awaiting_approval": False,
+                "approval_type": "topic_continuation",
                 "approval_history": state.get("hitl_state", {}).get(
                     "approval_history", []
-                ),
+                )
+                + [
+                    {
+                        "type": "topic_continuation",
+                        "result": decision,
+                        "completed_topic": completed_topic,
+                        "timestamp": datetime.now(),
+                    }
+                ],
             },
         }
 

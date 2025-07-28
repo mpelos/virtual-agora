@@ -41,13 +41,20 @@ class V13FlowConditions:
         Returns:
             Next node: "discussion_round" if approved, "agenda_setting" if rejected
         """
+        logger.info("=== FLOW DEBUG: Evaluating should_start_discussion ===")
+        logger.info(f"State keys: {list(state.keys())}")
         agenda_approved = state.get("agenda_approved", False)
+        logger.info(f"agenda_approved value: {agenda_approved}")
 
         if agenda_approved:
             logger.info("Agenda approved, starting discussion")
+            logger.info("=== FLOW DEBUG: Routing to 'discussion' -> announce_item ===")
             return "discussion"
         else:
             logger.info("Agenda rejected, returning to agenda setting")
+            logger.info(
+                "=== FLOW DEBUG: Routing to 'agenda_setting' -> agenda_proposal ==="
+            )
             return "agenda_setting"
 
     # ===== Phase 2 Conditions =====
@@ -108,6 +115,7 @@ class V13FlowConditions:
         Enhanced in v1.3 to handle:
         - Standard agent majority vote
         - User forced conclusion from periodic stops
+        - User periodic decisions
 
         Args:
             state: Current state
@@ -115,7 +123,16 @@ class V13FlowConditions:
         Returns:
             Next node based on votes and overrides
         """
-        # Check user override first
+        # Check user periodic decision first
+        user_periodic_decision = state.get("user_periodic_decision")
+        if user_periodic_decision == "end_topic":
+            logger.info("User forced topic conclusion via periodic stop")
+            return "conclude_topic"
+        elif user_periodic_decision == "skip":
+            logger.info("User requested skip to final report")
+            return "conclude_topic"
+
+        # Check user override from other sources
         if state.get("user_forced_conclusion", False):
             logger.info("User forced topic conclusion")
             return "conclude_topic"
@@ -181,12 +198,22 @@ class V13FlowConditions:
         Returns:
             Next node based on combined decisions
         """
+        # Check user request to end (new structure)
+        if state.get("user_requests_end", False):
+            logger.info("User requested to end session, moving to final report")
+            return "end_session"
+
+        # Check user skip to final report (from periodic stops)
+        if state.get("user_skip_to_final", False):
+            logger.info("User requested skip to final report")
+            return "end_session"
+
         # Agent vote to end session
         if state.get("agents_vote_end_session", False):
             logger.info("Agents voted to end, moving to final report")
             return "end_session"
 
-        # User decision
+        # User decision (legacy structure for compatibility)
         if not state.get("user_approves_continuation", True):
             logger.info("User declined continuation, moving to final report")
             return "end_session"

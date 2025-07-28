@@ -263,18 +263,22 @@ class VirtualAgoraV13Flow:
             },
         )
 
-        # Conditional: Check for periodic stop (round % 5 == 0)
-        # If it's a periodic stop round, go to user stop
-        # Otherwise, evaluate the votes directly
+        # Conditional: Check for periodic stop (round % 5 == 0) first
         graph.add_conditional_edges(
             "end_topic_poll",
-            lambda state: (
-                "periodic_stop"
-                if self.conditions.check_periodic_stop(state) == "periodic_stop"
-                else self.conditions.evaluate_conclusion_vote(state)
-            ),
+            self.conditions.check_periodic_stop,
             {
                 "periodic_stop": "periodic_user_stop",
+                "check_votes": "vote_evaluation",
+            },
+        )
+
+        # Add a intermediate node for vote evaluation to simplify routing
+        graph.add_node("vote_evaluation", lambda state: {})
+        graph.add_conditional_edges(
+            "vote_evaluation",
+            self.conditions.evaluate_conclusion_vote,
+            {
                 "continue_discussion": "discussion_round",
                 "conclude_topic": "final_considerations",
             },
@@ -347,8 +351,29 @@ class VirtualAgoraV13Flow:
         if self.graph is None:
             self.build_graph()
 
+        # Debug: Log graph structure before compilation
+        logger.info("=== FLOW DEBUG: Graph structure before compilation ===")
+        logger.info(f"Graph nodes: {list(self.graph.nodes.keys())}")
+        logger.info(f"Graph edges: {len(self.graph.edges)} total edges")
+
+        # Check if announce_item node exists
+        if "announce_item" in self.graph.nodes:
+            logger.info("✅ announce_item node found in graph")
+        else:
+            logger.error("❌ announce_item node NOT found in graph")
+
+        # Check if agenda_approval node exists
+        if "agenda_approval" in self.graph.nodes:
+            logger.info("✅ agenda_approval node found in graph")
+        else:
+            logger.error("❌ agenda_approval node NOT found in graph")
+
         self.compiled_graph = self.graph.compile(checkpointer=self.checkpointer)
         logger.info("V1.3 Graph compiled with checkpointing enabled")
+
+        # Debug: Log compiled graph info
+        logger.info("=== FLOW DEBUG: Graph compiled successfully ===")
+        logger.info(f"Compiled graph type: {type(self.compiled_graph)}")
 
         return self.compiled_graph
 
@@ -473,10 +498,26 @@ class VirtualAgoraV13Flow:
         try:
             # Stream graph execution with current state
             logger.info("Starting compiled_graph.stream execution")
+            logger.info(
+                f"=== FLOW DEBUG: Stream input data session_id: {input_data.get('session_id')}"
+            )
+            logger.info(f"=== FLOW DEBUG: Stream config: {config}")
+
+            update_count = 0
             for update in self.compiled_graph.stream(input_data, config):
-                logger.debug(f"Received stream update: {update}")
+                update_count += 1
+                logger.info(f"=== FLOW DEBUG: Stream update #{update_count}: {update}")
+
+                # Log specific node executions
+                if isinstance(update, dict):
+                    for key in update.keys():
+                        if key not in ["__interrupt__", "__end__"]:
+                            logger.info(f"=== FLOW DEBUG: Stream executing node: {key}")
+
                 yield update
-            logger.info("Stream execution completed successfully")
+            logger.info(
+                f"Stream execution completed successfully after {update_count} updates"
+            )
         except Exception as e:
             logger.error(f"Error in stream execution: {e}", exc_info=True)
             logger.error(f"Error occurred with input_data: {input_data}")
