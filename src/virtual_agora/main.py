@@ -408,10 +408,11 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--log-level",
+        "--debug",
+        nargs="?",
+        const="DEBUG",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Set logging level (default: INFO)",
+        help="Enable debug mode with optional log level (default: DEBUG)",
     )
 
     parser.add_argument(
@@ -466,7 +467,8 @@ async def run_application(args: argparse.Namespace) -> int:
 
     try:
         # Set up logging
-        setup_logging(level=args.log_level)
+        log_level = args.debug if args.debug else "WARNING"
+        setup_logging(level=log_level)
         logger.info(f"Starting Virtual Agora v{__version__}")
 
         # Track startup in error handler
@@ -528,7 +530,8 @@ async def run_application(args: argparse.Namespace) -> int:
                 env_config.validate_required_keys(required_providers)
 
                 # Use environment config for application settings
-                if env_config.log_level != args.log_level:
+                current_log_level = args.debug if args.debug else "WARNING"
+                if env_config.log_level != current_log_level:
                     logger.info(
                         f"Using log level from environment: {env_config.log_level}"
                     )
@@ -670,7 +673,7 @@ async def run_application(args: argparse.Namespace) -> int:
                     if isinstance(update, dict):
                         for node_name, node_data in update.items():
                             if node_name not in ["__interrupt__", "__end__"]:
-                                logger.info(
+                                logger.debug(
                                     f"=== FLOW DEBUG: Node '{node_name}' executed ==="
                                 )
                                 if isinstance(node_data, dict) and node_data:
@@ -699,7 +702,7 @@ async def run_application(args: argparse.Namespace) -> int:
 
                             # Update the graph with user input using the proper LangGraph API
                             try:
-                                logger.info(
+                                logger.debug(
                                     "=== FLOW DEBUG: Starting state update after interrupt ==="
                                 )
 
@@ -710,7 +713,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                     and len(interrupt_data) > 0
                                 ):
                                     interrupt_obj = interrupt_data[0]
-                                    logger.info(
+                                    logger.debug(
                                         f"=== FLOW DEBUG: Interrupt object namespace: {getattr(interrupt_obj, 'ns', 'No ns attribute')}"
                                     )
 
@@ -724,10 +727,10 @@ async def run_application(args: argparse.Namespace) -> int:
                                             if ":" in interrupt_obj.ns[0]
                                             else interrupt_obj.ns[0]
                                         )
-                                        logger.info(
+                                        logger.debug(
                                             f"=== FLOW DEBUG: Updating state for node: {node_name}"
                                         )
-                                        logger.info(
+                                        logger.debug(
                                             f"=== FLOW DEBUG: User response: {user_response}"
                                         )
 
@@ -736,33 +739,33 @@ async def run_application(args: argparse.Namespace) -> int:
                                             user_response,
                                             as_node=node_name,
                                         )
-                                        logger.info(
+                                        logger.debug(
                                             f"=== FLOW DEBUG: State updated for node {node_name} ==="
                                         )
                                     else:
                                         # Fallback: update state without specific node
-                                        logger.info(
+                                        logger.debug(
                                             "=== FLOW DEBUG: Updating state without specific node ==="
                                         )
                                         flow.compiled_graph.update_state(
                                             config_dict, user_response
                                         )
-                                        logger.info(
+                                        logger.debug(
                                             "=== FLOW DEBUG: State updated without node specification ==="
                                         )
                                 else:
                                     # Fallback: update state without specific node
-                                    logger.info(
+                                    logger.debug(
                                         "=== FLOW DEBUG: Updating state without specific node (fallback) ==="
                                     )
                                     flow.compiled_graph.update_state(
                                         config_dict, user_response
                                     )
-                                    logger.info(
+                                    logger.debug(
                                         "=== FLOW DEBUG: State updated (fallback) ==="
                                     )
 
-                                logger.info(
+                                logger.debug(
                                     "=== FLOW DEBUG: State update complete, execution should continue ==="
                                 )
                                 logger.info(
@@ -771,7 +774,7 @@ async def run_application(args: argparse.Namespace) -> int:
 
                                 # After update_state(), we need to start a new stream from current state
                                 # The original stream is exhausted, so we create a fresh stream
-                                logger.info(
+                                logger.debug(
                                     "=== FLOW DEBUG: Starting fresh stream after state update ==="
                                 )
 
@@ -796,7 +799,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                                     "__interrupt__",
                                                     "__end__",
                                                 ]:
-                                                    logger.info(
+                                                    logger.debug(
                                                         f"=== FLOW DEBUG: Continuation node '{node_name}' executed ==="
                                                     )
                                                     if (
@@ -809,7 +812,7 @@ async def run_application(args: argparse.Namespace) -> int:
 
                                         # Handle potential nested interrupts
                                         if "__interrupt__" in continuation_update:
-                                            logger.info(
+                                            logger.debug(
                                                 "=== FLOW DEBUG: Nested interrupt detected - handling recursively ==="
                                             )
                                             nested_interrupt_data = continuation_update[
@@ -833,7 +836,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                             )
 
                                             if nested_user_response:
-                                                logger.info(
+                                                logger.debug(
                                                     f"=== FLOW DEBUG: Nested interrupt processed, updating state ==="
                                                 )
 
@@ -884,7 +887,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                                             nested_user_response,
                                                         )
 
-                                                    logger.info(
+                                                    logger.debug(
                                                         "=== FLOW DEBUG: Nested interrupt state updated successfully ==="
                                                     )
 
@@ -895,7 +898,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                                     spinner.__enter__()
 
                                                     # Start fresh stream recursively to continue to discussion phases
-                                                    logger.info(
+                                                    logger.debug(
                                                         "=== FLOW DEBUG: Starting recursive stream after nested interrupt ==="
                                                     )
                                                     try:
@@ -923,7 +926,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                                                             "__end__",
                                                                         ]
                                                                     ):
-                                                                        logger.info(
+                                                                        logger.debug(
                                                                             f"=== FLOW DEBUG: Final continuation node '{node_name}' executed ==="
                                                                         )
                                                                         if (
@@ -942,7 +945,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                                                 "__interrupt__"
                                                                 in final_continuation_update
                                                             ):
-                                                                logger.info(
+                                                                logger.debug(
                                                                     "=== FLOW DEBUG: Additional nested interrupt detected - handling recursively ==="
                                                                 )
                                                                 additional_nested_interrupt_data = final_continuation_update[
@@ -966,7 +969,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                                                 )
 
                                                                 if additional_nested_user_response:
-                                                                    logger.info(
+                                                                    logger.debug(
                                                                         f"=== FLOW DEBUG: Additional nested interrupt processed ==="
                                                                     )
 
@@ -1024,7 +1027,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                                                                 additional_nested_user_response,
                                                                             )
 
-                                                                        logger.info(
+                                                                        logger.debug(
                                                                             "=== FLOW DEBUG: Additional nested interrupt state updated successfully ==="
                                                                         )
 
@@ -1042,7 +1045,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                                                             exc_info=True,
                                                                         )
                                                                 else:
-                                                                    logger.warning(
+                                                                    logger.debug(
                                                                         "=== FLOW DEBUG: Additional nested interrupt returned no response ==="
                                                                     )
                                                                     # Restart spinner anyway
@@ -1070,14 +1073,14 @@ async def run_application(args: argparse.Namespace) -> int:
                                                                     save_to_disk=True,
                                                                 )
 
-                                                        logger.info(
+                                                        logger.debug(
                                                             "=== FLOW DEBUG: Final continuation stream completed successfully ==="
                                                         )
 
                                                     except (
                                                         Exception
                                                     ) as final_continuation_error:
-                                                        logger.error(
+                                                        logger.debug(
                                                             f"=== FLOW DEBUG: Error in final continuation stream: {final_continuation_error}",
                                                             exc_info=True,
                                                         )
@@ -1092,7 +1095,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                                         exc_info=True,
                                                     )
                                             else:
-                                                logger.warning(
+                                                logger.debug(
                                                     "=== FLOW DEBUG: Nested interrupt returned no response ==="
                                                 )
                                                 # Restart spinner anyway
@@ -1115,12 +1118,12 @@ async def run_application(args: argparse.Namespace) -> int:
                                                 save_to_disk=True,
                                             )
 
-                                    logger.info(
+                                    logger.debug(
                                         "=== FLOW DEBUG: Continuation stream completed successfully ==="
                                     )
 
                                 except Exception as continuation_error:
-                                    logger.error(
+                                    logger.debug(
                                         f"=== FLOW DEBUG: Error in continuation stream: {continuation_error}",
                                         exc_info=True,
                                     )
@@ -1138,13 +1141,13 @@ async def run_application(args: argparse.Namespace) -> int:
 
                         # After handling interrupt and continuation, break out of the original stream
                         # since we've completed the execution in the continuation stream
-                        logger.info(
+                        logger.debug(
                             "=== FLOW DEBUG: Breaking from original stream after continuation ==="
                         )
                         break
 
                     # Update UI with each step (for non-interrupt updates)
-                    logger.info(
+                    logger.debug(
                         f"=== FLOW DEBUG: Processing non-interrupt update: {list(update.keys()) if isinstance(update, dict) else type(update)}"
                     )
                     current_state = flow_state_manager.state
@@ -1160,7 +1163,7 @@ async def run_application(args: argparse.Namespace) -> int:
 
                 # Stop spinner when execution completes
                 spinner.__exit__(None, None, None)
-                logger.info("=== FLOW DEBUG: Main stream loop completed naturally ===")
+                logger.debug("=== FLOW DEBUG: Main stream loop completed naturally ===")
                 console.print("[green]Discussion completed successfully![/green]")
 
                 # Get final state and show summary

@@ -11,15 +11,7 @@ from dataclasses import dataclass
 from rich.style import Style
 from rich.color import Color
 
-
-class ProviderType(Enum):
-    """LLM Provider types for color assignment."""
-
-    OPENAI = "openai"
-    GOOGLE = "google"
-    ANTHROPIC = "anthropic"
-    GROK = "grok"
-    MODERATOR = "moderator"
+from virtual_agora.providers.config import ProviderType
 
 
 class MessageType(Enum):

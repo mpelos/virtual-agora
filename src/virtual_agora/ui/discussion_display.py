@@ -21,7 +21,8 @@ from rich.align import Align
 from rich import box
 
 from virtual_agora.ui.console import get_console
-from virtual_agora.ui.theme import get_current_theme, ProviderType, MessageType
+from virtual_agora.ui.theme import get_current_theme, MessageType
+from virtual_agora.providers.config import ProviderType
 from virtual_agora.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -146,6 +147,51 @@ class DiscussionFormatter:
             f"[bold cyan]{header_text}[/bold cyan]", style="cyan", characters="═"
         )
 
+    def format_agent_response(
+        self,
+        agent_id: str,
+        provider: ProviderType,
+        content: str,
+        round_number: int,
+        topic: str,
+        timestamp: Optional[datetime] = None,
+    ) -> Panel:
+        """Format an agent response for assembly-style display.
+        
+        This creates a panel similar to the 'Your Topic' panel but for each agent response,
+        giving users the feeling of watching an assembly or deliberation in real-time.
+        """
+        if timestamp is None:
+            timestamp = datetime.now()
+            
+        # Get agent colors from theme
+        colors = self.theme.assign_agent_color(agent_id, provider)
+        
+        # Build the title with agent identification and provider
+        provider_name = provider.value.title() if provider != ProviderType.MODERATOR else "Moderator"
+        title_parts = [
+            f"[{colors['primary']}]{agent_id}[/{colors['primary']}]",
+            f"[dim]({provider_name})[/dim]",
+            f"[{colors['accent']}]Round {round_number}[/{colors['accent']}]"
+        ]
+        
+        title = " • ".join(title_parts)
+        
+        # Clean and format the content
+        formatted_content = content.strip()
+        
+        # Create the panel with assembly-style formatting
+        panel = Panel(
+            f"[white]{formatted_content}[/white]",
+            title=title,
+            title_align="left",
+            border_style=colors["border"],
+            padding=(1, 2),
+            width=min(self.console.get_width() - 4, 80),  # Consistent width with topic panel
+        )
+        
+        return panel
+    
     def format_round_summary(self, round_data: DiscussionRound) -> Panel:
         """Format a round summary."""
         content_lines = []
@@ -544,3 +590,35 @@ def show_agenda(
 ) -> None:
     """Show the discussion agenda."""
     get_discussion_display().display_agenda(agenda, current_topic, completed_topics)
+
+
+def display_agent_response(
+    agent_id: str,
+    provider: ProviderType,
+    content: str,
+    round_number: int,
+    topic: str,
+    timestamp: Optional[datetime] = None,
+) -> None:
+    """Display an agent response in assembly-style panel format.
+    
+    This creates a visual panel for each agent response, similar to the 'Your Topic' panel,
+    giving users the experience of watching an assembly or deliberation.
+    """
+    console = get_console().rich_console
+    formatter = DiscussionFormatter()
+    
+    # Format the agent response as an assembly-style panel
+    panel = formatter.format_agent_response(
+        agent_id=agent_id,
+        provider=provider,
+        content=content,
+        round_number=round_number,
+        topic=topic,
+        timestamp=timestamp,
+    )
+    
+    # Display the panel with some spacing
+    console.print()
+    console.print(panel)
+    console.print()

@@ -18,19 +18,19 @@ _loggers: dict[str, logging.Logger] = {}
 
 
 def setup_logging(
-    level: str = "INFO",
+    level: str = "WARNING",
     log_dir: Optional[Path] = None,
     session_id: Optional[str] = None,
 ) -> None:
     """Set up logging configuration for the application.
 
     Args:
-        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Default: WARNING.
         log_dir: Directory for log files. Defaults to 'logs' in project root.
         session_id: Unique session identifier for log file naming.
     """
     # Convert string level to logging constant
-    log_level = getattr(logging, level.upper(), logging.INFO)
+    log_level = getattr(logging, level.upper(), logging.WARNING)
 
     # Set up log directory
     if log_dir is None:

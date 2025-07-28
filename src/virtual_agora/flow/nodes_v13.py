@@ -38,18 +38,45 @@ from virtual_agora.ui.human_in_the_loop import (
 )
 from virtual_agora.ui.preferences import get_user_preferences
 from virtual_agora.ui.components import LoadingSpinner
+from virtual_agora.ui.discussion_display import display_agent_response
+from virtual_agora.providers.config import ProviderType
 import time
 
 logger = get_logger(__name__)
 
 
-def retry_agent_call(agent, state, prompt, max_attempts=3, base_delay=1.0):
+def get_provider_type_from_agent_id(agent_id: str) -> ProviderType:
+    """Extract provider type from agent ID.
+    
+    Agent IDs typically follow patterns like:
+    - gpt-4o-1, gpt-4o-2 -> OpenAI
+    - claude-3-opus-1 -> Anthropic  
+    - gemini-2.5-pro-1 -> Google
+    - grok-beta-1 -> Grok
+    """
+    agent_id_lower = agent_id.lower()
+    
+    if "gpt" in agent_id_lower or "openai" in agent_id_lower:
+        return ProviderType.OPENAI
+    elif "claude" in agent_id_lower or "anthropic" in agent_id_lower:
+        return ProviderType.ANTHROPIC
+    elif "gemini" in agent_id_lower or "google" in agent_id_lower:
+        return ProviderType.GOOGLE
+    elif "grok" in agent_id_lower:
+        return ProviderType.GROK
+    else:
+        # Default fallback
+        return ProviderType.OPENAI
+
+
+def retry_agent_call(agent, state, prompt, context_messages=None, max_attempts=3, base_delay=1.0):
     """Retry agent calls with exponential backoff.
 
     Args:
         agent: The agent to call
         state: Current state
         prompt: Prompt to send to agent
+        context_messages: List of BaseMessage objects for conversation context
         max_attempts: Maximum number of retry attempts
         base_delay: Base delay in seconds between attempts
 
@@ -58,7 +85,7 @@ def retry_agent_call(agent, state, prompt, max_attempts=3, base_delay=1.0):
     """
     for attempt in range(max_attempts):
         try:
-            response_dict = agent(state, prompt=prompt)
+            response_dict = agent(state, prompt=prompt, context_messages=context_messages)
             return response_dict
         except Exception as e:
             logger.warning(
@@ -840,25 +867,58 @@ class V13FlowNodes:
                     )
                     context += f"Round {round_num}: {summary_text}\n"
 
-            # Add current round comments
+            # Build context messages from current round for natural conversation flow
+            context_messages = []
             if round_messages:
-                context += "\n\nCurrent Round Comments:\n"
                 for msg in round_messages:
                     # Use standardized message extraction
                     speaker_id, content, _ = extract_message_info(msg)
-                    # Preserve full context as required by spec - "live, verbatim comments"
-                    context += f"{speaker_id}: {content}\n"
+                    # Convert colleague messages to HumanMessage format for assembly-style conversation
+                    colleague_message = HumanMessage(
+                        content=f"[{speaker_id}]: {content}",
+                        name=speaker_id
+                    )
+                    context_messages.append(colleague_message)
 
-            context += f"\n\nPlease provide your thoughts on '{current_topic}'. Keep your response focused and substantive (2-4 sentences)."
+            # Enhanced assembly-style prompt emphasizing democratic deliberation
+            assembly_context = f"""
+You are participating in a democratic assembly discussing the topic: '{current_topic}'
+
+Assembly Context:
+- Theme: {theme}
+- Round: {current_round}
+- Your speaking position: {i + 1}/{len(speaking_order)}
+
+Other assembly members have shared their perspectives before you. Listen to their viewpoints, then provide your own contribution to this democratic deliberation.
+
+Instructions:
+- Be strong in your convictions and opinions, even if others disagree
+- Your goal is collaborative discussion toward shared understanding
+- Build upon, challenge, or expand on previous speakers' points
+- Maintain respectful but firm discourse as befits a democratic assembly
+
+Please provide your thoughts on '{current_topic}'. Provide a substantive contribution (1-2 paragraphs, approximately 4-8 sentences) that engages with previous speakers and advances our democratic deliberation."""
+
+            context += assembly_context
 
             try:
-                # Get agent response with retry logic
-                response_dict = retry_agent_call(agent, state, context)
+                # Get agent response with retry logic, passing colleague messages as conversation context
+                response_dict = retry_agent_call(agent, state, context, context_messages)
 
                 if response_dict is None:
                     # All retry attempts failed
                     response_content = (
                         f"[Failed to get response from {agent_id} after retries]"
+                    )
+                    # Still display the failure for transparency
+                    provider_type = get_provider_type_from_agent_id(agent_id)
+                    display_agent_response(
+                        agent_id=agent_id,
+                        provider=provider_type,
+                        content=f"⚠️ Connection failed after multiple attempts",
+                        round_number=current_round,
+                        topic=current_topic,
+                        timestamp=datetime.now(),
                     )
                 else:
                     # Extract response
@@ -871,6 +931,16 @@ class V13FlowNodes:
                         )
                     else:
                         response_content = f"[No response from {agent_id}]"
+                        # Display no response case
+                        provider_type = get_provider_type_from_agent_id(agent_id)
+                        display_agent_response(
+                            agent_id=agent_id,
+                            provider=provider_type,
+                            content=f"⚠️ No response received",
+                            round_number=current_round,
+                            topic=current_topic,
+                            timestamp=datetime.now(),
+                        )
 
                 # Check relevance with moderator
                 relevance_check = moderator.evaluate_message_relevance(
@@ -878,6 +948,17 @@ class V13FlowNodes:
                 )
 
                 if relevance_check["is_relevant"]:
+                    # Display the agent response in assembly-style panel
+                    provider_type = get_provider_type_from_agent_id(agent_id)
+                    display_agent_response(
+                        agent_id=agent_id,
+                        provider=provider_type,
+                        content=response_content,
+                        round_number=current_round,
+                        topic=current_topic,
+                        timestamp=datetime.now(),
+                    )
+                    
                     # Create LangChain-compatible message
                     message = create_langchain_message(
                         speaker_role="participant",
@@ -894,6 +975,17 @@ class V13FlowNodes:
                     round_messages.append(message)
                     logger.info(f"Agent {agent_id} provided relevant response")
                 else:
+                    # Display the irrelevant response with a warning indicator
+                    provider_type = get_provider_type_from_agent_id(agent_id)
+                    display_agent_response(
+                        agent_id=agent_id,
+                        provider=provider_type,
+                        content=f"⚠️ Off-topic response: {response_content[:200]}{'...' if len(response_content) > 200 else ''}",
+                        round_number=current_round,
+                        topic=current_topic,
+                        timestamp=datetime.now(),
+                    )
+                    
                     # Handle irrelevant response
                     warning = moderator.issue_relevance_warning(agent_id)
                     logger.warning(f"Agent {agent_id} provided irrelevant response")
@@ -915,6 +1007,18 @@ class V13FlowNodes:
 
             except Exception as e:
                 logger.error(f"Error getting response from {agent_id}: {e}")
+                
+                # Display the error for transparency
+                provider_type = get_provider_type_from_agent_id(agent_id)
+                display_agent_response(
+                    agent_id=agent_id,
+                    provider=provider_type,
+                    content=f"❌ Error occurred: {str(e)[:150]}{'...' if len(str(e)) > 150 else ''}",
+                    round_number=current_round,
+                    topic=current_topic,
+                    timestamp=datetime.now(),
+                )
+                
                 error_message = create_langchain_message(
                     speaker_role="participant",
                     content=f"[Failed to respond: {str(e)}]",

@@ -17,6 +17,7 @@ class ProviderType(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GROK = "grok"
+    MODERATOR = "moderator"
 
 
 class ProviderConfig(BaseModel):

@@ -267,10 +267,25 @@ class LLMAgent:
             )
         else:
             return (
-                "You are a thoughtful participant in a structured discussion. "
-                "You will be given a topic and context from previous turns. "
-                "Your goal is to provide a well-reasoned, concise comment that builds upon the conversation. "
-                "Stay strictly on the topic provided by the Moderator. "
+                "You are a thoughtful participant in a democratic assembly engaged in structured deliberation. "
+                "This is not just a discussion - it's a formal democratic process where your voice matters. "
+                
+                "ASSEMBLY CONTEXT: "
+                "You are one of several assembly members deliberating on important topics through democratic discourse. "
+                "Other members will share their perspectives, and you should listen carefully to their viewpoints. "
+                "This is a collaborative process aimed at reaching shared understanding through respectful debate. "
+                
+                "YOUR APPROACH: "
+                "- Be strong in your convictions and opinions, even when others disagree with you "
+                "- Your goal is collaborative discussion that leads to deeper understanding for all participants "
+                "- Build upon, challenge, or expand on points made by previous speakers "
+                "- Maintain respectful but firm discourse as befits a democratic assembly "
+                "- Provide well-reasoned, substantive contributions that advance the deliberation "
+                
+                "INSTRUCTIONS: "
+                "You will receive the current topic and messages from fellow assembly members who spoke before you. "
+                "Listen to their perspectives, then contribute your own thoughtful response that engages with their points. "
+                "Stay strictly focused on the topic provided by the Moderator while fostering productive democratic dialogue. "
                 "Be prepared to propose discussion topics, vote on agendas, "
                 "and vote on when to conclude a topic when asked."
             )
@@ -1065,31 +1080,53 @@ class LLMAgent:
             else:
                 prompt = "Please provide your input."
 
-        # Filter messages for current topic/phase
-        context_messages = []
-        for msg in messages:
-            # Handle both dict messages and BaseMessage objects
-            if isinstance(msg, dict):
-                if msg.get("phase") == phase or (topic and msg.get("topic") == topic):
-                    context_messages.append(msg)
-            elif hasattr(msg, "additional_kwargs"):
-                # BaseMessage objects might have metadata in additional_kwargs
-                metadata = getattr(msg, "additional_kwargs", {})
-                if metadata.get("phase") == phase or (
-                    topic and metadata.get("topic") == topic
-                ):
-                    # Convert to dict format for consistency
-                    context_messages.append(
-                        {
-                            "id": getattr(msg, "id", str(uuid.uuid4())),
-                            "speaker_id": getattr(msg, "name", "unknown"),
-                            "speaker_role": "assistant",
-                            "content": msg.content,
-                            "timestamp": datetime.now(),
-                            "phase": metadata.get("phase", -1),
-                            "topic": metadata.get("topic"),
-                        }
-                    )
+        # Use context_messages from kwargs (colleague messages) or filter from state as fallback
+        context_messages = kwargs.get("context_messages", [])
+        
+        # If no context_messages provided via kwargs, fall back to state-based filtering
+        if not context_messages:
+            context_messages = []
+            for msg in messages:
+                # Handle both dict messages and BaseMessage objects
+                if isinstance(msg, dict):
+                    if msg.get("phase") == phase or (topic and msg.get("topic") == topic):
+                        context_messages.append(msg)
+                elif hasattr(msg, "additional_kwargs"):
+                    # BaseMessage objects might have metadata in additional_kwargs
+                    metadata = getattr(msg, "additional_kwargs", {})
+                    if metadata.get("phase") == phase or (
+                        topic and metadata.get("topic") == topic
+                    ):
+                        # Convert to dict format for consistency
+                        context_messages.append(
+                            {
+                                "id": getattr(msg, "id", str(uuid.uuid4())),
+                                "speaker_id": getattr(msg, "name", "unknown"),
+                                "speaker_role": "assistant",
+                                "content": msg.content,
+                                "timestamp": datetime.now(),
+                                "phase": metadata.get("phase", -1),
+                                "topic": metadata.get("topic"),
+                            }
+                        )
+        else:
+            # Convert HumanMessage objects from discussion to format expected by agent
+            formatted_context_messages = []
+            for msg in context_messages:
+                if isinstance(msg, HumanMessage):
+                    formatted_context_messages.append({
+                        "id": str(uuid.uuid4()),
+                        "speaker_id": getattr(msg, "name", "unknown"),
+                        "speaker_role": "user",  # Colleague messages come as HumanMessage
+                        "content": msg.content,
+                        "timestamp": datetime.now(),
+                        "phase": phase,
+                        "topic": topic,
+                    })
+                else:
+                    # Keep existing format if already a dict
+                    formatted_context_messages.append(msg)
+            context_messages = formatted_context_messages
 
         # Generate response
         response = self.generate_response(
@@ -1161,31 +1198,53 @@ class LLMAgent:
             else:
                 prompt = "Please provide your input."
 
-        # Filter messages for current topic/phase
-        context_messages = []
-        for msg in messages:
-            # Handle both dict messages and BaseMessage objects
-            if isinstance(msg, dict):
-                if msg.get("phase") == phase or (topic and msg.get("topic") == topic):
-                    context_messages.append(msg)
-            elif hasattr(msg, "additional_kwargs"):
-                # BaseMessage objects might have metadata in additional_kwargs
-                metadata = getattr(msg, "additional_kwargs", {})
-                if metadata.get("phase") == phase or (
-                    topic and metadata.get("topic") == topic
-                ):
-                    # Convert to dict format for consistency
-                    context_messages.append(
-                        {
-                            "id": getattr(msg, "id", str(uuid.uuid4())),
-                            "speaker_id": getattr(msg, "name", "unknown"),
-                            "speaker_role": "assistant",
-                            "content": msg.content,
-                            "timestamp": datetime.now(),
-                            "phase": metadata.get("phase", -1),
-                            "topic": metadata.get("topic"),
-                        }
-                    )
+        # Use context_messages from kwargs (colleague messages) or filter from state as fallback
+        context_messages = kwargs.get("context_messages", [])
+        
+        # If no context_messages provided via kwargs, fall back to state-based filtering
+        if not context_messages:
+            context_messages = []
+            for msg in messages:
+                # Handle both dict messages and BaseMessage objects
+                if isinstance(msg, dict):
+                    if msg.get("phase") == phase or (topic and msg.get("topic") == topic):
+                        context_messages.append(msg)
+                elif hasattr(msg, "additional_kwargs"):
+                    # BaseMessage objects might have metadata in additional_kwargs
+                    metadata = getattr(msg, "additional_kwargs", {})
+                    if metadata.get("phase") == phase or (
+                        topic and metadata.get("topic") == topic
+                    ):
+                        # Convert to dict format for consistency
+                        context_messages.append(
+                            {
+                                "id": getattr(msg, "id", str(uuid.uuid4())),
+                                "speaker_id": getattr(msg, "name", "unknown"),
+                                "speaker_role": "assistant",
+                                "content": msg.content,
+                                "timestamp": datetime.now(),
+                                "phase": metadata.get("phase", -1),
+                                "topic": metadata.get("topic"),
+                            }
+                        )
+        else:
+            # Convert HumanMessage objects from discussion to format expected by agent
+            formatted_context_messages = []
+            for msg in context_messages:
+                if isinstance(msg, HumanMessage):
+                    formatted_context_messages.append({
+                        "id": str(uuid.uuid4()),
+                        "speaker_id": getattr(msg, "name", "unknown"),
+                        "speaker_role": "user",  # Colleague messages come as HumanMessage
+                        "content": msg.content,
+                        "timestamp": datetime.now(),
+                        "phase": phase,
+                        "topic": topic,
+                    })
+                else:
+                    # Keep existing format if already a dict
+                    formatted_context_messages.append(msg)
+            context_messages = formatted_context_messages
 
         response = await self.generate_response_async(prompt, context_messages[-10:])
 

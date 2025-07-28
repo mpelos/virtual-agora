@@ -563,7 +563,7 @@ class DiscussionAgent(LLMAgent):
         prompt_parts = [
             f"**Current Topic:** {topic}",
             "",
-            "**Your Task:** Provide a substantive, concise, and constructive comment (2-4 sentences). Your goal is to elevate the discussion.",
+            "**Your Task:** Provide a substantive and constructive contribution (4-6 sentences). Your goal is to elevate the discussion.",
         ]
 
         if context_messages:
@@ -671,7 +671,7 @@ class DiscussionAgent(LLMAgent):
             [
                 "",
                 "**Your Objective:**",
-                "In a concise but substantive statement (2-5 sentences), please articulate:",
+                "In a focused statement (3-6 sentences), please articulate:",
                 "- **The Core Unresolved Issue:** What critical aspect of the topic do you believe was overlooked or left unresolved?",
                 "- **The Risk of Concluding:** What is the potential downside of ending the discussion now?",
                 "- **The Key Takeaway:** What is the single most important point from your perspective that must be included in the final record?",
