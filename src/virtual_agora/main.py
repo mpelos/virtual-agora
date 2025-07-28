@@ -779,6 +779,12 @@ async def run_application(args: argparse.Namespace) -> int:
                                 )
 
                                 # Restart spinner for continued execution
+                                # First stop any existing spinner to prevent orphaned spinners
+                                try:
+                                    if "spinner" in locals():
+                                        spinner.__exit__(None, None, None)
+                                except:
+                                    pass
                                 spinner = LoadingSpinner(
                                     "Continuing discussion flow..."
                                 )
@@ -1049,6 +1055,19 @@ async def run_application(args: argparse.Namespace) -> int:
                                                                         "=== FLOW DEBUG: Additional nested interrupt returned no response ==="
                                                                     )
                                                                     # Restart spinner anyway
+                                                                    # First stop any existing spinner to prevent orphaned spinners
+                                                                    try:
+                                                                        if (
+                                                                            "spinner"
+                                                                            in locals()
+                                                                        ):
+                                                                            spinner.__exit__(
+                                                                                None,
+                                                                                None,
+                                                                                None,
+                                                                            )
+                                                                    except:
+                                                                        pass
                                                                     spinner = LoadingSpinner(
                                                                         "Continuing discussion flow..."
                                                                     )
@@ -1099,6 +1118,14 @@ async def run_application(args: argparse.Namespace) -> int:
                                                     "=== FLOW DEBUG: Nested interrupt returned no response ==="
                                                 )
                                                 # Restart spinner anyway
+                                                # First stop any existing spinner to prevent orphaned spinners
+                                                try:
+                                                    if "spinner" in locals():
+                                                        spinner.__exit__(
+                                                            None, None, None
+                                                        )
+                                                except:
+                                                    pass
                                                 spinner = LoadingSpinner(
                                                     "Continuing discussion flow..."
                                                 )

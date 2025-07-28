@@ -908,7 +908,7 @@ class ModeratorAgent(LLMAgent):
                 f"2.  **Contribution:** Does it add value (e.g., new evidence, a counterargument, a clarifying question) to the specific topic?\n"
                 f"3.  **Focus:** Is the core of the message centered on the topic, or is the connection superficial?\n\n"
                 f"**Output Requirement:** Respond with a single, valid JSON object containing your structured analysis. Do not include any other text.\n"
-                f'**JSON Schema:** `{{"relevance_score": float (0.0-1.0), "is_relevant": boolean, "reason": "string (brief explanation)", "suggestions": "string (brief, actionable feedback for the agent)"}}`'
+                f'**JSON Schema:** `{{"relevance_assessment": {{"relevance_score": float (0.0-1.0), "is_relevant": boolean, "key_points": ["string"], "reason": "string (brief explanation)", "suggestions": "string (brief, actionable feedback for the agent)"}}}}`'
             )
 
             # Define schema for relevance evaluation

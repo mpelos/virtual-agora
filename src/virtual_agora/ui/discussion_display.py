@@ -156,30 +156,44 @@ class DiscussionFormatter:
         topic: str,
         timestamp: Optional[datetime] = None,
     ) -> Panel:
-        """Format an agent response for assembly-style display.
-        
+        """Format an agent response for assembly-style display with enhanced natural presentation.
+
         This creates a panel similar to the 'Your Topic' panel but for each agent response,
         giving users the feeling of watching an assembly or deliberation in real-time.
         """
         if timestamp is None:
             timestamp = datetime.now()
-            
+
         # Get agent colors from theme
         colors = self.theme.assign_agent_color(agent_id, provider)
-        
+
         # Build the title with agent identification and provider
-        provider_name = provider.value.title() if provider != ProviderType.MODERATOR else "Moderator"
+        provider_name = (
+            provider.value.title()
+            if provider != ProviderType.MODERATOR
+            else "Moderator"
+        )
         title_parts = [
             f"[{colors['primary']}]{agent_id}[/{colors['primary']}]",
             f"[dim]({provider_name})[/dim]",
-            f"[{colors['accent']}]Round {round_number}[/{colors['accent']}]"
+            f"[{colors['accent']}]Round {round_number}[/{colors['accent']}]",
         ]
-        
+
+        # Add timestamp in assembly mode for more formal feel
+        try:
+            from virtual_agora.ui.display_modes import is_assembly_mode
+
+            if is_assembly_mode():
+                time_str = timestamp.strftime("%H:%M:%S")
+                title_parts.append(f"[dim]{time_str}[/dim]")
+        except ImportError:
+            pass
+
         title = " • ".join(title_parts)
-        
-        # Clean and format the content
-        formatted_content = content.strip()
-        
+
+        # Clean and format the content with natural presentation
+        formatted_content = self._format_content_naturally(content, agent_id)
+
         # Create the panel with assembly-style formatting
         panel = Panel(
             f"[white]{formatted_content}[/white]",
@@ -187,11 +201,50 @@ class DiscussionFormatter:
             title_align="left",
             border_style=colors["border"],
             padding=(1, 2),
-            width=min(self.console.get_width() - 4, 80),  # Consistent width with topic panel
+            width=min(
+                self.console.get_width() - 4, 80
+            ),  # Consistent width with topic panel
         )
-        
+
         return panel
-    
+
+    def _format_content_naturally(self, content: str, agent_id: str) -> str:
+        """Format content to feel more natural and conversational.
+
+        Args:
+            content: Raw content from agent
+            agent_id: Agent identifier for personalization
+
+        Returns:
+            Naturally formatted content
+        """
+        formatted_content = content.strip()
+
+        # Remove any agent self-references that make it robotic
+        formatted_content = formatted_content.replace(f"{agent_id}:", "")
+        formatted_content = formatted_content.replace(f"[{agent_id}]:", "")
+
+        # Clean up any leading/trailing whitespace again
+        formatted_content = formatted_content.strip()
+
+        # Add subtle personalization for different types of responses
+        if any(
+            word in formatted_content.lower() for word in ["however", "but", "although"]
+        ):
+            # This appears to be a counter-argument, which is good for deliberation
+            pass
+        elif any(
+            word in formatted_content.lower()
+            for word in ["i agree", "building on", "following"]
+        ):
+            # This appears to be a building/agreement response
+            pass
+        elif formatted_content.startswith(("Let me", "I'd like to", "Allow me")):
+            # Already has natural opening, keep as is
+            pass
+
+        return formatted_content
+
     def format_round_summary(self, round_data: DiscussionRound) -> Panel:
         """Format a round summary."""
         content_lines = []
@@ -600,14 +653,45 @@ def display_agent_response(
     topic: str,
     timestamp: Optional[datetime] = None,
 ) -> None:
-    """Display an agent response in assembly-style panel format.
-    
+    """Display an agent response in assembly-style panel format with natural timing.
+
     This creates a visual panel for each agent response, similar to the 'Your Topic' panel,
-    giving users the experience of watching an assembly or deliberation.
+    giving users the experience of watching an assembly or deliberation with natural pacing.
     """
+    import time
+
     console = get_console().rich_console
     formatter = DiscussionFormatter()
-    
+
+    # Add natural timing based on content length (simulate reading/processing time)
+    try:
+        from virtual_agora.ui.display_modes import is_assembly_mode
+
+        if is_assembly_mode():
+            # Calculate natural delay based on content length
+            # Simulate time for the agent to "gather thoughts" before speaking
+            word_count = len(content.split())
+            base_delay = 0.5  # Base delay in seconds
+            reading_delay = min(
+                word_count * 0.02, 2.0
+            )  # Max 2 seconds for very long responses
+            natural_delay = base_delay + reading_delay
+
+            # Show that agent is about to speak
+            dashboard = None
+            try:
+                from virtual_agora.ui.assembly_dashboard import get_assembly_dashboard
+
+                dashboard = get_assembly_dashboard()
+                dashboard.update_participant_status(agent_id, "Speaking")
+            except ImportError:
+                pass
+
+            # Natural pause before speaking
+            time.sleep(natural_delay)
+    except ImportError:
+        pass
+
     # Format the agent response as an assembly-style panel
     panel = formatter.format_agent_response(
         agent_id=agent_id,
@@ -617,8 +701,26 @@ def display_agent_response(
         topic=topic,
         timestamp=timestamp,
     )
-    
+
     # Display the panel with some spacing
     console.print()
     console.print(panel)
     console.print()
+
+    # Update assembly dashboard if in assembly mode
+    try:
+        from virtual_agora.ui.display_modes import is_assembly_mode
+        from virtual_agora.ui.assembly_dashboard import get_assembly_dashboard
+
+        if is_assembly_mode():
+            dashboard = get_assembly_dashboard()
+            # Record the message for statistics
+            dashboard.record_participant_message(agent_id)
+            # Update participant status back to ready
+            dashboard.update_participant_status(agent_id, "Ready")
+
+            # Small pause after speaking for natural flow
+            time.sleep(0.3)
+    except ImportError:
+        # If modules not available, continue without assembly dashboard updates
+        pass

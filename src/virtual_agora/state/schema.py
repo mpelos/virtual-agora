@@ -318,6 +318,14 @@ class VirtualAgoraState(TypedDict):
     vote_history: Annotated[List[VoteRound], safe_list_append]
     votes: Annotated[List[Vote], safe_list_append]  # All individual votes
 
+    # Topic conclusion voting
+    conclusion_vote: NotRequired[
+        Dict[str, Any]
+    ]  # Current topic conclusion vote results
+    topic_conclusion_votes: NotRequired[
+        List[Dict[str, Any]]
+    ]  # All conclusion votes for current topic
+
     # Consensus tracking
     consensus_proposals: Dict[str, List[str]]  # topic -> list of proposals
     consensus_reached: Dict[str, bool]  # topic -> consensus status

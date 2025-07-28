@@ -62,7 +62,7 @@ class V13FlowConditions:
     def check_round_threshold(
         self, state: VirtualAgoraState
     ) -> Literal["start_polling", "continue_discussion"]:
-        """Determine if polling should start (round >= 3).
+        """Determine if polling should start (round >= 2).
 
         Args:
             state: Current state
@@ -72,14 +72,14 @@ class V13FlowConditions:
         """
         current_round = state.get("current_round", 0)
 
-        if current_round >= 3:
+        if current_round >= 2:
             logger.debug(
-                f"Round {current_round} >= 3, enabling topic conclusion polling"
+                f"Round {current_round} >= 2, enabling topic conclusion polling"
             )
             return "start_polling"
         else:
             logger.debug(
-                f"Round {current_round} < 3, continuing discussion without poll"
+                f"Round {current_round} < 2, continuing discussion without poll"
             )
             return "continue_discussion"
 

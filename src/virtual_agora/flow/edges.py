@@ -44,7 +44,7 @@ class FlowConditions:
     def should_start_conclusion_poll(
         self, state: VirtualAgoraState
     ) -> Literal["continue_discussion", "conclusion_poll"]:
-        """Determine if conclusion poll should start (after round 2).
+        """Determine if conclusion poll should start (after round 1, starting from round 2).
 
         Args:
             state: Current state
@@ -55,15 +55,15 @@ class FlowConditions:
         current_round = state["current_round"]
         max_rounds = state["flow_control"]["max_rounds_per_topic"]
 
-        # Start polling from round 3 onwards
-        if current_round >= 3:
-            logger.info(f"Round {current_round} >= 3, starting conclusion poll")
+        # Start polling from round 2 onwards
+        if current_round >= 2:
+            logger.info(f"Round {current_round} >= 2, starting conclusion poll")
             return "conclusion_poll"
         elif current_round >= max_rounds:
             logger.info(f"Max rounds ({max_rounds}) reached, forcing conclusion poll")
             return "conclusion_poll"
         else:
-            logger.info(f"Round {current_round} < 3, continuing discussion")
+            logger.info(f"Round {current_round} < 2, continuing discussion")
             return "continue_discussion"
 
     def evaluate_conclusion_vote(

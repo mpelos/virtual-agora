@@ -68,6 +68,20 @@ class LoadingSpinner:
         self.task_id = None
 
     def __enter__(self):
+        # Check if we're in assembly mode and this is a flow spinner
+        try:
+            from virtual_agora.ui.display_modes import is_assembly_mode
+
+            if is_assembly_mode() and "discussion flow" in self.message.lower():
+                # In assembly mode, disable flow spinners entirely to prevent residue
+                self.progress = None
+                self.task_id = None
+                self._is_assembly_flow_spinner = True
+                return self
+        except ImportError:
+            pass
+
+        # Normal spinner behavior for all other cases
         self.progress = Progress(
             SpinnerColumn(style=self.style),
             TextColumn("[progress.description]{task.description}"),
@@ -75,6 +89,7 @@ class LoadingSpinner:
         )
         self.progress.start()
         self.task_id = self.progress.add_task(self.message, total=None)
+        self._is_assembly_flow_spinner = False
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

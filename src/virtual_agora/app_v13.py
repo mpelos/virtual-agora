@@ -20,6 +20,8 @@ from virtual_agora.ui.components import EnhancedDashboard, LoadingSpinner
 from virtual_agora.ui.session_control import SessionController, CheckpointManager
 from virtual_agora.ui.console import get_console
 from virtual_agora.ui.human_in_the_loop import get_initial_topic
+from virtual_agora.ui.assembly_dashboard import get_assembly_dashboard, AssemblyPhase
+from virtual_agora.ui.display_modes import is_assembly_mode, get_display_manager
 from virtual_agora.state.manager import StateManager
 from virtual_agora.state.recovery import StateRecoveryManager
 from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
@@ -59,6 +61,7 @@ class VirtualAgoraApplicationV13:
 
         self.session_id = None
         self.is_running = False
+        self.assembly_dashboard = get_assembly_dashboard()
 
     def _handle_interrupt(self, interrupt_data: Dict[str, Any]) -> None:
         """Handle interrupt from session controller."""
@@ -254,10 +257,97 @@ class VirtualAgoraApplicationV13:
             agent_type, result, execution_time
         )
 
+    def _initialize_assembly_dashboard(self, session_id: str, topic: str) -> None:
+        """Initialize the assembly dashboard with session information.
+
+        Args:
+            session_id: Session identifier
+            topic: Main discussion topic
+        """
+        # Extract participant info from flow
+        participants = []
+        for agent in self.flow.discussing_agents:
+            # Get provider type from agent ID
+            from virtual_agora.flow.nodes_v13 import get_provider_type_from_agent_id
+
+            provider = get_provider_type_from_agent_id(agent.agent_id)
+
+            participants.append({"agent_id": agent.agent_id, "provider": provider})
+
+        # Get agenda items if available (we'll start with empty and update later)
+        agenda_items = []
+        if hasattr(self, "state_manager") and self.state_manager.state:
+            agenda_items = self.state_manager.state.get("topic_queue", [])
+
+        # Initialize the assembly dashboard
+        self.assembly_dashboard.initialize_session(
+            session_id=session_id,
+            main_topic=topic,
+            participants=participants,
+            agenda_items=agenda_items,
+        )
+
+        # Set initial phase
+        self.assembly_dashboard.update_phase(AssemblyPhase.INITIALIZATION)
+
+        # Display the session header
+        self.assembly_dashboard.display_session_header()
+
+        logger.info(f"Assembly dashboard initialized for session {session_id}")
+
     def update_dashboard(self) -> None:
         """Update the dashboard with current state."""
         if hasattr(self, "state_manager"):
+            # Update traditional dashboard
             self.dashboard.update_session_info(self.state_manager.state)
+
+            # Update assembly dashboard if in assembly mode
+            if is_assembly_mode() and hasattr(self, "assembly_dashboard"):
+                self._update_assembly_dashboard()
+
+    def _update_assembly_dashboard(self) -> None:
+        """Update the assembly dashboard with current state information."""
+        if not hasattr(self, "state_manager") or not self.state_manager.state:
+            return
+
+        state = self.state_manager.state
+
+        # Update phase based on current phase
+        current_phase_str = state.get("current_phase", "")
+        if "agenda_proposal" in current_phase_str.lower():
+            phase = AssemblyPhase.TOPIC_PROPOSAL
+        elif "agenda_voting" in current_phase_str.lower():
+            phase = AssemblyPhase.AGENDA_VOTING
+        elif "discussion" in current_phase_str.lower():
+            phase = AssemblyPhase.DISCUSSION
+        elif "voting" in current_phase_str.lower():
+            phase = AssemblyPhase.VOTING
+        else:
+            phase = AssemblyPhase.INITIALIZATION
+
+        # Update phase if it has changed
+        if (
+            hasattr(self.assembly_dashboard, "session_info")
+            and self.assembly_dashboard.session_info
+        ):
+            if self.assembly_dashboard.session_info.current_phase != phase:
+                self.assembly_dashboard.update_phase(phase)
+
+        # Update agenda progress
+        current_topic = state.get("active_topic")
+        if current_topic:
+            completed_count = len(state.get("completed_topics", []))
+            self.assembly_dashboard.update_agenda_progress(
+                current_topic, completed_count
+            )
+
+        # Update current round if available
+        current_round = state.get("current_round", 0)
+        if (
+            hasattr(self.assembly_dashboard, "session_info")
+            and self.assembly_dashboard.session_info
+        ):
+            self.assembly_dashboard.session_info.current_round = current_round
 
     def run_session(self, topic: Optional[str] = None) -> int:
         """Run a complete Virtual Agora session.
@@ -288,6 +378,10 @@ class VirtualAgoraApplicationV13:
 
             logger.info(f"Created v1.3 session: {session_id}")
             self.is_running = True
+
+            # Initialize assembly dashboard if in assembly mode
+            if is_assembly_mode():
+                self._initialize_assembly_dashboard(session_id, topic)
 
             # Show initial dashboard
             self.update_dashboard()

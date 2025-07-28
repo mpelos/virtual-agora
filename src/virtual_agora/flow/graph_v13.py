@@ -253,7 +253,7 @@ class VirtualAgoraV13Flow:
         graph.add_edge("announce_item", "discussion_round")
         graph.add_edge("discussion_round", "round_summarization")
 
-        # Conditional: Check if we should start polling (round >= 3)
+        # Conditional: Check if we should start polling (round >= 2)
         graph.add_conditional_edges(
             "round_summarization",
             self.conditions.check_round_threshold,

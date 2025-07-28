@@ -283,7 +283,19 @@ class VirtualAgoraConsole:
         self.print()
 
     def print_phase_transition(self, from_phase: str, to_phase: str) -> None:
-        """Print a phase transition indicator."""
+        """Print a phase transition indicator with atmospheric effects."""
+        try:
+            from virtual_agora.ui.display_modes import is_assembly_mode
+            from virtual_agora.ui.atmospheric import show_phase_transition
+
+            if is_assembly_mode():
+                # Use atmospheric transition with animation
+                show_phase_transition(from_phase, to_phase, animate=True)
+                return
+        except ImportError:
+            pass
+
+        # Fallback to simple transition
         content = f"[yellow]Transitioning from {from_phase} to {to_phase}[/yellow]"
 
         panel = Panel(

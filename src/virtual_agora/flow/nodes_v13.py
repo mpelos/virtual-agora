@@ -47,15 +47,15 @@ logger = get_logger(__name__)
 
 def get_provider_type_from_agent_id(agent_id: str) -> ProviderType:
     """Extract provider type from agent ID.
-    
+
     Agent IDs typically follow patterns like:
     - gpt-4o-1, gpt-4o-2 -> OpenAI
-    - claude-3-opus-1 -> Anthropic  
+    - claude-3-opus-1 -> Anthropic
     - gemini-2.5-pro-1 -> Google
     - grok-beta-1 -> Grok
     """
     agent_id_lower = agent_id.lower()
-    
+
     if "gpt" in agent_id_lower or "openai" in agent_id_lower:
         return ProviderType.OPENAI
     elif "claude" in agent_id_lower or "anthropic" in agent_id_lower:
@@ -69,8 +69,10 @@ def get_provider_type_from_agent_id(agent_id: str) -> ProviderType:
         return ProviderType.OPENAI
 
 
-def retry_agent_call(agent, state, prompt, context_messages=None, max_attempts=3, base_delay=1.0):
-    """Retry agent calls with exponential backoff.
+def retry_agent_call(
+    agent, state, prompt, context_messages=None, max_attempts=3, base_delay=1.0
+):
+    """Retry agent calls with exponential backoff and atmospheric effects.
 
     Args:
         agent: The agent to call
@@ -83,23 +85,50 @@ def retry_agent_call(agent, state, prompt, context_messages=None, max_attempts=3
     Returns:
         Response dict or None if all attempts fail
     """
-    for attempt in range(max_attempts):
-        try:
-            response_dict = agent(state, prompt=prompt, context_messages=context_messages)
-            return response_dict
-        except Exception as e:
-            logger.warning(
-                f"Agent {agent.agent_id} attempt {attempt + 1}/{max_attempts} failed: {e}"
-            )
-            if attempt < max_attempts - 1:
-                delay = base_delay * (2**attempt)  # Exponential backoff
-                logger.info(f"Retrying agent {agent.agent_id} in {delay:.1f}s...")
-                time.sleep(delay)
-            else:
-                logger.error(
-                    f"All {max_attempts} attempts failed for agent {agent.agent_id}"
+    # Show thinking indicator if in assembly mode
+    try:
+        from virtual_agora.ui.display_modes import is_assembly_mode
+        from virtual_agora.ui.atmospheric import show_thinking
+
+        use_atmospheric = is_assembly_mode()
+    except ImportError:
+        use_atmospheric = False
+
+    if use_atmospheric:
+        thinking_context = show_thinking(agent.agent_id, "formulating response...")
+    else:
+        thinking_context = None
+
+    try:
+        for attempt in range(max_attempts):
+            try:
+                # Use thinking context if available
+                if thinking_context:
+                    with thinking_context:
+                        response_dict = agent(
+                            state, prompt=prompt, context_messages=context_messages
+                        )
+                else:
+                    response_dict = agent(
+                        state, prompt=prompt, context_messages=context_messages
+                    )
+                return response_dict
+            except Exception as e:
+                logger.warning(
+                    f"Agent {agent.agent_id} attempt {attempt + 1}/{max_attempts} failed: {e}"
                 )
-                return None
+                if attempt < max_attempts - 1:
+                    delay = base_delay * (2**attempt)  # Exponential backoff
+                    logger.info(f"Retrying agent {agent.agent_id} in {delay:.1f}s...")
+                    time.sleep(delay)
+                else:
+                    logger.error(
+                        f"All {max_attempts} attempts failed for agent {agent.agent_id}"
+                    )
+                    return None
+    finally:
+        # Ensure thinking context is properly closed
+        pass
 
 
 def extract_message_info(msg):
@@ -747,6 +776,12 @@ class V13FlowNodes:
 
             logger.info(f"Starting discussion on topic: {current_topic}")
 
+            # Set topic context for moderator to enable proper relevance evaluation
+            moderator = self.specialized_agents.get("moderator")
+            if moderator:
+                moderator.set_topic_context(current_topic)
+                logger.info(f"Set moderator topic context: {current_topic}")
+
             # Moderator announcement can be logged but not stored in state
             announcement = f"We will now begin discussing: {current_topic}"
             logger.info(f"Moderator announcement: {announcement}")
@@ -817,6 +852,16 @@ class V13FlowNodes:
             # Rotate: [A,B,C] -> [B,C,A]
             speaking_order = speaking_order[1:] + [speaking_order[0]]
 
+        # Show round announcement with atmospheric effects if in assembly mode
+        try:
+            from virtual_agora.ui.display_modes import is_assembly_mode
+            from virtual_agora.ui.atmospheric import show_round_announcement
+
+            if is_assembly_mode():
+                show_round_announcement(current_round, current_topic, speaking_order)
+        except ImportError:
+            pass
+
         # Execute the round
         round_messages = []
         round_id = str(uuid.uuid4())
@@ -875,8 +920,7 @@ class V13FlowNodes:
                     speaker_id, content, _ = extract_message_info(msg)
                     # Convert colleague messages to HumanMessage format for assembly-style conversation
                     colleague_message = HumanMessage(
-                        content=f"[{speaker_id}]: {content}",
-                        name=speaker_id
+                        content=f"[{speaker_id}]: {content}", name=speaker_id
                     )
                     context_messages.append(colleague_message)
 
@@ -903,7 +947,9 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
 
             try:
                 # Get agent response with retry logic, passing colleague messages as conversation context
-                response_dict = retry_agent_call(agent, state, context, context_messages)
+                response_dict = retry_agent_call(
+                    agent, state, context, context_messages
+                )
 
                 if response_dict is None:
                     # All retry attempts failed
@@ -958,7 +1004,7 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                         topic=current_topic,
                         timestamp=datetime.now(),
                     )
-                    
+
                     # Create LangChain-compatible message
                     message = create_langchain_message(
                         speaker_role="participant",
@@ -985,7 +1031,7 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                         topic=current_topic,
                         timestamp=datetime.now(),
                     )
-                    
+
                     # Handle irrelevant response
                     warning = moderator.issue_relevance_warning(agent_id)
                     logger.warning(f"Agent {agent_id} provided irrelevant response")
@@ -1007,7 +1053,7 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
 
             except Exception as e:
                 logger.error(f"Error getting response from {agent_id}: {e}")
-                
+
                 # Display the error for transparency
                 provider_type = get_provider_type_from_agent_id(agent_id)
                 display_agent_response(
@@ -1018,7 +1064,7 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                     topic=current_topic,
                     timestamp=datetime.now(),
                 )
-                
+
                 error_message = create_langchain_message(
                     speaker_role="participant",
                     content=f"[Failed to respond: {str(e)}]",
@@ -1155,12 +1201,26 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
     def end_topic_poll_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """Poll agents on topic conclusion.
 
-        Only triggered after round 3+.
+        Only triggered after round 2+.
         """
         logger.info("Node: end_topic_poll - Polling for topic conclusion")
 
         current_topic = state["active_topic"]
         current_round = state["current_round"]
+
+        # Show dramatic voting announcement if in assembly mode
+        try:
+            from virtual_agora.ui.display_modes import is_assembly_mode
+            from virtual_agora.ui.voting_display import announce_vote, VoteType
+
+            if is_assembly_mode():
+                participants = [agent.agent_id for agent in self.discussing_agents]
+                context = f"After {current_round} rounds of deliberation"
+                announce_vote(
+                    VoteType.TOPIC_CONCLUSION, current_topic, participants, context
+                )
+        except ImportError:
+            pass
 
         # Collect votes
         votes = []
@@ -1255,6 +1315,28 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
             f"Conclusion poll: {yes_votes}/{total_votes} votes. "
             f"Result: {'Passed' if conclusion_passed else 'Failed'}"
         )
+
+        # Show dramatic vote results if in assembly mode
+        try:
+            from virtual_agora.ui.display_modes import is_assembly_mode
+            from virtual_agora.ui.voting_display import reveal_vote_results, VoteType
+
+            if is_assembly_mode():
+                result_text = (
+                    "Motion carries - discussion will conclude"
+                    if conclusion_passed
+                    else "Motion fails - discussion continues"
+                )
+                details = {"show_details": True}
+                reveal_vote_results(
+                    VoteType.TOPIC_CONCLUSION,
+                    current_topic,
+                    votes,
+                    result_text,
+                    details,
+                )
+        except ImportError:
+            pass
 
         return updates
 
@@ -1559,6 +1641,12 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                 "active_topic": None,  # Clear active topic
             }
 
+            # Clear moderator topic context when topic concludes
+            moderator = self.specialized_agents.get("moderator")
+            if moderator:
+                moderator.current_topic_context = None
+                logger.info("Cleared moderator topic context after topic conclusion")
+
             logger.info(f"Saved topic report to: {filepath}")
 
         except Exception as e:
@@ -1572,6 +1660,14 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                 ],
                 "active_topic": None,
             }
+
+            # Clear moderator topic context even in error case
+            moderator = self.specialized_agents.get("moderator")
+            if moderator:
+                moderator.current_topic_context = None
+                logger.info(
+                    "Cleared moderator topic context after topic conclusion (error case)"
+                )
 
         return updates
 
