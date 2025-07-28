@@ -76,8 +76,8 @@ def setup_logging(
 
     # Log startup message
     logger = get_logger(__name__)
-    logger.info(f"Logging initialized - Session ID: {session_id}")
-    logger.info(f"Log file: {log_file.absolute()}")
+    logger.debug(f"Logging initialized - Session ID: {session_id}")
+    logger.debug(f"Log file: {log_file.absolute()}")
 
 
 def get_logger(name: str) -> logging.Logger:

@@ -97,7 +97,7 @@ class VirtualAgoraV13Flow:
         self.specialized_agents["moderator"] = ModeratorAgent(
             agent_id="moderator", llm=moderator_llm
         )
-        logger.info("Initialized moderator agent")
+        logger.debug("Initialized moderator agent")
 
         # Create summarizer
         if hasattr(self.config, "summarizer"):
@@ -110,7 +110,7 @@ class VirtualAgoraV13Flow:
             self.specialized_agents["summarizer"] = SummarizerAgent(
                 agent_id="summarizer", llm=summarizer_llm
             )
-            logger.info("Initialized summarizer agent")
+            logger.debug("Initialized summarizer agent")
         else:
             # Fallback: use moderator config for summarizer
             logger.warning("No summarizer config found, using moderator config")
@@ -129,7 +129,7 @@ class VirtualAgoraV13Flow:
             self.specialized_agents["topic_report"] = TopicReportAgent(
                 agent_id="topic_report", llm=topic_report_llm
             )
-            logger.info("Initialized topic report agent")
+            logger.debug("Initialized topic report agent")
         else:
             # Fallback
             logger.warning("No topic_report config found, using moderator config")
@@ -148,7 +148,7 @@ class VirtualAgoraV13Flow:
             self.specialized_agents["ecclesia_report"] = EcclesiaReportAgent(
                 agent_id="ecclesia_report", llm=ecclesia_report_llm
             )
-            logger.info("Initialized ecclesia report agent")
+            logger.debug("Initialized ecclesia report agent")
         else:
             # Fallback
             logger.warning("No ecclesia_report config found, using moderator config")
@@ -179,7 +179,7 @@ class VirtualAgoraV13Flow:
                     )
 
                 self.discussing_agents.append(agent)
-                logger.info(f"Initialized discussing agent: {agent_id}")
+                logger.debug(f"Initialized discussing agent: {agent_id}")
 
     def build_graph(self) -> StateGraph:
         """Build the v1.3 Virtual Agora discussion flow graph.
@@ -352,19 +352,19 @@ class VirtualAgoraV13Flow:
             self.build_graph()
 
         # Debug: Log graph structure before compilation
-        logger.info("=== FLOW DEBUG: Graph structure before compilation ===")
-        logger.info(f"Graph nodes: {list(self.graph.nodes.keys())}")
-        logger.info(f"Graph edges: {len(self.graph.edges)} total edges")
+        logger.debug("=== FLOW DEBUG: Graph structure before compilation ===")
+        logger.debug(f"Graph nodes: {list(self.graph.nodes.keys())}")
+        logger.debug(f"Graph edges: {len(self.graph.edges)} total edges")
 
         # Check if announce_item node exists
         if "announce_item" in self.graph.nodes:
-            logger.info("✅ announce_item node found in graph")
+            logger.debug("✅ announce_item node found in graph")
         else:
             logger.error("❌ announce_item node NOT found in graph")
 
         # Check if agenda_approval node exists
         if "agenda_approval" in self.graph.nodes:
-            logger.info("✅ agenda_approval node found in graph")
+            logger.debug("✅ agenda_approval node found in graph")
         else:
             logger.error("❌ agenda_approval node NOT found in graph")
 
@@ -372,8 +372,8 @@ class VirtualAgoraV13Flow:
         logger.info("V1.3 Graph compiled with checkpointing enabled")
 
         # Debug: Log compiled graph info
-        logger.info("=== FLOW DEBUG: Graph compiled successfully ===")
-        logger.info(f"Compiled graph type: {type(self.compiled_graph)}")
+        logger.debug("=== FLOW DEBUG: Graph compiled successfully ===")
+        logger.debug(f"Compiled graph type: {type(self.compiled_graph)}")
 
         return self.compiled_graph
 
@@ -472,9 +472,13 @@ class VirtualAgoraV13Flow:
 
         return result
 
-    def stream(self, config: Optional[Dict[str, Any]] = None, resume_from_checkpoint: bool = False):
+    def stream(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        resume_from_checkpoint: bool = False,
+    ):
         """Stream graph execution.
-        
+
         Args:
             config: Optional configuration dictionary
             resume_from_checkpoint: If True, resume from checkpoint (pass None as input_data).
@@ -488,8 +492,8 @@ class VirtualAgoraV13Flow:
                 "configurable": {"thread_id": self.state_manager.state["session_id"]}
             }
 
-        logger.info(f"VirtualAgoraV13Flow.stream called with config: {config}")
-        logger.info(f"Resume from checkpoint: {resume_from_checkpoint}")
+        logger.debug(f"VirtualAgoraV13Flow.stream called with config: {config}")
+        logger.debug(f"Resume from checkpoint: {resume_from_checkpoint}")
         logger.debug(
             f"State manager session_id: {self.state_manager.state.get('session_id')}"
         )
@@ -499,38 +503,42 @@ class VirtualAgoraV13Flow:
         # For fresh start, pass the current state from state manager
         if resume_from_checkpoint:
             input_data = None
-            logger.info("=== FLOW DEBUG: Resuming from checkpoint (input_data=None) ===")
+            logger.debug(
+                "=== FLOW DEBUG: Resuming from checkpoint (input_data=None) ==="
+            )
         else:
             input_data = self.state_manager.state
-            logger.info("=== FLOW DEBUG: Starting fresh (input_data=state) ===")
+            logger.debug("=== FLOW DEBUG: Starting fresh (input_data=state) ===")
             logger.debug(
                 f"Input data for stream: session_id={input_data.get('session_id')}, keys_count={len(input_data.keys())}"
             )
 
         try:
             # Stream graph execution with current state
-            logger.info("Starting compiled_graph.stream execution")
+            logger.debug("Starting compiled_graph.stream execution")
             if input_data is not None:
-                logger.info(
+                logger.debug(
                     f"=== FLOW DEBUG: Stream input data session_id: {input_data.get('session_id')}"
                 )
             else:
-                logger.info("=== FLOW DEBUG: Stream input data: None (resuming from checkpoint)")
-            logger.info(f"=== FLOW DEBUG: Stream config: {config}")
+                logger.debug(
+                    "=== FLOW DEBUG: Stream input data: None (resuming from checkpoint)"
+                )
+            logger.debug(f"=== FLOW DEBUG: Stream config: {config}")
 
             update_count = 0
             for update in self.compiled_graph.stream(input_data, config):
                 update_count += 1
-                logger.info(f"=== FLOW DEBUG: Stream update #{update_count}: {update}")
-
                 # Log specific node executions
                 if isinstance(update, dict):
                     for key in update.keys():
                         if key not in ["__interrupt__", "__end__"]:
-                            logger.info(f"=== FLOW DEBUG: Stream executing node: {key}")
+                            logger.debug(
+                                f"=== FLOW DEBUG: Stream executing node: {key}"
+                            )
 
                 yield update
-            logger.info(
+            logger.debug(
                 f"Stream execution completed successfully after {update_count} updates"
             )
         except Exception as e:
@@ -543,4 +551,4 @@ class VirtualAgoraV13Flow:
         """Start monitoring for a session."""
         if self.monitor:
             self.monitor.start_session(session_id)
-            logger.info(f"Started monitoring for v1.3 session: {session_id}")
+            logger.debug(f"Started monitoring for v1.3 session: {session_id}")

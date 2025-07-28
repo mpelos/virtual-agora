@@ -197,7 +197,7 @@ class StateManager:
             edge_cases_encountered=[],
         )
 
-        logger.info(f"Initialized state for session {session_id}")
+        logger.debug(f"Initialized state for session {session_id}")
         logger.debug(
             f"Agents: {len(agents)} total ({len(speaking_order)} participants)"
         )

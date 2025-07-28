@@ -108,7 +108,7 @@ class V13FlowNodes:
         # Configuration is already loaded at this point
         # This node validates and confirms readiness
         # Update the current phase to indicate configuration is complete
-        logger.info("Configuration validated successfully")
+        logger.debug("Configuration validated successfully")
 
         return {"current_phase": 0}
 
@@ -154,8 +154,8 @@ class V13FlowNodes:
             "current_phase": 0,
         }
 
-        logger.info(f"Recorded {len(specialized_agent_ids)} specialized agents")
-        logger.info(f"Recorded {len(discussing_agent_info)} discussing agents")
+        logger.debug(f"Recorded {len(specialized_agent_ids)} specialized agents")
+        logger.debug(f"Recorded {len(discussing_agent_info)} discussing agents")
 
         return updates
 
@@ -220,7 +220,7 @@ class V13FlowNodes:
                     f"Getting proposals from {agent.agent_id} ({i+1}/{len(self.discussing_agents)})"
                 )
 
-                prompt = f"""Based on the theme '{theme}', propose 3-5 specific 
+                prompt = f"""Based on the theme '{theme}', propose 3-5 specific
                 sub-topics for discussion. Be concise and specific."""
 
                 try:
@@ -322,7 +322,7 @@ class V13FlowNodes:
         for agent in self.discussing_agents:
             prompt = f"""Vote on your preferred discussion order for these topics:
             {topics_formatted}
-            
+
             Express your preferences in natural language. You may rank all topics
             or just indicate your top priorities."""
 
@@ -582,8 +582,7 @@ class V13FlowNodes:
 
         Simple announcement, no complex logic.
         """
-        logger.info("=== FLOW DEBUG: Entering announce_item_node ===")
-        logger.info(f"State keys available: {list(state.keys())}")
+        logger.debug("=== FLOW DEBUG: Entering announce_item_node ===")
         logger.info(f"topic_queue length: {len(state.get('topic_queue', []))}")
         logger.info(f"active_topic: {state.get('active_topic')}")
         logger.info("Node: announce_item - Announcing current topic")
@@ -631,8 +630,8 @@ class V13FlowNodes:
         2. Collects agent responses
         3. Enforces relevance
         """
-        logger.info("=== FLOW DEBUG: Entering discussion_round_node ===")
-        logger.info(f"State keys available: {list(state.keys())}")
+        logger.debug("=== FLOW DEBUG: Entering discussion_round_node ===")
+        logger.debug(f"State keys available: {list(state.keys())}")
         logger.info(f"current_round: {state.get('current_round', 0)}")
         logger.info(f"active_topic: {state.get('active_topic')}")
         logger.info(f"speaking_order: {state.get('speaking_order')}")
@@ -670,7 +669,7 @@ class V13FlowNodes:
         if not speaking_order:
             # Initialize speaking order if not set
             speaking_order = [agent.agent_id for agent in self.discussing_agents]
-            logger.info(f"Initialized speaking order: {speaking_order}")
+            logger.debug(f"Initialized speaking order: {speaking_order}")
         else:
             speaking_order = speaking_order.copy()
         if current_round > 1:
@@ -697,7 +696,8 @@ class V13FlowNodes:
             # Add previous round summaries
             if topic_summaries:
                 context += "\n\nPrevious Round Summaries:\n"
-                for j, summary in enumerate(topic_summaries[-3:]):  # Last 3 summaries
+                # Last 3 summaries
+                for j, summary in enumerate(topic_summaries[-3:]):
                     context += f"Round {summary.get('round_number', j+1)}: {summary.get('summary', '')}\n"
 
             # Add current round comments
@@ -818,9 +818,12 @@ class V13FlowNodes:
         updates = {
             "current_round": current_round,
             "speaking_order": speaking_order,
-            "messages": round_messages,  # Uses add_messages reducer (expects list)
-            "round_history": round_info,  # Uses list.append reducer (expects single item)
-            "turn_order_history": speaking_order,  # Uses list.append reducer (expects single item)
+            # Uses add_messages reducer (expects list)
+            "messages": round_messages,
+            # Uses list.append reducer (expects single item)
+            "round_history": round_info,
+            # Uses list.append reducer (expects single item)
+            "turn_order_history": speaking_order,
             "rounds_per_topic": {
                 **state.get("rounds_per_topic", {}),
                 current_topic: state.get("rounds_per_topic", {}).get(current_topic, 0)
@@ -872,7 +875,8 @@ class V13FlowNodes:
 
         if not round_messages:
             logger.warning(f"No messages found for round {current_round}")
-            return {"current_round": current_round}  # Return minimal state update
+            # Return minimal state update
+            return {"current_round": current_round}
 
         try:
             # Invoke summarizer as a tool
@@ -933,7 +937,7 @@ class V13FlowNodes:
         for agent in self.discussing_agents:
             prompt = f"""We have discussed "{current_topic}" for {current_round} rounds.
             Should we conclude the discussion on '{current_topic}'?
-            
+
             Please respond with 'Yes' or 'No' and provide a short justification."""
 
             try:
@@ -1020,18 +1024,18 @@ class V13FlowNodes:
 
     def vote_evaluation_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """Intermediate node for vote evaluation routing.
-        
+
         This node exists to satisfy LangGraph's requirement that all nodes
         must update at least one state field. It tracks vote evaluations
         without affecting the conditional routing logic.
         """
         logger.info("Node: vote_evaluation - Processing conclusion vote results")
-        
+
         # Get the conclusion vote from state
         conclusion_vote = state.get("conclusion_vote", {})
         current_topic = state.get("active_topic", "unknown")
         current_round = state.get("current_round", 0)
-        
+
         # Minimal state update to satisfy LangGraph validation
         # This doesn't change the flow logic, just records the evaluation
         updates = {
@@ -1039,12 +1043,12 @@ class V13FlowNodes:
                 "vote_type": "vote_evaluation",
                 "topic": current_topic,
                 "round": current_round,
-                "result": "evaluated", 
+                "result": "evaluated",
                 "passed": conclusion_vote.get("passed", False),
                 "timestamp": datetime.now(),
             }
         }
-        
+
         logger.info(f"Vote evaluation completed for topic: {current_topic}")
         return updates
 
@@ -1310,7 +1314,8 @@ class V13FlowNodes:
                     **state.get("topic_summary_files", {}),
                     current_topic: filepath,
                 },
-                "completed_topics": current_topic,  # Uses list.append reducer (expects single item)
+                # Uses list.append reducer (expects single item)
+                "completed_topics": current_topic,
                 # Remove from queue
                 "topic_queue": [
                     t for t in state.get("topic_queue", []) if t != current_topic
@@ -1324,7 +1329,8 @@ class V13FlowNodes:
             logger.error(f"Failed to save topic report: {e}")
             updates = {
                 "file_save_error": str(e),
-                "completed_topics": current_topic,  # Uses list.append reducer (expects single item)
+                # Uses list.append reducer (expects single item)
+                "completed_topics": current_topic,
                 "topic_queue": [
                     t for t in state.get("topic_queue", []) if t != current_topic
                 ],
@@ -1366,9 +1372,9 @@ class V13FlowNodes:
 
         for agent in self.discussing_agents:
             prompt = f"""We have completed discussion on: {', '.join(flattened_completed)}
-            
+
             Remaining topics: {', '.join(flattened_remaining) if flattened_remaining else 'None'}
-            
+
             Should we end the entire discussion session (the "ecclesia")?
             Please respond with 'End' to conclude or 'Continue' to discuss remaining topics."""
 
@@ -1541,9 +1547,9 @@ class V13FlowNodes:
         modifications = []
 
         modification_prompt = f"""Based on our discussions on: {', '.join(flattened_completed)}
-        
+
         We have these remaining topics: {', '.join(flattened_remaining)}
-        
+
         Should we add any new topics to our agenda, or remove any of the remaining ones?
         Please provide your suggestions."""
 
@@ -1572,14 +1578,14 @@ class V13FlowNodes:
         # Moderator synthesizes modifications
         synthesis_prompt = f"""Here are the agents' suggestions for agenda modifications:
         {chr(10).join(f"{m['agent_id']}: {m['suggestion']}" for m in modifications)}
-        
+
         Current remaining topics: {flattened_remaining}
-        
+
         Based on these suggestions, create a revised agenda. Consider:
         - Adding genuinely valuable new topics
         - Removing topics that may no longer be relevant
         - Maintaining reasonable scope
-        
+
         Respond with a JSON object: {{"revised_agenda": ["Topic 1", "Topic 2"]}}"""
 
         try:

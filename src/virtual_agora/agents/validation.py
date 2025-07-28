@@ -597,7 +597,7 @@ class ResponseValidator:
             "validation_errors": {},
             "response_type_stats": {},
         }
-        logger.info("Validation statistics reset")
+        logger.debug("Validation statistics reset")
 
 
 class ValidationMiddleware:
@@ -646,7 +646,7 @@ class ValidationMiddleware:
         if self.enable_auto_retry:
             # Create retry callback
             def retry_callback(issues, warnings):
-                logger.info(f"Retrying {response_method} for agent {agent.agent_id}")
+                logger.debug(f"Retrying {response_method} for agent {agent.agent_id}")
                 return method(*args, **kwargs)
 
             result = self.validator.validate_with_retry(

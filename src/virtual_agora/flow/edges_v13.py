@@ -41,18 +41,18 @@ class V13FlowConditions:
         Returns:
             Next node: "discussion_round" if approved, "agenda_setting" if rejected
         """
-        logger.info("=== FLOW DEBUG: Evaluating should_start_discussion ===")
-        logger.info(f"State keys: {list(state.keys())}")
+        logger.debug("=== FLOW DEBUG: Evaluating should_start_discussion ===")
+        logger.debug(f"State keys: {list(state.keys())}")
         agenda_approved = state.get("agenda_approved", False)
-        logger.info(f"agenda_approved value: {agenda_approved}")
+        logger.debug(f"agenda_approved value: {agenda_approved}")
 
         if agenda_approved:
             logger.info("Agenda approved, starting discussion")
-            logger.info("=== FLOW DEBUG: Routing to 'discussion' -> announce_item ===")
+            logger.debug("=== FLOW DEBUG: Routing to 'discussion' -> announce_item ===")
             return "discussion"
         else:
             logger.info("Agenda rejected, returning to agenda setting")
-            logger.info(
+            logger.debug(
                 "=== FLOW DEBUG: Routing to 'agenda_setting' -> agenda_proposal ==="
             )
             return "agenda_setting"
@@ -73,12 +73,12 @@ class V13FlowConditions:
         current_round = state.get("current_round", 0)
 
         if current_round >= 3:
-            logger.info(
+            logger.debug(
                 f"Round {current_round} >= 3, enabling topic conclusion polling"
             )
             return "start_polling"
         else:
-            logger.info(
+            logger.debug(
                 f"Round {current_round} < 3, continuing discussion without poll"
             )
             return "continue_discussion"
@@ -100,7 +100,7 @@ class V13FlowConditions:
 
         # Check if this is a 5-round interval
         if current_round % 5 == 0 and current_round > 0:
-            logger.info(
+            logger.debug(
                 f"Round {current_round} is multiple of 5, triggering periodic user stop"
             )
             return "periodic_stop"
@@ -176,10 +176,10 @@ class V13FlowConditions:
         agents_vote_end = state.get("agents_vote_end_session", False)
 
         if agents_vote_end:
-            logger.info("Agents voted to end session")
+            logger.debug("Agents voted to end session")
             return "end_session"
         else:
-            logger.info("Agents voted to continue, checking with user")
+            logger.debug("Agents voted to continue, checking with user")
             return "check_user"
 
     def evaluate_session_continuation(
@@ -235,10 +235,10 @@ class V13FlowConditions:
         topic_queue = state.get("topic_queue", [])
 
         if not topic_queue:
-            logger.info("No topics remaining in agenda")
+            logger.debug("No topics remaining in agenda")
             return "no_items_remaining"
         else:
-            logger.info(f"{len(topic_queue)} topics remaining in agenda")
+            logger.debug(f"{len(topic_queue)} topics remaining in agenda")
             return "items_remaining"
 
     def should_modify_agenda(
@@ -254,7 +254,7 @@ class V13FlowConditions:
         """
         # Check if user requested modification
         if state.get("user_requested_modification", False):
-            logger.info("User requested agenda modification")
+            logger.debug("User requested agenda modification")
             return "modify_agenda"
 
         # Check if significant changes detected
@@ -268,7 +268,7 @@ class V13FlowConditions:
                 original_count > 0
                 and abs(original_count - revised_count) / original_count > 0.5
             ):
-                logger.info(
+                logger.debug(
                     "Significant agenda changes detected, suggesting modification"
                 )
                 return "modify_agenda"
@@ -290,7 +290,7 @@ class V13FlowConditions:
 
         if needs_compression:
             stats = self.context_manager.get_context_stats(state)
-            logger.info(
+            logger.debug(
                 f"Context approaching limit ({stats['total_tokens']}/{stats['limit']} tokens, "
                 f"{stats['usage_percent']:.1f}%), compression needed"
             )
@@ -341,7 +341,7 @@ class V13FlowConditions:
         max_rounds = state.get("flow_control", {}).get("max_rounds_per_topic", 10)
 
         if topic_round_count >= max_rounds:
-            logger.info(
+            logger.debug(
                 f"Forcing conclusion for topic '{current_topic}' "
                 f"after {topic_round_count} rounds (max: {max_rounds})"
             )
@@ -358,7 +358,7 @@ class V13FlowConditions:
         ]
 
         if len(recent_votes) >= 3:
-            logger.info(
+            logger.debug(
                 f"Forcing conclusion for topic '{current_topic}' "
                 f"after {len(recent_votes)} consecutive failed votes"
             )
@@ -449,7 +449,7 @@ class V13FlowConditions:
 
         max_iterations = flow_control.get("max_iterations_per_phase", 5)
         if phase_count >= max_iterations:
-            logger.warning(
+            logger.debug(
                 f"Maximum iterations ({max_iterations}) reached for "
                 f"phase {self.get_phase_name(current_phase)}"
             )

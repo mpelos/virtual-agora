@@ -102,7 +102,7 @@ class FlowMonitor:
             session_id: Session identifier
         """
         self.session_start_time = datetime.now()
-        logger.info(f"Started monitoring session: {session_id}")
+        logger.debug(f"Started monitoring session: {session_id}")
 
     def start_operation(
         self, operation_name: str, metadata: Optional[Dict[str, Any]] = None
@@ -301,7 +301,7 @@ class FlowMonitor:
         if len(self.debug_snapshots) > 50:
             self.debug_snapshots = self.debug_snapshots[-50:]
 
-        logger.info(f"Created debug snapshot for session {snapshot.session_id}")
+        logger.debug(f"Created debug snapshot for session {snapshot.session_id}")
         return snapshot
 
     def get_performance_report(self) -> Dict[str, Any]:
@@ -545,7 +545,7 @@ class FlowDebugger:
             condition: Function that returns True when breakpoint should trigger
         """
         self.breakpoints[name] = condition
-        logger.info(f"Set breakpoint: {name}")
+        logger.debug(f"Set breakpoint: {name}")
 
     def remove_breakpoint(self, name: str):
         """Remove a breakpoint.
@@ -555,7 +555,7 @@ class FlowDebugger:
         """
         if name in self.breakpoints:
             del self.breakpoints[name]
-            logger.info(f"Removed breakpoint: {name}")
+            logger.debug(f"Removed breakpoint: {name}")
 
     def add_watch(self, name: str, expression: Callable[[VirtualAgoraState], Any]):
         """Add a watch expression.
@@ -565,7 +565,7 @@ class FlowDebugger:
             expression: Function that extracts value from state
         """
         self.watch_expressions[name] = expression
-        logger.info(f"Added watch: {name}")
+        logger.debug(f"Added watch: {name}")
 
     def remove_watch(self, name: str):
         """Remove a watch expression.
@@ -575,7 +575,7 @@ class FlowDebugger:
         """
         if name in self.watch_expressions:
             del self.watch_expressions[name]
-            logger.info(f"Removed watch: {name}")
+            logger.debug(f"Removed watch: {name}")
 
     def check_breakpoints(
         self, state: VirtualAgoraState, current_node: Optional[str] = None
@@ -634,12 +634,12 @@ class FlowDebugger:
     def enable_debug_mode(self):
         """Enable debug mode."""
         self.debug_enabled = True
-        logger.info("Debug mode enabled")
+        logger.debug("Debug mode enabled")
 
     def disable_debug_mode(self):
         """Disable debug mode."""
         self.debug_enabled = False
-        logger.info("Debug mode disabled")
+        logger.debug("Debug mode disabled")
 
     def get_debug_status(self) -> Dict[str, Any]:
         """Get current debug status.

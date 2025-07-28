@@ -783,11 +783,9 @@ async def run_application(args: argparse.Namespace) -> int:
 
                                 # Start new stream from checkpoint - this will continue from where we left off
                                 try:
-                                    for continuation_update in flow.stream(config_dict, resume_from_checkpoint=True):
-                                        logger.info(
-                                            f"=== FLOW DEBUG: Continuation update: {continuation_update}"
-                                        )
-
+                                    for continuation_update in flow.stream(
+                                        config_dict, resume_from_checkpoint=True
+                                    ):
                                         # Log which nodes are executing in continuation
                                         if isinstance(continuation_update, dict):
                                             for (
@@ -903,11 +901,10 @@ async def run_application(args: argparse.Namespace) -> int:
                                                     try:
                                                         for (
                                                             final_continuation_update
-                                                        ) in flow.stream(config_dict, resume_from_checkpoint=True):
-                                                            logger.info(
-                                                                f"=== FLOW DEBUG: Final continuation update: {final_continuation_update}"
-                                                            )
-
+                                                        ) in flow.stream(
+                                                            config_dict,
+                                                            resume_from_checkpoint=True,
+                                                        ):
                                                             # Log which nodes are executing in final continuation
                                                             if isinstance(
                                                                 final_continuation_update,
