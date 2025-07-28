@@ -274,7 +274,7 @@ class VirtualAgoraV13Flow:
         )
 
         # Add a intermediate node for vote evaluation to simplify routing
-        graph.add_node("vote_evaluation", lambda state: {})
+        graph.add_node("vote_evaluation", self.nodes.vote_evaluation_node)
         graph.add_conditional_edges(
             "vote_evaluation",
             self.conditions.evaluate_conclusion_vote,
@@ -472,8 +472,14 @@ class VirtualAgoraV13Flow:
 
         return result
 
-    def stream(self, config: Optional[Dict[str, Any]] = None):
-        """Stream graph execution."""
+    def stream(self, config: Optional[Dict[str, Any]] = None, resume_from_checkpoint: bool = False):
+        """Stream graph execution.
+        
+        Args:
+            config: Optional configuration dictionary
+            resume_from_checkpoint: If True, resume from checkpoint (pass None as input_data).
+                                  If False, start fresh (pass current state as input_data).
+        """
         if self.compiled_graph is None:
             raise StateError("Graph not compiled")
 
@@ -483,24 +489,33 @@ class VirtualAgoraV13Flow:
             }
 
         logger.info(f"VirtualAgoraV13Flow.stream called with config: {config}")
+        logger.info(f"Resume from checkpoint: {resume_from_checkpoint}")
         logger.debug(
             f"State manager session_id: {self.state_manager.state.get('session_id')}"
         )
         logger.debug(f"Compiled graph type: {type(self.compiled_graph)}")
 
-        # For a fresh start, we need to pass the current state from state manager
-        # The checkpointer will handle state persistence across the execution
-        input_data = self.state_manager.state
-        logger.debug(
-            f"Input data for stream: session_id={input_data.get('session_id')}, keys_count={len(input_data.keys())}"
-        )
+        # For checkpoint resumption (after interrupts), pass None to continue from checkpoint
+        # For fresh start, pass the current state from state manager
+        if resume_from_checkpoint:
+            input_data = None
+            logger.info("=== FLOW DEBUG: Resuming from checkpoint (input_data=None) ===")
+        else:
+            input_data = self.state_manager.state
+            logger.info("=== FLOW DEBUG: Starting fresh (input_data=state) ===")
+            logger.debug(
+                f"Input data for stream: session_id={input_data.get('session_id')}, keys_count={len(input_data.keys())}"
+            )
 
         try:
             # Stream graph execution with current state
             logger.info("Starting compiled_graph.stream execution")
-            logger.info(
-                f"=== FLOW DEBUG: Stream input data session_id: {input_data.get('session_id')}"
-            )
+            if input_data is not None:
+                logger.info(
+                    f"=== FLOW DEBUG: Stream input data session_id: {input_data.get('session_id')}"
+                )
+            else:
+                logger.info("=== FLOW DEBUG: Stream input data: None (resuming from checkpoint)")
             logger.info(f"=== FLOW DEBUG: Stream config: {config}")
 
             update_count = 0

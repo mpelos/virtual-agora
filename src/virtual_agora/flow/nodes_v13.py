@@ -1018,6 +1018,36 @@ class V13FlowNodes:
 
         return updates
 
+    def vote_evaluation_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
+        """Intermediate node for vote evaluation routing.
+        
+        This node exists to satisfy LangGraph's requirement that all nodes
+        must update at least one state field. It tracks vote evaluations
+        without affecting the conditional routing logic.
+        """
+        logger.info("Node: vote_evaluation - Processing conclusion vote results")
+        
+        # Get the conclusion vote from state
+        conclusion_vote = state.get("conclusion_vote", {})
+        current_topic = state.get("active_topic", "unknown")
+        current_round = state.get("current_round", 0)
+        
+        # Minimal state update to satisfy LangGraph validation
+        # This doesn't change the flow logic, just records the evaluation
+        updates = {
+            "vote_history": {  # Uses list.append reducer (expects single item)
+                "vote_type": "vote_evaluation",
+                "topic": current_topic,
+                "round": current_round,
+                "result": "evaluated", 
+                "passed": conclusion_vote.get("passed", False),
+                "timestamp": datetime.now(),
+            }
+        }
+        
+        logger.info(f"Vote evaluation completed for topic: {current_topic}")
+        return updates
+
     def periodic_user_stop_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """HITL node for 5-round periodic stops.
 
