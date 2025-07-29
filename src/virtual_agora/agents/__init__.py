@@ -10,8 +10,7 @@ from typing import TYPE_CHECKING
 from .llm_agent import LLMAgent
 from .moderator import ModeratorAgent
 from .summarizer import SummarizerAgent
-from .topic_report_agent import TopicReportAgent
-from .ecclesia_report_agent import EcclesiaReportAgent
+from .report_writer_agent import ReportWriterAgent
 
 if TYPE_CHECKING:
     # Type imports for better IDE support
@@ -32,8 +31,7 @@ __all__ = [
     "ModeratorAgent",
     "LLMAgent",
     "SummarizerAgent",
-    "TopicReportAgent",
-    "EcclesiaReportAgent",
+    "ReportWriterAgent",
     "create_tool_enabled_moderator",
     "create_tool_enabled_participant",
     "create_discussion_agents_with_tools",

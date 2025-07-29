@@ -12,8 +12,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from virtual_agora.agents.discussion_agent import DiscussionAgent
 from virtual_agora.agents.moderator import ModeratorAgent
 from virtual_agora.agents.summarizer import SummarizerAgent
-from virtual_agora.agents.topic_report_agent import TopicReportAgent
-from virtual_agora.agents.ecclesia_report_agent import EcclesiaReportAgent
+from virtual_agora.agents.report_writer_agent import ReportWriterAgent
 from virtual_agora.config.models import Config, AgentConfig, ModeratorConfig
 from virtual_agora.providers.factory import ProviderFactory
 from virtual_agora.utils.logging import get_logger
@@ -36,8 +35,7 @@ class AgentFactory:
         self._created_agents: Dict[str, DiscussionAgent] = {}
         self._moderator: Optional[ModeratorAgent] = None
         self._summarizer: Optional[SummarizerAgent] = None
-        self._topic_report: Optional[TopicReportAgent] = None
-        self._ecclesia_report: Optional[EcclesiaReportAgent] = None
+        self._report_writer: Optional[ReportWriterAgent] = None
 
     def create_all_agents(self) -> Dict[str, DiscussionAgent]:
         """Create all discussion agents based on configuration.
@@ -141,81 +139,42 @@ class AgentFactory:
             logger.error(f"Failed to create summarizer: {e}")
             raise ConfigurationError(f"Summarizer creation failed: {e}") from e
 
-    def create_topic_report(self) -> TopicReportAgent:
-        """Create the topic report agent based on configuration.
+    def create_report_writer(self) -> ReportWriterAgent:
+        """Create the report writer agent based on configuration.
 
         Returns:
-            TopicReportAgent instance
+            ReportWriterAgent instance
 
         Raises:
-            ConfigurationError: If topic report agent creation fails
+            ConfigurationError: If report writer agent creation fails
         """
-        if self._topic_report is not None:
-            return self._topic_report
+        if self._report_writer is not None:
+            return self._report_writer
 
         try:
-            # Create provider configuration for topic report
+            # Create provider configuration for report writer
             provider_config = {
-                "provider": self.config.topic_report.provider.value,
-                "model": self.config.topic_report.model,
+                "provider": self.config.report_writer.provider.value,
+                "model": self.config.report_writer.model,
             }
 
             # Create LLM instance
             llm = self.provider_factory.create_provider(provider_config)
 
-            # Create topic report agent
-            topic_report_id = "topic_report"
-            self._topic_report = TopicReportAgent(
-                agent_id=topic_report_id, llm=llm, enable_error_handling=True
+            # Create report writer agent
+            report_writer_id = "report_writer"
+            self._report_writer = ReportWriterAgent(
+                agent_id=report_writer_id, llm=llm, enable_error_handling=True
             )
 
             logger.info(
-                f"Successfully created topic report agent with model {self.config.topic_report.model}"
+                f"Successfully created report writer agent with model {self.config.report_writer.model}"
             )
-            return self._topic_report
+            return self._report_writer
 
         except Exception as e:
-            logger.error(f"Failed to create topic report agent: {e}")
-            raise ConfigurationError(f"Topic report agent creation failed: {e}") from e
-
-    def create_ecclesia_report(self) -> EcclesiaReportAgent:
-        """Create the ecclesia report agent based on configuration.
-
-        Returns:
-            EcclesiaReportAgent instance
-
-        Raises:
-            ConfigurationError: If ecclesia report agent creation fails
-        """
-        if self._ecclesia_report is not None:
-            return self._ecclesia_report
-
-        try:
-            # Create provider configuration for ecclesia report
-            provider_config = {
-                "provider": self.config.ecclesia_report.provider.value,
-                "model": self.config.ecclesia_report.model,
-            }
-
-            # Create LLM instance
-            llm = self.provider_factory.create_provider(provider_config)
-
-            # Create ecclesia report agent
-            ecclesia_report_id = "ecclesia_report"
-            self._ecclesia_report = EcclesiaReportAgent(
-                agent_id=ecclesia_report_id, llm=llm, enable_error_handling=True
-            )
-
-            logger.info(
-                f"Successfully created ecclesia report agent with model {self.config.ecclesia_report.model}"
-            )
-            return self._ecclesia_report
-
-        except Exception as e:
-            logger.error(f"Failed to create ecclesia report agent: {e}")
-            raise ConfigurationError(
-                f"Ecclesia report agent creation failed: {e}"
-            ) from e
+            logger.error(f"Failed to create report writer agent: {e}")
+            raise ConfigurationError(f"Report writer agent creation failed: {e}") from e
 
     def _create_agents_from_config(
         self, agent_config: AgentConfig
@@ -381,8 +340,7 @@ class AgentFactory:
             "discussion_agents": {},
             "moderator": None,
             "summarizer": None,
-            "topic_report": None,
-            "ecclesia_report": None,
+            "report_writer": None,
             "created_at": datetime.now(),
             "total_agents": 0,
             "validation": {},
@@ -397,13 +355,12 @@ class AgentFactory:
                 specialized = self.create_specialized_agents()
                 pool["moderator"] = specialized["moderator"]
                 pool["summarizer"] = specialized["summarizer"]
-                pool["topic_report"] = specialized["topic_report"]
-                pool["ecclesia_report"] = specialized["ecclesia_report"]
+                pool["report_writer"] = specialized["report_writer"]
 
             # Update totals
             pool["total_agents"] = len(pool["discussion_agents"])
             if include_moderator:
-                pool["total_agents"] += 4  # Four specialized agents
+                pool["total_agents"] += 3  # Three specialized agents
 
             # Add validation results
             pool["validation"] = self.validate_agent_creation()
@@ -473,8 +430,7 @@ class AgentFactory:
             # Create all specialized agents
             agents["moderator"] = self.create_moderator()
             agents["summarizer"] = self.create_summarizer()
-            agents["topic_report"] = self.create_topic_report()
-            agents["ecclesia_report"] = self.create_ecclesia_report()
+            agents["report_writer"] = self.create_report_writer()
 
             logger.info(f"Successfully created all {len(agents)} specialized agents")
             return agents
@@ -488,8 +444,7 @@ class AgentFactory:
         self._created_agents.clear()
         self._moderator = None
         self._summarizer = None
-        self._topic_report = None
-        self._ecclesia_report = None
+        self._report_writer = None
         logger.info("Agent factory reset")
 
 

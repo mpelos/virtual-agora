@@ -19,8 +19,7 @@ from virtual_agora.config.models import (
     AgentConfig,
     ModeratorConfig,
     SummarizerConfig,
-    TopicReportConfig,
-    EcclesiaReportConfig,
+    ReportWriterConfig,
     Provider,
 )
 from virtual_agora.utils.exceptions import ConfigurationError
@@ -36,19 +35,15 @@ def mock_config():
 
     moderator_config = ModeratorConfig(provider=Provider.OPENAI, model="gpt-4")
     summarizer_config = SummarizerConfig(provider=Provider.OPENAI, model="gpt-4")
-    topic_report_config = TopicReportConfig(
+    report_writer_config = ReportWriterConfig(
         provider=Provider.ANTHROPIC, model="claude-3-opus"
-    )
-    ecclesia_report_config = EcclesiaReportConfig(
-        provider=Provider.GOOGLE, model="gemini-pro"
     )
 
     return Config(
         agents=agent_configs,
         moderator=moderator_config,
         summarizer=summarizer_config,
-        topic_report=topic_report_config,
-        ecclesia_report=ecclesia_report_config,
+        report_writer=report_writer_config,
     )
 
 
@@ -355,8 +350,7 @@ class TestAgentFactoryAdvancedFeatures:
         assert "discussion_agents" in pool
         assert "moderator" in pool
         assert "summarizer" in pool
-        assert "topic_report" in pool
-        assert "ecclesia_report" in pool
+        assert "report_writer" in pool
         assert "created_at" in pool
         assert "total_agents" in pool
         assert "validation" in pool
@@ -452,11 +446,8 @@ class TestAgentFactoryUtilityFunctions:
             ],
             moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
             summarizer=SummarizerConfig(provider=Provider.OPENAI, model="gpt-4"),
-            topic_report=TopicReportConfig(
+            report_writer=ReportWriterConfig(
                 provider=Provider.ANTHROPIC, model="claude-3-opus"
-            ),
-            ecclesia_report=EcclesiaReportConfig(
-                provider=Provider.GOOGLE, model="gemini-pro"
             ),
         )
 
@@ -495,10 +486,7 @@ class TestAgentFactoryUtilityFunctions:
             agents=[AgentConfig(provider=Provider.OPENAI, model="gpt-4", count=3)],
             moderator=ModeratorConfig(provider=Provider.OPENAI, model="gpt-4"),
             summarizer=SummarizerConfig(provider=Provider.OPENAI, model="gpt-4"),
-            topic_report=TopicReportConfig(provider=Provider.OPENAI, model="gpt-4"),
-            ecclesia_report=EcclesiaReportConfig(
-                provider=Provider.OPENAI, model="gpt-4"
-            ),
+            report_writer=ReportWriterConfig(provider=Provider.OPENAI, model="gpt-4"),
         )
 
         results = validate_agent_requirements(config)

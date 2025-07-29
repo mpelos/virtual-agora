@@ -343,6 +343,18 @@ class VirtualAgoraState(TypedDict):
         str
     ]  # 'pending', 'structuring', 'writing', 'completed'
 
+    # Iterative Report Writing State (v1.3)
+    report_structures: NotRequired[
+        Dict[str, List[Dict[str, str]]]
+    ]  # topic_id -> structure sections
+    session_report_structures: NotRequired[
+        List[Dict[str, str]]
+    ]  # Session report structure sections
+    current_report_section: NotRequired[int]  # Index of section being written
+    completed_report_sections: NotRequired[
+        List[str]
+    ]  # List of completed section titles
+
     # Story 3.9: Agenda modification state
     pending_agenda_modifications: NotRequired[
         List[str]

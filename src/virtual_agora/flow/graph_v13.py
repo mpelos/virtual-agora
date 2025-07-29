@@ -30,8 +30,7 @@ from virtual_agora.utils.exceptions import StateError
 from virtual_agora.agents.llm_agent import LLMAgent
 from virtual_agora.agents.moderator import ModeratorAgent
 from virtual_agora.agents.summarizer import SummarizerAgent
-from virtual_agora.agents.topic_report_agent import TopicReportAgent
-from virtual_agora.agents.ecclesia_report_agent import EcclesiaReportAgent
+from virtual_agora.agents.report_writer_agent import ReportWriterAgent
 from virtual_agora.agents.discussion_agent import DiscussionAgent
 from virtual_agora.providers import create_provider
 
@@ -118,42 +117,23 @@ class VirtualAgoraV13Flow:
                 agent_id="summarizer", llm=moderator_llm
             )
 
-        # Create topic report agent
-        if hasattr(self.config, "topic_report"):
-            topic_report_llm = create_provider(
-                provider=self.config.topic_report.provider.value,
-                model=self.config.topic_report.model,
-                temperature=getattr(self.config.topic_report, "temperature", 0.7),
-                max_tokens=getattr(self.config.topic_report, "max_tokens", None),
+        # Create report writer agent
+        if hasattr(self.config, "report_writer"):
+            report_writer_llm = create_provider(
+                provider=self.config.report_writer.provider.value,
+                model=self.config.report_writer.model,
+                temperature=getattr(self.config.report_writer, "temperature", 0.6),
+                max_tokens=getattr(self.config.report_writer, "max_tokens", None),
             )
-            self.specialized_agents["topic_report"] = TopicReportAgent(
-                agent_id="topic_report", llm=topic_report_llm
+            self.specialized_agents["report_writer"] = ReportWriterAgent(
+                agent_id="report_writer", llm=report_writer_llm
             )
-            logger.debug("Initialized topic report agent")
+            logger.debug("Initialized report writer agent")
         else:
             # Fallback
-            logger.warning("No topic_report config found, using moderator config")
-            self.specialized_agents["topic_report"] = TopicReportAgent(
-                agent_id="topic_report", llm=moderator_llm
-            )
-
-        # Create ecclesia report agent
-        if hasattr(self.config, "ecclesia_report"):
-            ecclesia_report_llm = create_provider(
-                provider=self.config.ecclesia_report.provider.value,
-                model=self.config.ecclesia_report.model,
-                temperature=getattr(self.config.ecclesia_report, "temperature", 0.7),
-                max_tokens=getattr(self.config.ecclesia_report, "max_tokens", None),
-            )
-            self.specialized_agents["ecclesia_report"] = EcclesiaReportAgent(
-                agent_id="ecclesia_report", llm=ecclesia_report_llm
-            )
-            logger.debug("Initialized ecclesia report agent")
-        else:
-            # Fallback
-            logger.warning("No ecclesia_report config found, using moderator config")
-            self.specialized_agents["ecclesia_report"] = EcclesiaReportAgent(
-                agent_id="ecclesia_report", llm=moderator_llm
+            logger.warning("No report_writer config found, using moderator config")
+            self.specialized_agents["report_writer"] = ReportWriterAgent(
+                agent_id="report_writer", llm=moderator_llm
             )
 
         # Create discussing agents

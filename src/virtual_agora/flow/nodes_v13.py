@@ -5,6 +5,8 @@ where nodes orchestrate specialized agents as tools.
 """
 
 import uuid
+import os
+import re
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from langgraph.types import interrupt, Command
@@ -24,10 +26,14 @@ from virtual_agora.state.manager import StateManager
 from virtual_agora.agents.llm_agent import LLMAgent
 from virtual_agora.agents.moderator import ModeratorAgent
 from virtual_agora.agents.summarizer import SummarizerAgent
-from virtual_agora.agents.topic_report_agent import TopicReportAgent
-from virtual_agora.agents.ecclesia_report_agent import EcclesiaReportAgent
+from virtual_agora.agents.report_writer_agent import ReportWriterAgent
 from virtual_agora.flow.context_window import ContextWindowManager
 from virtual_agora.flow.cycle_detection import CyclePreventionManager
+from virtual_agora.ui.console import get_console
+from virtual_agora.ui.progress_display import (
+    show_mini_progress,
+    get_progress_visualizer,
+)
 from virtual_agora.utils.logging import get_logger
 from virtual_agora.ui.human_in_the_loop import (
     get_initial_topic,
@@ -43,6 +49,118 @@ from virtual_agora.providers.config import ProviderType
 import time
 
 logger = get_logger(__name__)
+
+
+def sanitize_filename(text: str, max_length: int = 50) -> str:
+    """Sanitize text for use as filename or directory name.
+
+    Args:
+        text: Text to sanitize
+        max_length: Maximum length for the sanitized name
+
+    Returns:
+        Sanitized filename safe for all operating systems
+    """
+    if not text:
+        return "unnamed"
+
+    # Remove/replace problematic characters
+    # Windows reserved characters: < > : " | ? * \ /
+    # Also handle other problematic characters
+    sanitized = re.sub(r'[<>:"|?*\\/]', "_", text)
+
+    # Replace parentheses, brackets, and other special characters
+    sanitized = re.sub(r"[()[\]{}]", "_", sanitized)
+
+    # Replace multiple spaces with single space, then replace spaces with underscores
+    sanitized = re.sub(r"\s+", " ", sanitized.strip())
+    sanitized = sanitized.replace(" ", "_")
+
+    # Remove multiple consecutive underscores
+    sanitized = re.sub(r"_+", "_", sanitized)
+
+    # Remove leading/trailing underscores
+    sanitized = sanitized.strip("_")
+
+    # Ensure it's not empty after sanitization
+    if not sanitized:
+        sanitized = "unnamed"
+
+    # Intelligent truncation at word boundaries
+    if len(sanitized) > max_length:
+        # Try to cut at underscore (word boundary)
+        truncated = sanitized[:max_length]
+        last_underscore = truncated.rfind("_")
+
+        if last_underscore > max_length * 0.6:  # If we can preserve at least 60%
+            sanitized = truncated[:last_underscore]
+        else:
+            sanitized = truncated
+
+        # Remove trailing underscore if any
+        sanitized = sanitized.rstrip("_")
+
+    # Ensure it's not a Windows reserved name
+    windows_reserved = {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        "COM1",
+        "COM2",
+        "COM3",
+        "COM4",
+        "COM5",
+        "COM6",
+        "COM7",
+        "COM8",
+        "COM9",
+        "LPT1",
+        "LPT2",
+        "LPT3",
+        "LPT4",
+        "LPT5",
+        "LPT6",
+        "LPT7",
+        "LPT8",
+        "LPT9",
+    }
+
+    if sanitized.upper() in windows_reserved:
+        sanitized = f"{sanitized}_file"
+
+    return sanitized
+
+
+def create_report_directory_structure(
+    session_id: str, topic_name: str = None
+) -> tuple[str, str]:
+    """Create organized directory structure for reports.
+
+    Args:
+        session_id: Session identifier
+        topic_name: Optional topic name for topic-specific directories
+
+    Returns:
+        Tuple of (session_dir_path, topic_dir_path or session_dir_path)
+    """
+    # Base reports directory
+    reports_base = "reports"
+    os.makedirs(reports_base, exist_ok=True)
+
+    # Session directory
+    safe_session_id = sanitize_filename(session_id, 30)
+    session_dir = os.path.join(reports_base, f"session_{safe_session_id}")
+    os.makedirs(session_dir, exist_ok=True)
+
+    if topic_name:
+        # Topic-specific directory within session
+        safe_topic = sanitize_filename(topic_name, 40)
+        topic_dir = os.path.join(session_dir, safe_topic)
+        os.makedirs(topic_dir, exist_ok=True)
+        return session_dir, topic_dir
+
+    return session_dir, session_dir
 
 
 def get_provider_type_from_agent_id(agent_id: str) -> ProviderType:
@@ -299,8 +417,7 @@ class V13FlowNodes:
         specialized_agent_ids = {
             "moderator": self.specialized_agents["moderator"].agent_id,
             "summarizer": self.specialized_agents["summarizer"].agent_id,
-            "topic_report": self.specialized_agents["topic_report"].agent_id,
-            "ecclesia_report": self.specialized_agents["ecclesia_report"].agent_id,
+            "report_writer": self.specialized_agents["report_writer"].agent_id,
         }
 
         # Store discussing agent information
@@ -1524,13 +1641,14 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         return updates
 
     def topic_report_generation_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
-        """Invoke Topic Report Agent for synthesis.
+        """Invoke Report Writer Agent for iterative topic synthesis.
 
-        This node specifically invokes the TopicReportAgent.
+        This node uses the ReportWriterAgent to create comprehensive topic reports
+        through an iterative process: structure creation followed by section writing.
         """
-        logger.info("Node: topic_report_generation - Creating topic report")
+        logger.info("Node: topic_report_generation - Creating topic report iteratively")
 
-        topic_report_agent = self.specialized_agents["topic_report"]
+        report_writer_agent = self.specialized_agents["report_writer"]
         current_topic = state["active_topic"]
         theme = state["main_topic"]
 
@@ -1560,24 +1678,77 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         )
 
         try:
-            # Invoke topic report agent
-            report = topic_report_agent.synthesize_topic(
-                round_summaries=topic_summaries,
-                final_considerations=consideration_texts,
-                topic=current_topic,
-                discussion_theme=theme,
+            # Get console for user feedback
+            console = get_console()
+
+            # Prepare source material for the report writer
+            source_material = {
+                "topic": current_topic,
+                "theme": theme,
+                "round_summaries": topic_summaries,
+                "final_considerations": consideration_texts,
+            }
+
+            # Phase 1: Create report structure with progress feedback
+            console.print("\n[cyan]📝 Generating topic report...[/cyan]")
+
+            sections, structure_response = report_writer_agent.create_report_structure(
+                source_material, "topic"
             )
+
+            # Calculate total steps for consistent progress tracking
+            total_steps = (
+                len(sections) + 2
+            )  # structure creation + sections + completion
+
+            show_mini_progress(1, total_steps, "Report structure created")
+            show_mini_progress(
+                2, total_steps, f"Structure defined with {len(sections)} sections"
+            )
+
+            # Phase 2: Write all sections iteratively with progress feedback
+            report_parts = []
+            previous_sections = []
+
+            for i, section in enumerate(sections):
+                current_step = i + 3  # After structure creation (steps 1-2)
+                step_name = f"Writing section: {section['title']}"
+
+                # Show progress for this section
+                show_mini_progress(current_step, total_steps, step_name)
+
+                logger.info(
+                    f"Writing topic report section {i+1}/{len(sections)}: {section['title']}"
+                )
+
+                section_content = report_writer_agent.write_section(
+                    section, source_material, "topic", previous_sections
+                )
+                report_parts.append(section_content)
+                previous_sections.append(section_content)
+
+            # Show completion
+            show_mini_progress(total_steps, total_steps, "Report generation completed")
+            console.print("[green]✅ Topic report generated successfully![/green]\n")
+
+            # Combine all sections into final report
+            report = "\n\n".join(report_parts)
 
             updates = {
                 "topic_summaries": {
                     **state.get("topic_summaries", {}),
                     current_topic: report,
                 },
-                "last_topic_report": report,
+                "report_structures": {
+                    **state.get("report_structures", {}),
+                    f"{current_topic}_structure": sections,
+                },
                 "current_phase": 3,
             }
 
-            logger.info(f"Generated topic report for: {current_topic}")
+            logger.info(
+                f"Generated topic report for: {current_topic} with {len(sections)} sections"
+            )
 
         except Exception as e:
             logger.error(f"Failed to generate topic report: {e}")
@@ -1599,20 +1770,20 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         logger.info("Node: file_output - Saving topic report")
 
         current_topic = state["active_topic"]
-        report = state.get("last_topic_report", "")
+        topic_summaries = state.get("topic_summaries", {})
+        report = topic_summaries.get(current_topic, "")
+        session_id = state["session_id"]
 
-        # Generate filename
-        safe_topic = current_topic.replace(" ", "_").replace("/", "_")[:50]
+        # Create organized directory structure
+        session_dir, topic_dir = create_report_directory_structure(
+            session_id, current_topic
+        )
+
+        # Generate clean filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"agenda_summary_{safe_topic}_{timestamp}.md"
+        filename = f"topic_report_{timestamp}.md"
 
-        # Ensure reports directory exists
-        import os
-
-        reports_dir = "reports"
-        os.makedirs(reports_dir, exist_ok=True)
-
-        filepath = os.path.join(reports_dir, filename)
+        filepath = os.path.join(topic_dir, filename)
 
         try:
             # Save file
@@ -1647,6 +1818,11 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                 moderator.current_topic_context = None
                 logger.info("Cleared moderator topic context after topic conclusion")
 
+            # Get console for user feedback
+            console = get_console()
+            console.print(
+                f"\n[green]💾 Topic report saved to:[/green] [cyan]{filepath}[/cyan]"
+            )
             logger.info(f"Saved topic report to: {filepath}")
 
         except Exception as e:
@@ -1958,16 +2134,16 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
     # ===== Phase 5: Final Report Generation Nodes =====
 
     def final_report_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
-        """Invoke Ecclesia Report Agent to generate final report.
+        """Invoke Report Writer Agent to generate final session report iteratively.
 
         The agent:
         1. Reads all topic reports
         2. Defines report structure
-        3. Writes each section
+        3. Writes each section iteratively
         """
-        logger.info("Node: final_report - Generating final session report")
+        logger.info("Node: final_report - Generating final session report iteratively")
 
-        ecclesia_agent = self.specialized_agents["ecclesia_report"]
+        report_writer_agent = self.specialized_agents["report_writer"]
         topic_summaries = state.get("topic_summaries", {})
         theme = state["main_topic"]
 
@@ -1979,33 +2155,68 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
             }
 
         try:
-            # Step 1: Define report structure
-            report_sections = ecclesia_agent.generate_report_structure(
-                topic_reports=topic_summaries, discussion_theme=theme
+            # Get console for user feedback
+            console = get_console()
+
+            # Prepare source material for the report writer
+            source_material = {
+                "theme": theme,
+                "topic_reports": topic_summaries,
+            }
+
+            # Phase 1: Create report structure with progress feedback
+            console.print("\n[cyan]📊 Generating final session report...[/cyan]")
+
+            sections, structure_response = report_writer_agent.create_report_structure(
+                source_material, "session"
             )
 
-            logger.info(
-                f"Report structure defined with {len(report_sections)} sections"
-            )
+            # Calculate total steps for consistent progress tracking
+            total_steps = (
+                len(sections) + 2
+            )  # structure creation + sections + completion
 
-            # Step 2: Generate content for each section
+            show_mini_progress(1, total_steps, "Session report structure created")
+            show_mini_progress(
+                2, total_steps, f"Structure defined with {len(sections)} sections"
+            )
+            logger.info(f"Report structure defined with {len(sections)} sections")
+
+            # Phase 2: Generate content for each section iteratively with progress feedback
             report_content = {}
-            previous_sections = {}
+            previous_sections_list = []
 
-            for i, section_title in enumerate(report_sections):
+            for i, section in enumerate(sections):
+                current_step = i + 3  # After structure creation (steps 1-2)
+                step_name = f"Writing section: {section['title']}"
+
+                # Show progress for this section
+                show_mini_progress(current_step, total_steps, step_name)
+
                 logger.info(
-                    f"Writing section {i+1}/{len(report_sections)}: {section_title}"
+                    f"Writing session report section {i+1}/{len(sections)}: {section['title']}"
                 )
 
-                section_content = ecclesia_agent.write_section(
-                    section_title=section_title,
-                    topic_reports=topic_summaries,
-                    discussion_theme=theme,
-                    previous_sections=previous_sections,
+                section_content = report_writer_agent.write_section(
+                    section=section,
+                    source_material=source_material,
+                    report_type="session",
+                    previous_sections=previous_sections_list,
                 )
 
-                report_content[section_title] = section_content
-                previous_sections[section_title] = section_content
+                report_content[section["title"]] = section_content
+                previous_sections_list.append(section_content)
+
+            # Show completion
+            show_mini_progress(
+                total_steps, total_steps, "Session report generation completed"
+            )
+            console.print(
+                "[green]✅ Final session report generated successfully![/green]\n"
+            )
+
+            # Extract section titles for backward compatibility
+            report_sections = [section["title"] for section in sections]
 
             updates = {
                 "current_phase": 5,
@@ -2013,9 +2224,12 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                 "report_sections": report_content,
                 "report_generation_status": "completed",
                 "final_report": report_content,
+                "session_report_structures": sections,
             }
 
-            logger.info("Final report generation completed")
+            logger.info(
+                f"Final report generation completed with {len(sections)} sections"
+            )
 
         except Exception as e:
             logger.error(f"Failed to generate final report: {e}")
@@ -2038,11 +2252,9 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         theme = state["main_topic"]
         session_id = state.get("session_id", "unknown")
 
-        # Ensure reports directory exists
-        import os
-
-        reports_dir = "reports"
-        final_report_dir = os.path.join(reports_dir, f"final_report_{session_id}")
+        # Create organized directory structure
+        session_dir, _ = create_report_directory_structure(session_id)
+        final_report_dir = os.path.join(session_dir, "final_report")
         os.makedirs(final_report_dir, exist_ok=True)
 
         saved_files = []
@@ -2050,9 +2262,9 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         try:
             # Save each section
             for i, (section_title, content) in enumerate(report_sections.items()):
-                # Generate filename
-                safe_title = section_title.replace(" ", "_").replace("/", "_")[:50]
-                filename = f"final_report_{i+1:02d}_{safe_title}.md"
+                # Generate clean filename using sanitization
+                safe_title = sanitize_filename(section_title, 40)
+                filename = f"{i+1:02d}_{safe_title}.md"
                 filepath = os.path.join(final_report_dir, filename)
 
                 # Write file
@@ -2099,6 +2311,14 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                 },
             }
 
+            # Get console for user feedback
+            console = get_console()
+            console.print(
+                f"\n[green]📁 Final session report saved to:[/green] [cyan]{final_report_dir}[/cyan]"
+            )
+            console.print(
+                f"[green]📄 Generated {len(saved_files)} report sections + index[/green]"
+            )
             logger.info(f"Saved {len(saved_files)} report files to {final_report_dir}")
 
         except Exception as e:

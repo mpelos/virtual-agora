@@ -29,23 +29,19 @@ def get_default_model(provider: str, agent_type: str) -> str:
     default_models = {
         "google": {
             "summarizer": "gemini-2.5-flash-lite",
-            "topic_report": "gemini-2.5-pro",
-            "ecclesia_report": "gemini-2.5-pro",
+            "report_writer": "gemini-2.5-pro",
         },
         "openai": {
             "summarizer": "gpt-4o",
-            "topic_report": "gpt-4o",
-            "ecclesia_report": "gpt-4o",
+            "report_writer": "gpt-4o",
         },
         "anthropic": {
             "summarizer": "claude-3-opus-20240229",
-            "topic_report": "claude-3-opus-20240229",
-            "ecclesia_report": "claude-3-opus-20240229",
+            "report_writer": "claude-3-opus-20240229",
         },
         "grok": {
             "summarizer": "grok-beta",
-            "topic_report": "grok-beta",
-            "ecclesia_report": "grok-beta",
+            "report_writer": "grok-beta",
         },
     }
 
@@ -55,8 +51,8 @@ def get_default_model(provider: str, agent_type: str) -> str:
 def migrate_config_v1_to_v3(old_config: Dict[str, Any]) -> Dict[str, Any]:
     """Convert v1.1 config to v1.3 format.
 
-    This function adds the required specialized agents (summarizer, topic_report,
-    ecclesia_report) to a v1.1 configuration that only has a moderator and agents.
+    This function adds the required specialized agents (summarizer, report_writer)
+    to a v1.1 configuration that only has a moderator and agents.
 
     Args:
         old_config: The v1.1 configuration dictionary
@@ -80,30 +76,21 @@ def migrate_config_v1_to_v3(old_config: Dict[str, Any]) -> Dict[str, Any]:
             "model": get_default_model(moderator_provider, "summarizer"),
         }
 
-    if "topic_report" not in new_config:
-        # For topic_report, we might prefer a more capable model
+    if "report_writer" not in new_config:
+        # For report_writer, we might prefer a more capable model
         # Try to use Anthropic if available in agents, otherwise use moderator's provider
-        topic_provider = moderator_provider
+        report_provider = moderator_provider
         for agent in old_config.get("agents", []):
             if agent.get("provider", "").lower() == "anthropic":
-                topic_provider = "Anthropic"
+                report_provider = "Anthropic"
                 break
 
         logger.info(
-            f"Adding default topic_report configuration using provider: {topic_provider}"
+            f"Adding default report_writer configuration using provider: {report_provider}"
         )
-        new_config["topic_report"] = {
-            "provider": topic_provider,
-            "model": get_default_model(topic_provider, "topic_report"),
-        }
-
-    if "ecclesia_report" not in new_config:
-        logger.info(
-            f"Adding default ecclesia_report configuration using provider: {moderator_provider}"
-        )
-        new_config["ecclesia_report"] = {
-            "provider": moderator_provider,
-            "model": get_default_model(moderator_provider, "ecclesia_report"),
+        new_config["report_writer"] = {
+            "provider": report_provider,
+            "model": get_default_model(report_provider, "report_writer"),
         }
 
     return new_config
@@ -119,7 +106,7 @@ def detect_config_version(config: Dict[str, Any]) -> str:
         The detected version string ('1.1' or '1.3')
     """
     # v1.3 has specialized agents
-    if all(key in config for key in ["summarizer", "topic_report", "ecclesia_report"]):
+    if all(key in config for key in ["summarizer", "report_writer"]):
         return "1.3"
 
     # v1.1 only has moderator and agents
@@ -155,8 +142,7 @@ def validate_migrated_config(config: Dict[str, Any]) -> bool:
     required_fields = [
         "moderator",
         "summarizer",
-        "topic_report",
-        "ecclesia_report",
+        "report_writer",
         "agents",
     ]
 

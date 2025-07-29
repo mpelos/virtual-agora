@@ -78,63 +78,34 @@ class SummarizerConfig(BaseModel):
     )
 
 
-class TopicReportConfig(BaseModel):
-    """Configuration for the Topic Report agent.
+class ReportWriterConfig(BaseModel):
+    """Configuration for the Report Writer agent.
 
-    The topic report agent synthesizes concluded agenda items
-    into comprehensive reports.
+    The report writer agent handles all long-form report generation
+    through an iterative process, including both topic reports and
+    comprehensive session reports.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
     provider: Provider = Field(
         ...,
-        description="LLM provider for the topic report agent (e.g., Anthropic, Google)",
+        description="LLM provider for the report writer agent (e.g., Anthropic, Google)",
     )
     model: str = Field(
         ...,
-        description="Model name/ID for the topic report agent (e.g., claude-3-opus-20240229)",
+        description="Model name/ID for the report writer agent (e.g., claude-3-opus-20240229)",
         min_length=1,
     )
     # Optional fields for future extensibility
     temperature: Optional[float] = Field(
-        default=0.5,  # Balanced temperature for comprehensive synthesis
+        default=0.6,  # Balanced temperature for comprehensive iterative synthesis
         ge=0.0,
         le=1.0,
-        description="Temperature for topic report generation",
+        description="Temperature for report generation",
     )
     max_tokens: Optional[int] = Field(
-        default=1500, gt=0, description="Maximum tokens for topic reports"
-    )
-
-
-class EcclesiaReportConfig(BaseModel):
-    """Configuration for the Ecclesia Report agent.
-
-    The ecclesia report agent creates the final session analysis
-    by synthesizing all individual topic reports.
-    """
-
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    provider: Provider = Field(
-        ...,
-        description="LLM provider for the ecclesia report agent (e.g., Google, OpenAI)",
-    )
-    model: str = Field(
-        ...,
-        description="Model name/ID for the ecclesia report agent (e.g., gemini-2.5-pro)",
-        min_length=1,
-    )
-    # Optional fields for future extensibility
-    temperature: Optional[float] = Field(
-        default=0.7,  # Higher temperature for creative synthesis
-        ge=0.0,
-        le=1.0,
-        description="Temperature for final report generation",
-    )
-    max_tokens: Optional[int] = Field(
-        default=2000, gt=0, description="Maximum tokens for final report sections"
+        default=2000, gt=0, description="Maximum tokens per section iteration"
     )
 
 
@@ -177,11 +148,8 @@ class Config(BaseModel):
     summarizer: SummarizerConfig = Field(
         ..., description="Configuration for the summarizer agent"
     )
-    topic_report: TopicReportConfig = Field(
-        ..., description="Configuration for the topic report agent"
-    )
-    ecclesia_report: EcclesiaReportConfig = Field(
-        ..., description="Configuration for the ecclesia report agent"
+    report_writer: ReportWriterConfig = Field(
+        ..., description="Configuration for the report writer agent"
     )
     agents: list[AgentConfig] = Field(
         ...,

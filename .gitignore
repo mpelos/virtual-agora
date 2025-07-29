@@ -158,6 +158,7 @@ sessions/*
 checkpoints/*
 !checkpoints/.gitkeep
 .gemini-clipboard/
+config.yml
 
 # Test files with sensitive data
 *.env.test

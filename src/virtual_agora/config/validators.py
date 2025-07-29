@@ -11,8 +11,7 @@ from virtual_agora.config.models import (
     Config,
     Provider,
     SummarizerConfig,
-    TopicReportConfig,
-    EcclesiaReportConfig,
+    ReportWriterConfig,
 )
 from virtual_agora.utils.exceptions import ConfigurationError
 from virtual_agora.utils.logging import get_logger
@@ -53,8 +52,7 @@ class ConfigValidator:
         providers = [
             self.config.moderator.provider,
             self.config.summarizer.provider,
-            self.config.topic_report.provider,
-            self.config.ecclesia_report.provider,
+            self.config.report_writer.provider,
         ]
         for agent in self.config.agents:
             providers.extend([agent.provider] * agent.count)
@@ -165,29 +163,20 @@ class ConfigValidator:
                     f"Lower temperatures (0.2-0.4) typically produce more consistent summaries."
                 )
 
-        # Check topic report agent
-        topic_model = self.config.topic_report.model.lower()
-        if hasattr(self.config.topic_report, "max_tokens"):
-            if self.config.topic_report.max_tokens < 1000:
+        # Check report writer agent
+        report_writer_model = self.config.report_writer.model.lower()
+        if hasattr(self.config.report_writer, "max_tokens"):
+            if self.config.report_writer.max_tokens < 1500:
                 logger.warning(
-                    f"Topic report max_tokens is {self.config.topic_report.max_tokens}. "
-                    f"Consider increasing to 1500+ for comprehensive reports."
-                )
-
-        # Check ecclesia report agent
-        if hasattr(self.config.ecclesia_report, "max_tokens"):
-            if self.config.ecclesia_report.max_tokens < 1500:
-                logger.warning(
-                    f"Ecclesia report max_tokens is {self.config.ecclesia_report.max_tokens}. "
-                    f"Consider increasing to 2000+ for detailed final reports."
+                    f"Report writer max_tokens is {self.config.report_writer.max_tokens}. "
+                    f"Consider increasing to 2000+ for comprehensive iterative reports."
                 )
 
         # Validate model availability for all specialized agents
         specialized_agents = [
             ("moderator", self.config.moderator),
             ("summarizer", self.config.summarizer),
-            ("topic_report", self.config.topic_report),
-            ("ecclesia_report", self.config.ecclesia_report),
+            ("report_writer", self.config.report_writer),
         ]
 
         for agent_type, agent_config in specialized_agents:
@@ -236,8 +225,7 @@ class ConfigValidator:
         providers = [
             self.config.moderator.provider.value,
             self.config.summarizer.provider.value,
-            self.config.topic_report.provider.value,
-            self.config.ecclesia_report.provider.value,
+            self.config.report_writer.provider.value,
         ]
         for agent in self.config.agents:
             providers.extend([agent.provider.value] * agent.count)
