@@ -508,8 +508,17 @@ class V13FlowNodes:
                     f"Getting proposals from {agent.agent_id} ({i+1}/{len(self.discussing_agents)})"
                 )
 
-                prompt = f"""Based on the theme '{theme}', propose 3-5 specific
-                sub-topics for discussion. Be concise and specific."""
+                prompt = f"""Based on the theme '{theme}', propose 3-5 strategic topics that will serve as a compass to guide our discussion toward the best possible conclusion.
+
+Think strategically: What key areas need to be explored and in what logical order to build comprehensive understanding? Consider topics as building blocks that lead from foundational concepts to deeper insights.
+
+Your topics should:
+- Address essential aspects that must be discussed to reach meaningful conclusions
+- Build upon each other in a logical progression
+- Cover different dimensions of the theme to ensure comprehensive coverage
+- Be designed to facilitate knowledge building throughout the discussion
+
+Frame each topic as a stepping stone toward collective understanding. Consider: What needs to be discussed and in what order to arrive at the most insightful and complete conclusion?"""
 
                 try:
                     # Call agent with proper state and prompt
@@ -527,6 +536,17 @@ class V13FlowNodes:
                             {"agent_id": agent.agent_id, "proposals": response_content}
                         )
                         logger.info(f"Collected proposals from {agent.agent_id}")
+
+                        # Display the agent's topic proposal in the UI
+                        provider_type = get_provider_type_from_agent_id(agent.agent_id)
+                        display_agent_response(
+                            agent_id=agent.agent_id,
+                            provider=provider_type,
+                            content=response_content,
+                            round_number=0,  # Phase 1 - agenda setting
+                            topic="Strategic Topic Proposals",
+                            timestamp=datetime.now(),
+                        )
                 except Exception as e:
                     logger.error(f"Failed to get proposals from {agent.agent_id}: {e}")
                     proposals.append(
@@ -537,6 +557,17 @@ class V13FlowNodes:
                         }
                     )
 
+                    # Display the failure for transparency
+                    provider_type = get_provider_type_from_agent_id(agent.agent_id)
+                    display_agent_response(
+                        agent_id=agent.agent_id,
+                        provider=provider_type,
+                        content=f"❌ Failed to provide topic proposals: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}",
+                        round_number=0,  # Phase 1 - agenda setting
+                        topic="Strategic Topic Proposals",
+                        timestamp=datetime.now(),
+                    )
+
         updates = {
             "proposed_topics": proposals,
             "current_phase": 1,
@@ -544,6 +575,126 @@ class V13FlowNodes:
         }
 
         logger.info(f"Collected proposals from {len(proposals)} agents")
+
+        return updates
+
+    def topic_refinement_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
+        """Allow agents to collaboratively refine their topic proposals.
+
+        This node:
+        1. Shows all initial proposals to each agent
+        2. Allows agents to refine, merge, or replace their topics
+        3. Enables collaborative consensus building
+        4. Maintains strategic focus on conclusion-oriented progression
+        """
+        logger.info("Node: topic_refinement - Collaborative topic refinement")
+
+        initial_proposals = state["proposed_topics"]
+        theme = state["main_topic"]
+        refined_proposals = []
+
+        # Create comprehensive view of all initial proposals for context
+        all_proposals_text = "\n\n".join(
+            [
+                f"**{proposal['agent_id']}** proposed:\n{proposal['proposals']}"
+                for proposal in initial_proposals
+            ]
+        )
+
+        # Request refinements from each discussing agent
+        with LoadingSpinner(
+            f"Refining topics with {len(self.discussing_agents)} agents..."
+        ) as spinner:
+            for i, agent in enumerate(self.discussing_agents):
+                spinner.update(
+                    f"Refining topics with {agent.agent_id} ({i+1}/{len(self.discussing_agents)})"
+                )
+
+                # Find this agent's initial proposal
+                agent_initial_proposal = next(
+                    (p for p in initial_proposals if p["agent_id"] == agent.agent_id),
+                    {"proposals": "No initial proposal found"},
+                )
+
+                prompt = f"""Now that all agents have proposed initial topics for the theme '{theme}', you can see everyone's suggestions below. This is your opportunity to refine your topics based on collective wisdom.
+
+ALL INITIAL PROPOSALS:
+{all_proposals_text}
+
+YOUR INITIAL PROPOSAL:
+{agent_initial_proposal['proposals']}
+
+COLLABORATIVE REFINEMENT TASK:
+Review all proposals with a strategic lens. Your goal is to help design the optimal discussion flow that will lead to the best possible conclusions. Consider:
+
+1. **Strategic Synthesis**: How can topics be combined or refined to create better logical progression?
+2. **Gap Analysis**: What essential aspects are missing that need to be addressed?
+3. **Flow Optimization**: What order would build knowledge most effectively?
+4. **Collaboration Opportunities**: How can your topics complement others' suggestions?
+
+Refine your 3-5 topics considering:
+- Merge similar topics from different agents into stronger, more comprehensive ones
+- Identify and fill any critical gaps in coverage
+- Ensure logical progression from foundational to advanced concepts
+- Build upon others' insights while maintaining your unique perspective
+- Keep the strategic focus: "What pathway will lead to the most comprehensive conclusion?"
+
+Provide your refined topic proposals, incorporating insights from the collaborative review."""
+
+                try:
+                    # Call agent with proper state and prompt
+                    response_dict = agent(state, prompt=prompt)
+
+                    # Extract response content
+                    messages = response_dict.get("messages", [])
+                    if messages:
+                        response_content = (
+                            messages[-1].content
+                            if hasattr(messages[-1], "content")
+                            else str(messages[-1])
+                        )
+                        refined_proposals.append(
+                            {"agent_id": agent.agent_id, "proposals": response_content}
+                        )
+                        logger.info(
+                            f"Collected refined proposals from {agent.agent_id}"
+                        )
+
+                        # Display the agent's refined topic proposals in the UI
+                        provider_type = get_provider_type_from_agent_id(agent.agent_id)
+                        display_agent_response(
+                            agent_id=agent.agent_id,
+                            provider=provider_type,
+                            content=response_content,
+                            round_number=0,  # Phase 1 - agenda setting
+                            topic="Collaborative Topic Refinement",
+                            timestamp=datetime.now(),
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to get refined proposals from {agent.agent_id}: {e}"
+                    )
+                    # Fallback to original proposal
+                    refined_proposals.append(agent_initial_proposal)
+
+                    # Display the failure for transparency
+                    provider_type = get_provider_type_from_agent_id(agent.agent_id)
+                    display_agent_response(
+                        agent_id=agent.agent_id,
+                        provider=provider_type,
+                        content=f"❌ Failed to refine topics, using original proposal: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}",
+                        round_number=0,  # Phase 1 - agenda setting
+                        topic="Collaborative Topic Refinement",
+                        timestamp=datetime.now(),
+                    )
+
+        updates = {
+            "proposed_topics": refined_proposals,  # Replace initial with refined proposals
+            "initial_proposals": initial_proposals,  # Keep original for reference
+            "refinement_completed": True,
+        }
+
+        logger.info(f"Completed topic refinement with {len(refined_proposals)} agents")
 
         return updates
 
@@ -2069,7 +2220,12 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                     f"Agent recommendation: {'End session' if agents_vote_end else 'Continue'}\n\n"
                     "What would you like to do?"
                 ),
-                "options": ["continue", "end_session", "modify_agenda"],
+                "options": [
+                    "continue",
+                    "end_session",
+                    "generate_final_report",
+                    "modify_agenda",
+                ],
             }
         )
 
@@ -2086,7 +2242,9 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         # Process user decision
         updates = {
             "user_approves_continuation": decision == "continue",
-            "user_requests_end": decision == "end_session",
+            "user_requests_end": decision == "end_session"
+            or decision == "generate_final_report",
+            "user_requests_final_report": decision == "generate_final_report",
             "user_requested_modification": decision == "modify_agenda",
             "hitl_state": {
                 "awaiting_approval": False,

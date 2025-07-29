@@ -177,6 +177,7 @@ class VirtualAgoraV13Flow:
 
         # ===== Phase 1: Agenda Setting Nodes =====
         graph.add_node("agenda_proposal", self.nodes.agenda_proposal_node)
+        graph.add_node("topic_refinement", self.nodes.topic_refinement_node)
         graph.add_node("collate_proposals", self.nodes.collate_proposals_node)
         graph.add_node("agenda_voting", self.nodes.agenda_voting_node)
         graph.add_node("synthesize_agenda", self.nodes.synthesize_agenda_node)
@@ -217,7 +218,8 @@ class VirtualAgoraV13Flow:
         graph.add_edge("get_theme", "agenda_proposal")
 
         # Phase 1: Agenda Setting Flow
-        graph.add_edge("agenda_proposal", "collate_proposals")
+        graph.add_edge("agenda_proposal", "topic_refinement")
+        graph.add_edge("topic_refinement", "collate_proposals")
         graph.add_edge("collate_proposals", "agenda_voting")
         graph.add_edge("agenda_voting", "synthesize_agenda")
         graph.add_edge("synthesize_agenda", "agenda_approval")
@@ -294,7 +296,7 @@ class VirtualAgoraV13Flow:
             },
         )
 
-        # User approval with agenda check
+        # User approval with agenda check - enhanced to handle explicit final report requests
         graph.add_conditional_edges(
             "user_approval",
             lambda state: (
@@ -314,7 +316,7 @@ class VirtualAgoraV13Flow:
             "agenda_modification",
             self.conditions.should_modify_agenda,
             {
-                "modify_agenda": "agenda_proposal",  # Re-evaluate agenda
+                "modify_agenda": "topic_refinement",  # Re-evaluate agenda with refinement
                 "next_topic": "announce_item",  # Continue with next topic
             },
         )

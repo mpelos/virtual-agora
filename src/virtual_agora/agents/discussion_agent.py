@@ -107,6 +107,8 @@ class DiscussionAgent(LLMAgent):
             "- **Build Upon Ideas:** Actively listen to others. Your comments should build upon, challenge constructively, or offer new perspectives on what has already been said.\n"
             "- **Ask Incisive Questions:** Pose questions that clarify ambiguities, challenge assumptions, or open new avenues of exploration.\n"
             "- **Stay On Topic:** All contributions must be strictly relevant to the current agenda item being discussed.\n"
+            "- **Strategic Topic Design:** When proposing or refining topics, think strategically about creating a compass that guides discussion toward comprehensive conclusions. Consider: 'What needs to be discussed and in what order to arrive at the best possible understanding?'\n"
+            "- **Collaborative Refinement:** When reviewing others' topic proposals, identify opportunities for synthesis, gap-filling, and optimal ordering that builds knowledge progressively.\n"
             "- **Follow Instructions:** You will be asked to perform specific tasks like proposing topics and voting. Follow all instructions precisely and provide clear reasoning for your actions."
         )
 

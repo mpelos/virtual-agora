@@ -47,7 +47,6 @@ logger = get_logger(__name__)
 
 # Input validation constants
 MIN_TOPIC_LENGTH = 10
-MAX_TOPIC_LENGTH = 500
 MIN_AGENDA_ITEMS = 2
 MAX_AGENDA_ITEMS = 10
 INPUT_TIMEOUT = 300  # 5 minutes
@@ -150,13 +149,6 @@ def get_initial_topic() -> str:
             if len(topic) < MIN_TOPIC_LENGTH:
                 console.print(
                     f"[yellow]Topic too short (minimum {MIN_TOPIC_LENGTH} characters).[/yellow]"
-                )
-                attempts += 1
-                continue
-
-            if len(topic) > MAX_TOPIC_LENGTH:
-                console.print(
-                    f"[yellow]Topic too long (maximum {MAX_TOPIC_LENGTH} characters).[/yellow]"
                 )
                 attempts += 1
                 continue

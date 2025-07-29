@@ -81,7 +81,7 @@ Each agent type has specialized prompts optimized for their specific reasoning t
 
 **A. Discussing Agents**
 
-- **Core Prompt:** "You are a thoughtful participant in a structured discussion facilitated by Virtual Agora. You will be given a discussion theme, specific agenda item, context from previous rounds, live comments from the current round, and summaries of previously concluded topics (if any). Your goal is to provide a well-reasoned, concise comment that builds upon the conversation while staying strictly on the current agenda item. You should be aware of what topics have been previously discussed and their resolutions to avoid redundancy and build upon prior insights. When asked, you must be able to: 1. Propose 3-5 potential agenda items based on a given theme. 2. Vote on agenda ordering by expressing preferences in natural language. 3. Vote 'Yes' or 'No' with justification when asked if a topic should be concluded. 4. Provide final considerations when a topic is ending. 5. Suggest agenda modifications (additions/removals) based on previous discussions. Be direct, substantive, and focused on advancing the collective understanding of the topic."
+- **Core Prompt:** "You are a thoughtful participant in a structured discussion facilitated by Virtual Agora. You will be given a discussion theme, specific agenda item, context from previous rounds, live comments from the current round, and summaries of previously concluded topics (if any). Your goal is to provide a well-reasoned, concise comment that builds upon the conversation while staying strictly on the current agenda item. You should be aware of what topics have been previously discussed and their resolutions to avoid redundancy and build upon prior insights. When asked, you must be able to: 1. Propose 3-5 potential agenda items based on a given theme. 2. Review and refine your proposed topics after seeing what other agents have proposed, considering opportunities to merge similar topics, build on others' ideas, eliminate redundancy, and identify gaps that should be addressed. 3. Vote on agenda ordering by expressing preferences in natural language. 4. Vote 'Yes' or 'No' with justification when asked if a topic should be concluded. 5. Provide final considerations when a topic is ending. 6. Suggest agenda modifications (additions/removals) based on previous discussions. Be direct, substantive, and focused on advancing the collective understanding of the topic."
 
 **B. Moderator Agent**
 
@@ -175,12 +175,13 @@ The application is a state machine where the graph dictates the flow from one no
 
 ##### **Phase 1: Agenda Setting**
 
-1.  **Agenda Proposal Node:** This node prompts each **Discussing Agent** to propose 3-5 potential agenda items based on the user's theme.
-2.  **Collate Proposals Node:** The collected proposals are passed to this node, which invokes the **Moderator Agent** to read all suggestions and compile a single, deduplicated list of agenda items.
-3.  **Agenda Voting Node:** A polling node presents the collated list to the **Discussing Agents** and instructs them to vote on their preferred order of discussion.
-4.  **Synthesize Agenda Node:** This node invokes the **Moderator Agent**, providing it with all the natural language votes. The Moderator's task is to analyze the votes, break any ties, and produce a final, rank-ordered agenda.
+1.  **Agenda Proposal Node:** This node prompts each **Discussing Agent** to propose 3-5 strategic topics that serve as a compass to guide discussion toward the best possible conclusion. Agents are instructed to think strategically about what needs to be discussed and in what order to build comprehensive understanding.
+2.  **Topic Refinement Node:** This node presents all initial proposals to each **Discussing Agent** and prompts them to collaboratively refine their topics. Agents review all proposals with a strategic lens, considering synthesis opportunities, gap analysis, flow optimization, and collaboration possibilities. This enables agents to merge similar topics, fill critical gaps, ensure logical progression, and maintain focus on creating an optimal pathway to comprehensive conclusions.
+3.  **Collate Proposals Node:** The collected refined proposals are passed to this node, which invokes the **Moderator Agent** to read all suggestions and compile a single, deduplicated list of agenda items.
+4.  **Agenda Voting Node:** A polling node presents the collated list to the **Discussing Agents** and instructs them to vote on their preferred order of discussion.
+5.  **Synthesize Agenda Node:** This node invokes the **Moderator Agent**, providing it with all the natural language votes. The Moderator's task is to analyze the votes, break any ties, and produce a final, rank-ordered agenda.
     - **Output Format:** The Moderator's output **must** be a JSON object: `{"proposed_agenda": ["Agenda Item C", "Agenda Item A", "Agenda Item B"]}`.
-5.  **HITL - Agenda Approval Node:** The system parses the Moderator's JSON. The ordered agenda is displayed to the **User**, who must approve or edit it to proceed. This user-approved agenda is saved to the graph's state.
+6.  **HITL - Agenda Approval Node:** The system parses the Moderator's JSON. The ordered agenda is displayed to the **User**, who must approve or edit it to proceed. This user-approved agenda is saved to the graph's state.
 
 ##### **Phase 2: Discussion Loop (Per Agenda Item)**
 
@@ -225,7 +226,7 @@ The application is a state machine where the graph dictates the flow from one no
     - If the user denies permission, the graph transitions to **Phase 5**.
     - If the user grants permission, the graph checks if any agenda items remain.
       - If the agenda is now empty, the graph transitions to **Phase 5**.
-      - If items remain, the graph transitions back to the **Agenda Proposal Node (Phase 1)**, first instructing agents to re-evaluate the agenda (propose additions/removals) based on the discussion so far.
+      - If items remain, the graph transitions back to the **Topic Refinement Node (Phase 1)**, first instructing agents to re-evaluate the agenda (propose additions/removals) based on the discussion so far.
 
 ##### **Phase 5: Final Report Generation**
 
@@ -259,7 +260,8 @@ graph TD
     %% Phase 1: Agenda Setting
     subgraph Phase1 ["Phase 1: Agenda Setting"]
         D --> E[Agenda Proposal Node<br/>Discussing Agents propose items];
-        E --> F[Collate Proposals Node<br/>Moderator Agent deduplicates];
+        E --> E1[Topic Refinement Node<br/>Agents review & refine topics];
+        E1 --> F[Collate Proposals Node<br/>Moderator Agent deduplicates];
         F --> G[Agenda Voting Node<br/>Discussing Agents vote on order];
         G --> H[Synthesize Agenda Node<br/>Moderator Agent creates JSON agenda];
         H --> I{HITL: Agenda Approval Node<br/>User approves/edits agenda};
@@ -298,7 +300,7 @@ graph TD
         W -->|"Yes"| X{Conditional: Items Remaining?<br/>Check agenda status};
         X -->|"Empty"| AA;
         X -->|"Items Remain"| Y[Agenda Modification Node<br/>Agents propose changes];
-        Y --> E;
+        Y --> E1;
     end
 
     %% Phase 5: Final Report
@@ -310,7 +312,7 @@ graph TD
 
     %% Apply Styles
     class A,CC startEnd;
-    class B,C,E,F,G,H,J,K,L,R,S,S1,Y,AA,BB process;
+    class B,C,E,E1,F,G,H,J,K,L,R,S,S1,Y,AA,BB process;
     class D,I,P,W hitl;
     class M,O,Q,V,X decision;
     class T fileOutput;

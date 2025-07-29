@@ -203,6 +203,11 @@ class V13FlowConditions:
             logger.info("User requested to end session, moving to final report")
             return "end_session"
 
+        # Check user explicit request for final report
+        if state.get("user_requests_final_report", False):
+            logger.info("User explicitly requested final report generation")
+            return "end_session"
+
         # Check user skip to final report (from periodic stops)
         if state.get("user_skip_to_final", False):
             logger.info("User requested skip to final report")
