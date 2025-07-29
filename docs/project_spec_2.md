@@ -38,14 +38,16 @@ The node-centric architecture enables enhanced capabilities while maintaining th
 - **Intelligent Context Management:** Sophisticated context flow providing agents with:
   - Original discussion theme
   - Current agenda item
+  - Summaries from previously concluded topics (enabling agents to reference prior resolutions)
   - Compacted summaries from previous rounds
   - Live comments from current round participants
 - **Dual Polling System:** Both agent consensus and user override capabilities for topic transitions.
 - **Advanced Topic Conclusion:** Majority + 1 vote required with minority dissent opportunities.
 - **Contextual Final Considerations:** Dissenting agents (vote-triggered) or all agents (user-triggered) provide closing thoughts.
-- **Multi-Level Reporting:** Three-tier documentation system:
+- **Multi-Level Reporting:** Four-tier documentation system:
   - Round summaries (session context)
   - Topic reports (agenda item synthesis)
+  - Topic summaries (concise conclusions for future reference)
   - Final comprehensive report (complete session analysis)
 - **Persistent Session Logging:** Complete transcript preservation with timestamps and speaker identification.
 - **Rich Terminal Interface:** Color-coded, formatted output for optimal readability and user experience.
@@ -70,7 +72,7 @@ The node-centric architecture enables enhanced capabilities while maintaining th
 - **Agents as Tools:** LLMs are instantiated with specific prompts to act as specialized agents. They do not control the flow; they are invoked by graph nodes to execute tasks.
   - **Discussing Agents:** The primary participants who propose agenda items, debate, and vote.
   - **Moderator Agent:** A specialized reasoning tool invoked to perform process-oriented tasks that require complex understanding, such as compiling unique lists from agent proposals and synthesizing votes to produce a final, ordered agenda.
-  - **Summarizer Agent:** Invoked after each discussion round to create a concise, agent-agnostic summary of the key points.
+  - **Summarizer Agent:** Invoked after each discussion round to create a concise, agent-agnostic summary of the key points. Also creates one-paragraph topic conclusions after each agenda item is completed.
   - **Report Writer Agent:** A specialized agent for generating long-form reports through an iterative process. Due to LLM token output limitations, it works in multiple steps: first creating a detailed outline/structure, then writing each section iteratively. It handles both topic-specific reports (after agenda items conclude) and comprehensive session reports (at the end). The agent must be objective while ensuring no key points are missed, organizing complex information into readable, concise reports.
 
 #### **5. Agent Personas & Prompting**
@@ -79,7 +81,7 @@ Each agent type has specialized prompts optimized for their specific reasoning t
 
 **A. Discussing Agents**
 
-- **Core Prompt:** "You are a thoughtful participant in a structured discussion facilitated by Virtual Agora. You will be given a discussion theme, specific agenda item, context from previous rounds, and live comments from the current round. Your goal is to provide a well-reasoned, concise comment that builds upon the conversation while staying strictly on the current agenda item. When asked, you must be able to: 1. Propose 3-5 potential agenda items based on a given theme. 2. Vote on agenda ordering by expressing preferences in natural language. 3. Vote 'Yes' or 'No' with justification when asked if a topic should be concluded. 4. Provide final considerations when a topic is ending. 5. Suggest agenda modifications (additions/removals) based on previous discussions. Be direct, substantive, and focused on advancing the collective understanding of the topic."
+- **Core Prompt:** "You are a thoughtful participant in a structured discussion facilitated by Virtual Agora. You will be given a discussion theme, specific agenda item, context from previous rounds, live comments from the current round, and summaries of previously concluded topics (if any). Your goal is to provide a well-reasoned, concise comment that builds upon the conversation while staying strictly on the current agenda item. You should be aware of what topics have been previously discussed and their resolutions to avoid redundancy and build upon prior insights. When asked, you must be able to: 1. Propose 3-5 potential agenda items based on a given theme. 2. Vote on agenda ordering by expressing preferences in natural language. 3. Vote 'Yes' or 'No' with justification when asked if a topic should be concluded. 4. Provide final considerations when a topic is ending. 5. Suggest agenda modifications (additions/removals) based on previous discussions. Be direct, substantive, and focused on advancing the collective understanding of the topic."
 
 **B. Moderator Agent**
 
@@ -87,7 +89,13 @@ Each agent type has specialized prompts optimized for their specific reasoning t
 
 **C. Summarizer Agent**
 
-- **Core Prompt:** "You are a specialized text compression tool for Virtual Agora. Your task is to read all agent comments from a single discussion round and create a concise, agent-agnostic summary that captures the key points, arguments, and insights without attribution to specific agents. Focus on: 1. Main arguments presented. 2. Points of agreement and disagreement. 3. New insights or perspectives introduced. 4. Questions raised or areas requiring further exploration. Your summary will be used as context for future rounds, so ensure it preserves essential information while being substantially more concise than the original. Write in third person, avoid agent names, and maintain objectivity."
+- **Core Prompt:** "You are a specialized text compression tool for Virtual Agora. You have two main tasks:
+
+**Task 1 - Round Summarization:** Read all agent comments from a single discussion round and create a concise, agent-agnostic summary that captures the key points, arguments, and insights without attribution to specific agents. Focus on: 1. Main arguments presented. 2. Points of agreement and disagreement. 3. New insights or perspectives introduced. 4. Questions raised or areas requiring further exploration. Your summary will be used as context for future rounds, so ensure it preserves essential information while being substantially more concise than the original.
+
+**Task 2 - Topic Conclusion Summary:** After a topic discussion concludes, create a single paragraph summary that captures: 1. The key resolution or consensus reached. 2. Main points of agreement among agents. 3. Any outstanding questions or areas of disagreement. 4. The practical implications or next steps identified. This summary will be provided to agents when discussing future topics so they understand what has been previously resolved.
+
+Write in third person, avoid agent names, and maintain objectivity in both tasks."
 
 **D. Report Writer Agent**
 
@@ -182,8 +190,9 @@ The application is a state machine where the graph dictates the flow from one no
     - **Context Flow:** The context provided to each agent is critical. For any given turn, an agent receives:
       1.  The initial user-provided theme.
       2.  The specific agenda item being discussed.
-      3.  A collection of all compacted summaries from _previous_ rounds.
-      4.  The live, verbatim comments from any agents who have already spoken _within the current round_.
+      3.  Summaries from previously concluded topics (if any) to understand what has been resolved.
+      4.  A collection of all compacted summaries from _previous_ rounds.
+      5.  The live, verbatim comments from any agents who have already spoken _within the current round_.
 3.  **Round Summarization Node:** After all agents have spoken in a round, this node invokes the **Summarizer Agent**. It is given all comments from the round and creates a single, agent-agnostic "compacted text" summary. This summary is appended to the state for future rounds.
 4.  **Conditional Branch: End-of-Topic Poll:** A conditional node checks if the round number is 3 or greater. If so, it directs the flow to the poll. If not, it loops back to the **Discussion Round Node**.
 5.  **End-of-Topic Poll Node:** This polling node asks the **Discussing Agents**: "Should we conclude the discussion on '\[Current Agenda Item]'? Please respond with 'Yes' or 'No' and a short justification."
@@ -202,7 +211,8 @@ The application is a state machine where the graph dictates the flow from one no
 2.  **Topic Report Generation Node:** This node invokes the **Report Writer Agent** iteratively:
     - **First Call:** Agent analyzes all compacted round summaries and "Final Considerations" to create a detailed report structure (JSON outline)
     - **Subsequent Calls:** Agent writes one section at a time based on the outline until the complete topic report is generated
-3.  **File Output Node:** The complete generated report is saved to a dedicated Markdown file (e.g., `agenda_summary_Legal_Status_of_DAOs.md`).
+3.  **Topic Summary Generation Node:** This node invokes the **Summarizer Agent** to create a concise one-paragraph summary of the topic conclusion. The summary captures the key resolution, main consensus points, outstanding questions, and practical implications. This summary is stored in the state for reference by agents in future topic discussions.
+4.  **File Output Node:** The complete generated report is saved to a dedicated Markdown file (e.g., `agenda_summary_Legal_Status_of_DAOs.md`).
 
 ##### **Phase 4: Continuation & Agenda Re-evaluation**
 
@@ -274,7 +284,8 @@ graph TD
     subgraph Phase3 ["Phase 3: Topic Conclusion"]
         Q -->|"Vote Passes"| R[Final Considerations Node<br/>Dissenting/All agents final thoughts];
         R --> S[Topic Report Generation Node<br/>Report Writer Agent creates iteratively];
-        S --> T[File Output Node<br/>Save agenda_summary_X.md];
+        S --> S1[Topic Summary Generation Node<br/>Summarizer Agent creates conclusion];
+        S1 --> T[File Output Node<br/>Save agenda_summary_X.md];
     end
 
     %% Phase 4: Continuation Logic
@@ -299,7 +310,7 @@ graph TD
 
     %% Apply Styles
     class A,CC startEnd;
-    class B,C,E,F,G,H,J,K,L,R,S,Y,AA,BB process;
+    class B,C,E,F,G,H,J,K,L,R,S,S1,Y,AA,BB process;
     class D,I,P,W hitl;
     class M,O,Q,V,X decision;
     class T fileOutput;
@@ -332,7 +343,7 @@ graph TD
 2. **Agenda Setting:** Democratic proposal and voting with Moderator Agent synthesis
 3. **Discussion Loop:** Rotating agent participation with Summarizer Agent compression
 4. **Enhanced Control:** Periodic user stops (every 5 rounds) + agent polling (round 3+)
-5. **Topic Conclusion:** Specialized Report Writer Agent iterative synthesis with contextual final considerations
+5. **Topic Conclusion:** Specialized Report Writer Agent iterative synthesis with contextual final considerations, followed by Summarizer Agent topic conclusion summary
 6. **Continuation Logic:** Agent polling for session end + user approval for agenda modification
 7. **Final Reporting:** Report Writer Agent iteratively analyzes all topics for comprehensive synthesis
 
@@ -353,6 +364,7 @@ The node-centric architecture uses a dual-layer state management approach:
   - `current_round_comments`: Live comments from current round participants
   - `agent_turn_order`: Rotating agent sequence
   - `topic_reports`: Generated topic reports for concluded items
+  - `topic_summaries`: List of one-paragraph summaries from concluded topics for future reference
   - `report_structures`: JSON outlines created by Report Writer Agent for iterative writing
 - **Agent Context Management:** Dynamic context assembly for each agent invocation
 - **Flow Control State:** Tracking graph node transitions and conditional logic

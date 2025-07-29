@@ -53,7 +53,9 @@ class SummarizerAgent(LLMAgent):
         """Get the specialized summarizer prompt from v1.3 spec."""
         return (
             "**Identity:** You are the Summarizer, a specialized text compression and synthesis tool for Virtual Agora.\n"
-            "**Core Directive:** Your sole function is to read the raw text of a discussion round and produce a concise, neutral, and agent-agnostic summary. Your output is critical for maintaining context in future rounds.\n\n"
+            "**Core Directive:** You have two main tasks:\n\n"
+            "**Task 1 - Round Summarization:** Read the raw text of a discussion round and produce a concise, neutral, and agent-agnostic summary. Your output is critical for maintaining context in future rounds.\n\n"
+            "**Task 2 - Topic Conclusion Summary:** After a topic discussion concludes, create a single paragraph summary that captures: 1. The key resolution or consensus reached. 2. Main points of agreement among agents. 3. Any outstanding questions or areas of disagreement. 4. The practical implications or next steps identified. This summary will be provided to agents when discussing future topics so they understand what has been previously resolved.\n\n"
             "**Key Synthesis Areas:**\n"
             "- **Main Arguments:** What were the primary claims or arguments presented?\n"
             "- **Points of Consensus:** Where did the participants seem to agree?\n"
@@ -63,7 +65,8 @@ class SummarizerAgent(LLMAgent):
             "- **Agent-Agnostic:** NEVER attribute points to specific agents (e.g., 'Agent A said...'). Summarize the ideas themselves.\n"
             "- **Neutrality:** Do not inject your own opinions, analysis, or interpretations. Your job is to reflect the content of the discussion, not to comment on it.\n"
             "- **Third-Person Perspective:** Write the summary in a detached, third-person narrative style (e.g., 'The discussion covered...', 'One viewpoint suggested...').\n"
-            "- **Conciseness:** Preserve the essential information while being substantially more concise than the original text."
+            "- **Conciseness:** Preserve the essential information while being substantially more concise than the original text.\n\n"
+            "Write in third person, avoid agent names, and maintain objectivity in both tasks."
         )
 
     def summarize_round(
@@ -128,6 +131,59 @@ class SummarizerAgent(LLMAgent):
             )
 
         return summary
+
+    def summarize_topic_conclusion(
+        self, round_summaries: List[str], final_considerations: List[str], topic: str
+    ) -> str:
+        """Create a one-paragraph summary of a concluded topic discussion.
+
+        This method creates a concise conclusion summary that captures the key
+        resolution, consensus points, outstanding questions, and practical
+        implications from a completed topic discussion.
+
+        Args:
+            round_summaries: List of round summaries from the topic discussion
+            final_considerations: List of final thoughts from agents
+            topic: The topic that was discussed
+
+        Returns:
+            One-paragraph summary of the topic conclusion
+        """
+        # Combine round summaries
+        combined_summaries = "\n\n".join(
+            [f"Round {i+1}: {summary}" for i, summary in enumerate(round_summaries)]
+        )
+
+        # Combine final considerations
+        combined_considerations = "\n".join(
+            [f"- {consideration}" for consideration in final_considerations]
+        )
+
+        # Create topic conclusion prompt
+        prompt = (
+            f"**Task:** Create Topic Conclusion Summary.\n"
+            f"**Topic:** {topic}\n\n"
+            f"**Round Summaries:**\n---\n{combined_summaries}\n---\n\n"
+            f"**Final Considerations:**\n---\n{combined_considerations}\n---\n\n"
+            f"**Instructions:**\n"
+            f"1. Create a single paragraph summary of this topic's conclusion.\n"
+            f"2. Capture: key resolution/consensus, main agreement points, outstanding questions, practical implications.\n"
+            f"3. This summary will help agents understand what was resolved when discussing future topics.\n"
+            f"4. Write in third person, be objective, and avoid agent attributions.\n"
+            f"5. Keep it concise but comprehensive (aim for 3-5 sentences).\n"
+            f"6. Your response should contain **only the summary paragraph** and nothing else."
+        )
+
+        # Generate topic conclusion summary
+        topic_summary = self.generate_response(prompt)
+
+        # Log the generation
+        summary_tokens = self._estimate_tokens(topic_summary)
+        logger.info(
+            f"Generated topic conclusion summary for '{topic}': {summary_tokens} tokens"
+        )
+
+        return topic_summary
 
     def generate_progressive_summary(
         self, summaries: List[str], topic: str, max_tokens: int = 1000

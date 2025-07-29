@@ -286,6 +286,111 @@ class TestSummarizerAgentV3:
         # Summary should capture the discussion essence
         assert "discussion" in summary.lower()
 
+    def test_summarize_topic_conclusion_basic(self, summarizer):
+        """Test basic topic conclusion summarization functionality."""
+        round_summaries = [
+            "Initial discussion focused on technical requirements and constraints.",
+            "Second round examined implementation options and resource needs.",
+            "Final round reached consensus on phased approach with monitoring.",
+        ]
+
+        final_considerations = [
+            "We should prioritize security throughout implementation.",
+            "Timeline needs to be realistic and account for testing phases.",
+            "Stakeholder communication will be critical for success.",
+        ]
+
+        topic_summary = summarizer.summarize_topic_conclusion(
+            round_summaries=round_summaries,
+            final_considerations=final_considerations,
+            topic="Technical Implementation Strategy",
+        )
+
+        assert isinstance(topic_summary, str)
+        assert len(topic_summary) > 0
+        # Should contain key elements from the prompt
+        assert (
+            "consensus" in topic_summary.lower() or "agreement" in topic_summary.lower()
+        )
+
+    def test_summarize_topic_conclusion_empty_inputs(self, summarizer):
+        """Test topic conclusion summarization with empty inputs."""
+        topic_summary = summarizer.summarize_topic_conclusion(
+            round_summaries=[], final_considerations=[], topic="Empty Topic"
+        )
+
+        assert isinstance(topic_summary, str)
+        assert len(topic_summary) > 0
+
+    def test_summarize_topic_conclusion_with_complex_content(self, summarizer):
+        """Test topic conclusion summarization with complex, realistic content."""
+        round_summaries = [
+            "Initial exploration of cloud vs on-premise deployment options, with security and cost considerations raised.",
+            "Deep dive into technical architecture, including scalability patterns and data flow requirements.",
+            "Final evaluation of hybrid approach, with consensus emerging on gradual migration strategy.",
+        ]
+
+        final_considerations = [
+            "Security audit should be completed before any production deployment.",
+            "Budget approval needed for additional infrastructure components.",
+            "Team training on new technologies should begin immediately.",
+            "Risk mitigation plan must address potential downtime scenarios.",
+        ]
+
+        topic_summary = summarizer.summarize_topic_conclusion(
+            round_summaries=round_summaries,
+            final_considerations=final_considerations,
+            topic="Cloud Migration Strategy",
+        )
+
+        assert isinstance(topic_summary, str)
+        assert len(topic_summary) > 50  # Should be substantial
+
+        # Should be agent-agnostic (no specific agent references)
+        assert "agent 1" not in topic_summary.lower()
+        assert "participant" not in topic_summary.lower()
+
+        # Should capture the essence of the discussion
+        assert any(
+            word in topic_summary.lower()
+            for word in ["consensus", "agreement", "approach", "strategy"]
+        )
+
+    def test_topic_conclusion_prompt_structure(self, summarizer):
+        """Test that topic conclusion follows the correct prompt structure."""
+        round_summaries = ["Summary 1", "Summary 2"]
+        final_considerations = ["Consideration 1", "Consideration 2"]
+
+        # Mock the generate_response method to capture the prompt
+        original_generate = summarizer.generate_response
+        captured_prompt = None
+
+        def mock_generate(prompt):
+            nonlocal captured_prompt
+            captured_prompt = prompt
+            return "Test summary response"
+
+        summarizer.generate_response = mock_generate
+
+        try:
+            summarizer.summarize_topic_conclusion(
+                round_summaries=round_summaries,
+                final_considerations=final_considerations,
+                topic="Test Topic",
+            )
+
+            # Verify prompt structure
+            assert captured_prompt is not None
+            assert "Topic Conclusion Summary" in captured_prompt
+            assert "Test Topic" in captured_prompt
+            assert "Round Summaries" in captured_prompt
+            assert "Final Considerations" in captured_prompt
+            assert "single paragraph" in captured_prompt
+
+        finally:
+            # Restore original method
+            summarizer.generate_response = original_generate
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

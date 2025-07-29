@@ -194,6 +194,9 @@ class VirtualAgoraV13Flow:
         graph.add_node(
             "topic_report_generation", self.nodes.topic_report_generation_node
         )
+        graph.add_node(
+            "topic_summary_generation", self.nodes.topic_summary_generation_node
+        )
         graph.add_node("file_output", self.nodes.file_output_node)
 
         # ===== Phase 4: Continuation Nodes =====
@@ -276,7 +279,8 @@ class VirtualAgoraV13Flow:
 
         # Phase 3: Topic Conclusion Flow
         graph.add_edge("final_considerations", "topic_report_generation")
-        graph.add_edge("topic_report_generation", "file_output")
+        graph.add_edge("topic_report_generation", "topic_summary_generation")
+        graph.add_edge("topic_summary_generation", "file_output")
         graph.add_edge("file_output", "agent_poll")
 
         # Phase 4: Continuation Logic

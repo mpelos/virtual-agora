@@ -27,6 +27,9 @@ def mock_specialized_agents():
     # Create summarizer mock
     summarizer = Mock(spec=SummarizerAgent)
     summarizer.agent_id = "summarizer"
+    summarizer.summarize_topic_conclusion = Mock(
+        return_value="Mock topic conclusion summary"
+    )
     agents["summarizer"] = summarizer
 
     # Create topic report mock
@@ -313,6 +316,88 @@ class TestPhase3Nodes:
             topic="Topic A",
             discussion_theme="Test Theme",
         )
+
+    def test_topic_summary_generation_node(self, flow_nodes, mock_specialized_agents):
+        """Test topic summary generation for conclusion."""
+        state = {
+            "active_topic": "Topic A",
+            "round_summaries": [
+                {"topic": "Topic A", "summary": "Round 1 summary"},
+                {"topic": "Topic A", "summary": "Round 2 summary"},
+            ],
+            "consensus_proposals": {
+                "Topic A_final_considerations": [
+                    "Final thought 1",
+                    "Final thought 2",
+                ]
+            },
+            "topic_summaries": {},
+        }
+
+        mock_summarizer = mock_specialized_agents["summarizer"]
+        mock_summarizer.summarize_topic_conclusion.return_value = (
+            "Topic A conclusion summary"
+        )
+
+        result = flow_nodes.topic_summary_generation_node(state)
+
+        assert (
+            result["topic_summaries"]["Topic A_conclusion"]
+            == "Topic A conclusion summary"
+        )
+
+        mock_summarizer.summarize_topic_conclusion.assert_called_once_with(
+            round_summaries=["Round 1 summary", "Round 2 summary"],
+            final_considerations=["Final thought 1", "Final thought 2"],
+            topic="Topic A",
+        )
+
+    def test_topic_summary_generation_node_empty_data(
+        self, flow_nodes, mock_specialized_agents
+    ):
+        """Test topic summary generation with empty data."""
+        state = {
+            "active_topic": "Topic B",
+            "round_summaries": [],
+            "consensus_proposals": {},
+            "topic_summaries": {},
+        }
+
+        mock_summarizer = mock_specialized_agents["summarizer"]
+        mock_summarizer.summarize_topic_conclusion.return_value = "Empty topic summary"
+
+        result = flow_nodes.topic_summary_generation_node(state)
+
+        assert result["topic_summaries"]["Topic B_conclusion"] == "Empty topic summary"
+
+        mock_summarizer.summarize_topic_conclusion.assert_called_once_with(
+            round_summaries=[], final_considerations=[], topic="Topic B"
+        )
+
+    def test_topic_summary_generation_node_error_handling(
+        self, flow_nodes, mock_specialized_agents
+    ):
+        """Test topic summary generation error handling."""
+        state = {
+            "active_topic": "Topic C",
+            "round_summaries": [],
+            "consensus_proposals": {},
+            "topic_summaries": {},
+        }
+
+        mock_summarizer = mock_specialized_agents["summarizer"]
+        mock_summarizer.summarize_topic_conclusion.side_effect = Exception(
+            "Summarizer error"
+        )
+
+        result = flow_nodes.topic_summary_generation_node(state)
+
+        assert "Topic C_conclusion" in result["topic_summaries"]
+        assert (
+            "Failed to generate summary"
+            in result["topic_summaries"]["Topic C_conclusion"]
+        )
+        assert result["summary_error"] == "Summarizer error"
 
 
 class TestPhase5Nodes:

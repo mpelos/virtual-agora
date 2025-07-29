@@ -295,8 +295,9 @@ def validate_agent_context(theme, current_topic, topic_summaries, round_messages
     According to spec, agents must receive:
     1. The initial user-provided theme
     2. The specific agenda item being discussed
-    3. A collection of all compacted summaries from previous rounds
-    4. The live, verbatim comments from current round participants
+    3. Summaries from previously concluded topics (if any) to understand what has been resolved
+    4. A collection of all compacted summaries from previous rounds
+    5. The live, verbatim comments from current round participants
 
     Args:
         theme: Discussion theme
@@ -1010,6 +1011,20 @@ class V13FlowNodes:
             Round: {current_round}
             Your turn: {i + 1}/{len(speaking_order)}
             """
+
+            # Add previous topic conclusions first (from previously discussed topics)
+            previous_topic_summaries = state.get("topic_summaries", {})
+            topic_conclusions = []
+            for key, summary in previous_topic_summaries.items():
+                if key.endswith("_conclusion") and not key.startswith(current_topic):
+                    # Extract topic name by removing "_conclusion" suffix
+                    topic_name = key.replace("_conclusion", "")
+                    topic_conclusions.append(f"{topic_name}: {summary}")
+
+            if topic_conclusions:
+                context += "\n\nPreviously Concluded Topics:\n"
+                for conclusion in topic_conclusions:
+                    context += f"- {conclusion}\n"
 
             # Add previous round summaries
             if topic_summaries:
@@ -1758,6 +1773,79 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                     current_topic: f"Failed to generate report: {str(e)}",
                 },
                 "report_error": str(e),
+            }
+
+        return updates
+
+    def topic_summary_generation_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
+        """Create a concise topic conclusion summary for future reference.
+
+        This node invokes the SummarizerAgent to create a one-paragraph summary
+        that captures the key resolution, consensus points, outstanding questions,
+        and practical implications from the concluded topic discussion.
+        """
+        logger.info(
+            "Node: topic_summary_generation - Creating topic conclusion summary"
+        )
+
+        summarizer_agent = self.specialized_agents["summarizer"]
+        current_topic = state["active_topic"]
+
+        # Gather round summaries for this topic
+        all_summaries = state.get("round_summaries", [])
+
+        # Handle potentially nested summary structures
+        flattened_summaries = []
+        for item in all_summaries:
+            if isinstance(item, list):
+                flattened_summaries.extend(item)
+            else:
+                flattened_summaries.append(item)
+
+        topic_round_summaries = [
+            s.get("summary", "")
+            for s in flattened_summaries
+            if isinstance(s, dict) and s.get("topic") == current_topic
+        ]
+
+        # Get final considerations from consensus_proposals storage
+        current_topic_key = current_topic or "unknown_topic"
+        consideration_texts = state.get("consensus_proposals", {}).get(
+            f"{current_topic_key}_final_considerations", []
+        )
+
+        try:
+            # Get console for user feedback
+            console = get_console()
+            console.print("\n[cyan]📋 Creating topic conclusion summary...[/cyan]")
+
+            # Create topic conclusion summary using SummarizerAgent
+            topic_conclusion_summary = summarizer_agent.summarize_topic_conclusion(
+                round_summaries=topic_round_summaries,
+                final_considerations=consideration_texts,
+                topic=current_topic,
+            )
+
+            console.print("[green]✅ Topic conclusion summary created![/green]\n")
+
+            # Store the summary in topic_summaries state field using the reducer
+            updates = {
+                "topic_summaries": {
+                    **state.get("topic_summaries", {}),
+                    f"{current_topic}_conclusion": topic_conclusion_summary,
+                }
+            }
+
+            logger.info(f"Generated topic conclusion summary for: {current_topic}")
+
+        except Exception as e:
+            logger.error(f"Failed to generate topic conclusion summary: {e}")
+            updates = {
+                "topic_summaries": {
+                    **state.get("topic_summaries", {}),
+                    f"{current_topic}_conclusion": f"Failed to generate summary: {str(e)}",
+                },
+                "summary_error": str(e),
             }
 
         return updates
