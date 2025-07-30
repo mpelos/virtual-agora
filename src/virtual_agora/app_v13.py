@@ -16,7 +16,7 @@ from virtual_agora.ui.hitl_state import (
     HITLContext,
     HITLApprovalType,
 )
-from virtual_agora.ui.components import EnhancedDashboard, LoadingSpinner
+from virtual_agora.ui.components import EnhancedDashboard
 from virtual_agora.ui.session_control import SessionController, CheckpointManager
 from virtual_agora.ui.console import get_console
 from virtual_agora.ui.human_in_the_loop import get_initial_topic
@@ -387,8 +387,8 @@ class VirtualAgoraApplicationV13:
             self.update_dashboard()
 
             # Run the flow with live dashboard updates
-            with LoadingSpinner("Initializing discussion flow..."):
-                self.flow.compile()
+            self.console.print("[cyan]Initializing discussion flow...[/cyan]")
+            self.flow.compile()
 
             self.console.print("[green]Flow initialized successfully![/green]\n")
 

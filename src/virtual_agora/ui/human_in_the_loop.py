@@ -132,7 +132,7 @@ def get_initial_topic() -> str:
 
             lines = []
             while True:
-                line = Prompt.ask("", default="", show_default=False)
+                line = Prompt.ask("", default="", show_default=False, console=console)
                 if not line and lines:  # Empty line after content
                     break
                 if line:
@@ -164,7 +164,7 @@ def get_initial_topic() -> str:
                 )
             )
 
-            if Confirm.ask("Confirm this topic?", default=True):
+            if Confirm.ask("Confirm this topic?", default=True, console=console):
                 record_input("initial_topic", topic)
                 logger.info(f"Topic confirmed: {topic[:50]}...")
                 return topic
@@ -227,7 +227,7 @@ def get_agenda_approval(agenda: List[str]) -> List[str]:
     while True:
         try:
             action = Prompt.ask(
-                "Select action", choices=["a", "e", "r"], default="a"
+                "Select action", choices=["a", "e", "r"], default="a", console=console
             ).lower()
 
             if action == "a":
@@ -287,7 +287,10 @@ def edit_agenda(agenda: List[str]) -> List[str]:
         console.print("[cyan]d[/cyan] - Done editing")
 
         action = Prompt.ask(
-            "\nSelect action", choices=["a", "r", "e", "m", "d"], default="d"
+            "\nSelect action",
+            choices=["a", "r", "e", "m", "d"],
+            default="d",
+            console=console,
         ).lower()
 
         try:
@@ -299,12 +302,13 @@ def edit_agenda(agenda: List[str]) -> List[str]:
                     )
                     continue
 
-                new_item = Prompt.ask("Enter new agenda item")
+                new_item = Prompt.ask("Enter new agenda item", console=console)
                 if new_item.strip():
                     position = IntPrompt.ask(
                         "Insert at position",
                         default=len(working_agenda) + 1,
                         choices=[str(i) for i in range(1, len(working_agenda) + 2)],
+                        console=console,
                     )
                     working_agenda.insert(position - 1, new_item.strip())
                     console.print("[green]✓ Item added[/green]")
@@ -320,6 +324,7 @@ def edit_agenda(agenda: List[str]) -> List[str]:
                 item_num = IntPrompt.ask(
                     "Remove item number",
                     choices=[str(i) for i in range(1, len(working_agenda) + 1)],
+                    console=console,
                 )
                 removed = working_agenda.pop(item_num - 1)
                 console.print(f"[red]✗ Removed: {removed}[/red]")
@@ -329,9 +334,10 @@ def edit_agenda(agenda: List[str]) -> List[str]:
                 item_num = IntPrompt.ask(
                     "Edit item number",
                     choices=[str(i) for i in range(1, len(working_agenda) + 1)],
+                    console=console,
                 )
                 old_text = working_agenda[item_num - 1]
-                new_text = Prompt.ask("New text", default=old_text)
+                new_text = Prompt.ask("New text", default=old_text, console=console)
                 working_agenda[item_num - 1] = new_text
                 console.print("[green]✓ Item updated[/green]")
 
@@ -340,10 +346,12 @@ def edit_agenda(agenda: List[str]) -> List[str]:
                 from_pos = IntPrompt.ask(
                     "Move item from position",
                     choices=[str(i) for i in range(1, len(working_agenda) + 1)],
+                    console=console,
                 )
                 to_pos = IntPrompt.ask(
                     "Move to position",
                     choices=[str(i) for i in range(1, len(working_agenda) + 1)],
+                    console=console,
                 )
                 item = working_agenda.pop(from_pos - 1)
                 working_agenda.insert(to_pos - 1, item)
@@ -355,7 +363,7 @@ def edit_agenda(agenda: List[str]) -> List[str]:
                 for i, item in enumerate(working_agenda, 1):
                     console.print(f"{i}. {item}")
 
-                if Confirm.ask("\nSave these changes?", default=True):
+                if Confirm.ask("\nSave these changes?", default=True, console=console):
                     return working_agenda
 
         except (ValueError, IndexError) as e:
@@ -422,12 +430,12 @@ def get_continuation_approval(completed_topic: str, remaining_topics: List[str])
         console.print(Panel(options_text, title="[bold]Options[/bold]"))
 
         action = Prompt.ask(
-            "Select action", choices=["y", "n", "m"], default="y"
+            "Select action", choices=["y", "n", "m"], default="y", console=console
         ).lower()
 
     else:
         console.print("[bold]No remaining topics in the agenda.[/bold]")
-        action = Confirm.ask("End session?", default=True)
+        action = Confirm.ask("End session?", default=True, console=console)
         action = "n" if action else "y"  # Invert for consistency
 
     record_input(
@@ -461,7 +469,9 @@ def get_agenda_modifications(agenda: List[str]) -> List[str]:
 
     console.print("\nYou can modify the agenda based on the discussion so far.")
 
-    if Confirm.ask("\nWould you like to modify the agenda?", default=False):
+    if Confirm.ask(
+        "\nWould you like to modify the agenda?", default=False, console=console
+    ):
         return edit_agenda(agenda)
     else:
         return agenda
@@ -530,7 +540,7 @@ def handle_interrupt(context: str) -> None:
     """
     console.print(f"\n[yellow]Interrupt detected during: {context}[/yellow]")
 
-    if Confirm.ask("Do you want to pause the session?", default=True):
+    if Confirm.ask("Do you want to pause the session?", default=True, console=console):
         console.print("[yellow]Session paused. State will be preserved.[/yellow]")
         # In real implementation, would trigger state preservation
         raise KeyboardInterrupt("User requested pause")
@@ -572,7 +582,10 @@ def handle_emergency_interrupt() -> None:
 
     try:
         action = Prompt.ask(
-            "\nSelect emergency action", choices=list(options.keys()), default="r"
+            "\nSelect emergency action",
+            choices=list(options.keys()),
+            default="r",
+            console=console,
         ).lower()
 
         record_input("emergency_interrupt", action, {"context": "user_interrupt"})
@@ -662,7 +675,7 @@ def show_help(context: Optional[str] = None) -> None:
         )
     )
 
-    Prompt.ask("\nPress Enter to continue")
+    Prompt.ask("\nPress Enter to continue", console=console)
 
 
 def validate_input(
@@ -710,7 +723,7 @@ def get_input_with_timeout(
     signal.alarm(timeout)
 
     try:
-        value = Prompt.ask(prompt, default=default)
+        value = Prompt.ask(prompt, default=default, console=console)
         signal.alarm(0)  # Cancel timeout
         return value
     except TimeoutError:

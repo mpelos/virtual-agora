@@ -37,17 +37,21 @@ from virtual_agora.state.manager import StateManager
 from virtual_agora.state.recovery import StateRecoveryManager
 from virtual_agora.ui.human_in_the_loop import (
     get_initial_topic,
-    get_agenda_approval,
     get_continuation_approval,
     get_agenda_modifications,
     display_session_status,
+)
+from virtual_agora.ui.hitl_manager import (
+    EnhancedHITLManager,
+    HITLApprovalType,
+    HITLInteraction,
 )
 from virtual_agora.ui.preferences import (
     get_preferences_manager,
     get_user_preferences,
 )
 from virtual_agora.ui.interrupt_handler import setup_interrupt_handlers
-from virtual_agora.ui.components import LoadingSpinner, create_header_panel
+from virtual_agora.ui.components import create_header_panel
 from virtual_agora.ui.console import get_console
 from virtual_agora.ui.theme import get_current_theme, ProviderType
 from virtual_agora.ui.accessibility import initialize_accessibility
@@ -251,7 +255,7 @@ ui_integration = initialize_ui_integration()
 def handle_agenda_approval_interrupt(
     interrupt_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Handle agenda approval interrupt from LangGraph.
+    """Handle agenda approval interrupt from LangGraph using v1.3 HITLManager.
 
     Args:
         interrupt_payload: Interrupt data containing agenda and options
@@ -262,11 +266,22 @@ def handle_agenda_approval_interrupt(
     proposed_agenda = interrupt_payload.get("proposed_agenda", [])
 
     try:
-        # Use the existing HITL function for agenda approval
-        approved_agenda = get_agenda_approval(proposed_agenda)
+        # Initialize HITLManager with console
+        hitl_manager = EnhancedHITLManager(console)
 
-        if not approved_agenda:
-            # User rejected the agenda - return state for rejection
+        # Create HITLInteraction for agenda approval
+        interaction = HITLInteraction(
+            approval_type=HITLApprovalType.AGENDA_APPROVAL,
+            prompt_message="Please review and approve the proposed discussion agenda.",
+            context={"proposed_agenda": proposed_agenda},
+        )
+
+        # Use v1.3 HITLManager instead of v1.2 function
+        response = hitl_manager.process_interaction(interaction)
+
+        # Process HITLResponse and convert to LangGraph state updates
+        if not response.approved:
+            # User rejected the agenda
             return {
                 "agenda_approved": False,
                 "agenda_rejected": True,
@@ -276,14 +291,18 @@ def handle_agenda_approval_interrupt(
                 },
             }
         else:
-            # User approved (with or without changes) - return state for approval
+            # User approved (with or without changes)
+            final_agenda = (
+                response.modified_data if response.modified_data else proposed_agenda
+            )
             return {
                 "agenda_approved": True,
-                "topic_queue": approved_agenda,
-                "final_agenda": approved_agenda,
+                "topic_queue": final_agenda,
+                "final_agenda": final_agenda,
                 "hitl_state": {
                     "awaiting_approval": False,
                     "approval_type": "agenda_approval",
+                    "approval_action": response.action,
                 },
             }
 
@@ -777,9 +796,8 @@ async def run_application(args: argparse.Namespace) -> int:
 
             logger.info("Clean execution architecture initialized")
 
-            # Create spinner for UI feedback
-            spinner = LoadingSpinner("Running discussion flow...")
-            spinner.__enter__()
+            # Status message instead of spinner (prevents Rich prompt interference)
+            console.print("[cyan]Running discussion flow...[/cyan]")
 
             try:
                 # Execute session using clean architecture
@@ -818,8 +836,7 @@ async def run_application(args: argparse.Namespace) -> int:
 
                     # Handle interrupts through the clean architecture
                     if "__interrupt__" in update:
-                        # Stop spinner for user input
-                        spinner.__exit__(None, None, None)
+                        # No spinner to stop (prevents Rich prompt interference)
 
                         interrupt_start = datetime.now()
                         interrupt_data = update["__interrupt__"]
@@ -848,9 +865,8 @@ async def run_application(args: argparse.Namespace) -> int:
                             interrupt_type, interrupt_start, interrupt_end
                         )
 
-                        # Restart spinner for continued execution
-                        spinner = LoadingSpinner("Continuing discussion flow...")
-                        spinner.__enter__()
+                        # Status message for continued execution (prevents Rich prompt interference)
+                        console.print("[cyan]Continuing discussion flow...[/cyan]")
 
                     # Handle natural completion
                     elif "__end__" in update:
@@ -881,8 +897,7 @@ async def run_application(args: argparse.Namespace) -> int:
                                     {"node": node_name, "update": node_data},
                                 )
 
-                # Stop spinner when execution completes
-                spinner.__exit__(None, None, None)
+                # Execution completed (no spinner to stop)
                 logger.info(
                     "Clean architecture session execution completed successfully"
                 )
@@ -933,11 +948,7 @@ async def run_application(args: argparse.Namespace) -> int:
                 )
 
             except Exception as e:
-                # Ensure spinner is stopped even on error
-                try:
-                    spinner.__exit__(None, None, None)
-                except:
-                    pass
+                # No spinner to stop on error
 
                 logger.error(f"Discussion flow error: {e}", exc_info=True)
                 logger.error(f"Error type: {type(e).__name__}")

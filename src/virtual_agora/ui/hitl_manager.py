@@ -141,7 +141,10 @@ class EnhancedHITLManager:
 
         # Get user decision
         action = Prompt.ask(
-            "Select action", choices=list(options.keys()), default="c"
+            "Select action",
+            choices=list(options.keys()),
+            default="c",
+            console=self.console,
         ).lower()
 
         if action == "c":
@@ -157,6 +160,7 @@ class EnhancedHITLManager:
             reason = Prompt.ask(
                 "Reason for ending (optional)",
                 default="User decision at periodic checkpoint",
+                console=self.console,
             )
             return HITLResponse(
                 approved=True,
@@ -216,7 +220,10 @@ class EnhancedHITLManager:
         # Ask for approval
         choices = ["Approve", "Edit", "Reorder", "Reject"]
         action = Prompt.ask(
-            "What would you like to do?", choices=choices, default="Approve"
+            "What would you like to do?",
+            choices=choices,
+            default="Approve",
+            console=self.console,
         )
 
         if action == "Approve":
@@ -244,6 +251,7 @@ class EnhancedHITLManager:
             reason = Prompt.ask(
                 "Reason for rejection (optional)",
                 default="User requested new proposals",
+                console=self.console,
             )
             return HITLResponse(approved=False, action="rejected", reason=reason)
 
@@ -254,13 +262,15 @@ class EnhancedHITLManager:
         self.console.print("\n[yellow]Edit each topic (Enter to keep):[/yellow]")
 
         for i, topic in enumerate(agenda, 1):
-            new_topic = Prompt.ask(f"{i}. {topic}", default=topic)
+            new_topic = Prompt.ask(f"{i}. {topic}", default=topic, console=self.console)
             if new_topic.strip():  # Skip empty entries
                 edited_agenda.append(new_topic)
 
         # Option to add new topics
         while True:
-            new_topic = Prompt.ask("Add new topic (Enter to finish)", default="")
+            new_topic = Prompt.ask(
+                "Add new topic (Enter to finish)", default="", console=self.console
+            )
             if not new_topic:
                 break
             edited_agenda.append(new_topic)
@@ -270,7 +280,7 @@ class EnhancedHITLManager:
         for i, topic in enumerate(edited_agenda, 1):
             self.console.print(f"{i}. {topic}")
 
-        if Confirm.ask("\nSave these changes?", default=True):
+        if Confirm.ask("\nSave these changes?", default=True, console=self.console):
             return edited_agenda
         else:
             return agenda  # Return original
@@ -291,7 +301,9 @@ class EnhancedHITLManager:
 
             # Ask for move
             self.console.print("\n[dim]Enter 'done' when finished[/dim]")
-            move_from = Prompt.ask("Move item from position", default="done")
+            move_from = Prompt.ask(
+                "Move item from position", default="done", console=self.console
+            )
 
             if move_from.lower() == "done":
                 break
@@ -302,6 +314,7 @@ class EnhancedHITLManager:
                     to_pos = Prompt.ask(
                         "Move to position",
                         choices=[str(i) for i in range(1, len(reordered) + 1)],
+                        console=self.console,
                     )
                     to_idx = int(to_pos) - 1
 
@@ -357,7 +370,10 @@ class EnhancedHITLManager:
             self.console.print(options_menu)
 
             action = Prompt.ask(
-                "Select action", choices=list(options.keys()), default="c"
+                "Select action",
+                choices=list(options.keys()),
+                default="c",
+                console=self.console,
             ).lower()
 
             if action == "c":
@@ -373,7 +389,7 @@ class EnhancedHITLManager:
         else:
             # No remaining topics
             self.console.print("[bold]No remaining topics in the agenda.[/bold]")
-            if Confirm.ask("End session?", default=True):
+            if Confirm.ask("End session?", default=True, console=self.console):
                 return HITLResponse(approved=False, action="end_session")
             else:
                 return HITLResponse(approved=True, action="continue")
@@ -397,7 +413,9 @@ class EnhancedHITLManager:
         self.console.print(status)
 
         # Get user decision
-        if Confirm.ask("Do you want to continue the session?", default=True):
+        if Confirm.ask(
+            "Do you want to continue the session?", default=True, console=self.console
+        ):
             return HITLResponse(approved=True, action="continue_session")
         else:
             return HITLResponse(approved=False, action="end_session")
@@ -411,8 +429,10 @@ class EnhancedHITLManager:
             f"Force conclusion of topic: [cyan]{current_topic}[/cyan]"
         )
 
-        if Confirm.ask("Force topic conclusion?", default=False):
-            reason = Prompt.ask("Reason (optional)", default="User override")
+        if Confirm.ask("Force topic conclusion?", default=False, console=self.console):
+            reason = Prompt.ask(
+                "Reason (optional)", default="User override", console=self.console
+            )
             return HITLResponse(approved=True, action="force_conclusion", reason=reason)
         else:
             return HITLResponse(approved=False, action="continue_discussion")
@@ -431,9 +451,12 @@ class EnhancedHITLManager:
 
         self.console.print("\n[yellow]You can override the agent decision.[/yellow]")
 
-        if Confirm.ask("Override agent poll?", default=False):
+        if Confirm.ask("Override agent poll?", default=False, console=self.console):
             new_result = Prompt.ask(
-                "New result", choices=["conclude", "continue"], default="conclude"
+                "New result",
+                choices=["conclude", "continue"],
+                default="conclude",
+                console=self.console,
             )
             return HITLResponse(
                 approved=True,
@@ -461,7 +484,7 @@ class EnhancedHITLManager:
         )
         self.console.print(summary_panel)
 
-        if Confirm.ask("Generate final report?", default=True):
+        if Confirm.ask("Generate final report?", default=True, console=self.console):
             return HITLResponse(approved=True, action="generate_report")
         else:
             return HITLResponse(
@@ -473,7 +496,9 @@ class EnhancedHITLManager:
     def _handle_theme_input(self, interaction: HITLInteraction) -> HITLResponse:
         """Handle initial theme input."""
         # Get theme from user
-        theme = Prompt.ask(interaction.prompt_message or "Enter discussion theme")
+        theme = Prompt.ask(
+            interaction.prompt_message or "Enter discussion theme", console=self.console
+        )
 
         return HITLResponse(approved=True, action="theme_provided", modified_data=theme)
 
@@ -486,7 +511,7 @@ class EnhancedHITLManager:
         if interaction.prompt_message:
             self.console.print(interaction.prompt_message)
 
-        if Confirm.ask("Approve?", default=True):
+        if Confirm.ask("Approve?", default=True, console=self.console):
             return HITLResponse(approved=True, action="approved")
         else:
             return HITLResponse(approved=False, action="rejected")
@@ -506,7 +531,10 @@ class EnhancedHITLManager:
         self.console.print(options_menu)
 
         action = Prompt.ask(
-            "Select action", choices=list(options.keys()), default="r"
+            "Select action",
+            choices=list(options.keys()),
+            default="r",
+            console=self.console,
         ).lower()
 
         if action == "r":

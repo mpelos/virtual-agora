@@ -28,8 +28,9 @@ from rich import box
 from rich.prompt import Prompt, Confirm
 
 from virtual_agora.utils.logging import get_logger
+from virtual_agora.ui.console import get_console
 
-console = Console()
+console = get_console().rich_console  # Use singleton console
 logger = get_logger(__name__)
 
 
@@ -68,28 +69,11 @@ class LoadingSpinner:
         self.task_id = None
 
     def __enter__(self):
-        # Check if messages should be hidden for debugging
-        try:
-            from virtual_agora.ui.display_modes import should_hide_messages
-
-            if should_hide_messages():
-                # Create a dummy progress that doesn't display anything
-                self.progress = None
-                self.task_id = None
-                return self
-        except ImportError:
-            pass  # Continue with normal display if import fails
-
-        # Initialize spinner consistently regardless of assembly mode
-        # This fixes the inconsistent loading state behavior across iterations
-        self.progress = Progress(
-            SpinnerColumn(style=self.style),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-        )
-        self.progress.start()
-        self.task_id = self.progress.add_task(self.message, total=None)
-        self._is_assembly_flow_spinner = False
+        # ALWAYS disable spinner to prevent Rich prompt interference
+        # This eliminates the terminal control conflict between Rich Progress and Rich Prompt
+        # that was causing input collection to hang in non-debug mode
+        self.progress = None
+        self.task_id = None
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -98,17 +82,8 @@ class LoadingSpinner:
 
     def update(self, message: str):
         """Update the spinner message."""
-        # Check if messages should be hidden for debugging
-        try:
-            from virtual_agora.ui.display_modes import should_hide_messages
-
-            if should_hide_messages():
-                return  # Skip updating the spinner message
-        except ImportError:
-            pass  # Continue with normal display if import fails
-
-        if self.progress and self.task_id is not None:
-            self.progress.update(self.task_id, description=message)
+        # Spinner is always disabled to prevent Rich prompt interference
+        return  # No-op since spinner is disabled
 
 
 class ProgressBar:
@@ -332,7 +307,7 @@ class ConfirmationDialog:
 
         console.print(panel)
 
-        return Confirm.ask("Proceed?", default=default)
+        return Confirm.ask("Proceed?", default=default, console=console)
 
 
 class StatusDashboard:

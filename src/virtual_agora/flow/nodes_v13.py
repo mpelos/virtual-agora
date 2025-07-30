@@ -43,7 +43,6 @@ from virtual_agora.ui.human_in_the_loop import (
     display_session_status,
 )
 from virtual_agora.ui.preferences import get_user_preferences
-from virtual_agora.ui.components import LoadingSpinner
 from virtual_agora.ui.discussion_display import display_agent_response
 from virtual_agora.providers.config import ProviderType
 import time
@@ -500,15 +499,15 @@ class V13FlowNodes:
         proposals = []
 
         # Request proposals from each discussing agent
-        with LoadingSpinner(
+        logger.info(
             f"Collecting topic proposals from {len(self.discussing_agents)} agents..."
-        ) as spinner:
-            for i, agent in enumerate(self.discussing_agents):
-                spinner.update(
-                    f"Getting proposals from {agent.agent_id} ({i+1}/{len(self.discussing_agents)})"
-                )
+        )
+        for i, agent in enumerate(self.discussing_agents):
+            logger.info(
+                f"Getting proposals from {agent.agent_id} ({i+1}/{len(self.discussing_agents)})"
+            )
 
-                prompt = f"""Based on the theme '{theme}', propose 3-5 strategic topics that will serve as a compass to guide our discussion toward the best possible conclusion.
+            prompt = f"""Based on the theme '{theme}', propose 3-5 strategic topics that will serve as a compass to guide our discussion toward the best possible conclusion.
 
 Think strategically: What key areas need to be explored and in what logical order to build comprehensive understanding? Consider topics as building blocks that lead from foundational concepts to deeper insights.
 
@@ -520,53 +519,53 @@ Your topics should:
 
 Frame each topic as a stepping stone toward collective understanding. Consider: What needs to be discussed and in what order to arrive at the most insightful and complete conclusion?"""
 
-                try:
-                    # Call agent with proper state and prompt
-                    response_dict = agent(state, prompt=prompt)
+            try:
+                # Call agent with proper state and prompt
+                response_dict = agent(state, prompt=prompt)
 
-                    # Extract response content
-                    messages = response_dict.get("messages", [])
-                    if messages:
-                        response_content = (
-                            messages[-1].content
-                            if hasattr(messages[-1], "content")
-                            else str(messages[-1])
-                        )
-                        proposals.append(
-                            {"agent_id": agent.agent_id, "proposals": response_content}
-                        )
-                        logger.info(f"Collected proposals from {agent.agent_id}")
-
-                        # Display the agent's topic proposal in the UI
-                        provider_type = get_provider_type_from_agent_id(agent.agent_id)
-                        display_agent_response(
-                            agent_id=agent.agent_id,
-                            provider=provider_type,
-                            content=response_content,
-                            round_number=0,  # Phase 1 - agenda setting
-                            topic="Strategic Topic Proposals",
-                            timestamp=datetime.now(),
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to get proposals from {agent.agent_id}: {e}")
-                    proposals.append(
-                        {
-                            "agent_id": agent.agent_id,
-                            "proposals": "Failed to provide proposals",
-                            "error": str(e),
-                        }
+                # Extract response content
+                messages = response_dict.get("messages", [])
+                if messages:
+                    response_content = (
+                        messages[-1].content
+                        if hasattr(messages[-1], "content")
+                        else str(messages[-1])
                     )
+                    proposals.append(
+                        {"agent_id": agent.agent_id, "proposals": response_content}
+                    )
+                    logger.info(f"Collected proposals from {agent.agent_id}")
 
-                    # Display the failure for transparency
+                    # Display the agent's topic proposal in the UI
                     provider_type = get_provider_type_from_agent_id(agent.agent_id)
                     display_agent_response(
                         agent_id=agent.agent_id,
                         provider=provider_type,
-                        content=f"❌ Failed to provide topic proposals: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}",
+                        content=response_content,
                         round_number=0,  # Phase 1 - agenda setting
                         topic="Strategic Topic Proposals",
                         timestamp=datetime.now(),
                     )
+            except Exception as e:
+                logger.error(f"Failed to get proposals from {agent.agent_id}: {e}")
+                proposals.append(
+                    {
+                        "agent_id": agent.agent_id,
+                        "proposals": "Failed to provide proposals",
+                        "error": str(e),
+                    }
+                )
+
+                # Display the failure for transparency
+                provider_type = get_provider_type_from_agent_id(agent.agent_id)
+                display_agent_response(
+                    agent_id=agent.agent_id,
+                    provider=provider_type,
+                    content=f"❌ Failed to provide topic proposals: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}",
+                    round_number=0,  # Phase 1 - agenda setting
+                    topic="Strategic Topic Proposals",
+                    timestamp=datetime.now(),
+                )
 
         updates = {
             "proposed_topics": proposals,
@@ -602,21 +601,19 @@ Frame each topic as a stepping stone toward collective understanding. Consider: 
         )
 
         # Request refinements from each discussing agent
-        with LoadingSpinner(
-            f"Refining topics with {len(self.discussing_agents)} agents..."
-        ) as spinner:
-            for i, agent in enumerate(self.discussing_agents):
-                spinner.update(
-                    f"Refining topics with {agent.agent_id} ({i+1}/{len(self.discussing_agents)})"
-                )
+        logger.info(f"Refining topics with {len(self.discussing_agents)} agents...")
+        for i, agent in enumerate(self.discussing_agents):
+            logger.info(
+                f"Refining topics with {agent.agent_id} ({i+1}/{len(self.discussing_agents)})"
+            )
 
-                # Find this agent's initial proposal
-                agent_initial_proposal = next(
-                    (p for p in initial_proposals if p["agent_id"] == agent.agent_id),
-                    {"proposals": "No initial proposal found"},
-                )
+            # Find this agent's initial proposal
+            agent_initial_proposal = next(
+                (p for p in initial_proposals if p["agent_id"] == agent.agent_id),
+                {"proposals": "No initial proposal found"},
+            )
 
-                prompt = f"""Now that all agents have proposed initial topics for the theme '{theme}', you can see everyone's suggestions below. This is your opportunity to refine your topics based on collective wisdom.
+            prompt = f"""Now that all agents have proposed initial topics for the theme '{theme}', you can see everyone's suggestions below. This is your opportunity to refine your topics based on collective wisdom.
 
 ALL INITIAL PROPOSALS:
 {all_proposals_text}
@@ -641,52 +638,50 @@ Refine your 3-5 topics considering:
 
 Provide your refined topic proposals, incorporating insights from the collaborative review."""
 
-                try:
-                    # Call agent with proper state and prompt
-                    response_dict = agent(state, prompt=prompt)
+            try:
+                # Call agent with proper state and prompt
+                response_dict = agent(state, prompt=prompt)
 
-                    # Extract response content
-                    messages = response_dict.get("messages", [])
-                    if messages:
-                        response_content = (
-                            messages[-1].content
-                            if hasattr(messages[-1], "content")
-                            else str(messages[-1])
-                        )
-                        refined_proposals.append(
-                            {"agent_id": agent.agent_id, "proposals": response_content}
-                        )
-                        logger.info(
-                            f"Collected refined proposals from {agent.agent_id}"
-                        )
-
-                        # Display the agent's refined topic proposals in the UI
-                        provider_type = get_provider_type_from_agent_id(agent.agent_id)
-                        display_agent_response(
-                            agent_id=agent.agent_id,
-                            provider=provider_type,
-                            content=response_content,
-                            round_number=0,  # Phase 1 - agenda setting
-                            topic="Collaborative Topic Refinement",
-                            timestamp=datetime.now(),
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to get refined proposals from {agent.agent_id}: {e}"
+                # Extract response content
+                messages = response_dict.get("messages", [])
+                if messages:
+                    response_content = (
+                        messages[-1].content
+                        if hasattr(messages[-1], "content")
+                        else str(messages[-1])
                     )
-                    # Fallback to original proposal
-                    refined_proposals.append(agent_initial_proposal)
+                    refined_proposals.append(
+                        {"agent_id": agent.agent_id, "proposals": response_content}
+                    )
+                    logger.info(f"Collected refined proposals from {agent.agent_id}")
 
-                    # Display the failure for transparency
+                    # Display the agent's refined topic proposals in the UI
                     provider_type = get_provider_type_from_agent_id(agent.agent_id)
                     display_agent_response(
                         agent_id=agent.agent_id,
                         provider=provider_type,
-                        content=f"❌ Failed to refine topics, using original proposal: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}",
+                        content=response_content,
                         round_number=0,  # Phase 1 - agenda setting
                         topic="Collaborative Topic Refinement",
                         timestamp=datetime.now(),
                     )
+            except Exception as e:
+                logger.error(
+                    f"Failed to get refined proposals from {agent.agent_id}: {e}"
+                )
+                # Fallback to original proposal
+                refined_proposals.append(agent_initial_proposal)
+
+                # Display the failure for transparency
+                provider_type = get_provider_type_from_agent_id(agent.agent_id)
+                display_agent_response(
+                    agent_id=agent.agent_id,
+                    provider=provider_type,
+                    content=f"❌ Failed to refine topics, using original proposal: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}",
+                    round_number=0,  # Phase 1 - agenda setting
+                    topic="Collaborative Topic Refinement",
+                    timestamp=datetime.now(),
+                )
 
         updates = {
             "proposed_topics": refined_proposals,  # Replace initial with refined proposals

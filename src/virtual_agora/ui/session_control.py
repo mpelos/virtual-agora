@@ -316,7 +316,7 @@ class SessionController:
 
         self.console.print(summary_panel)
 
-        return Confirm.ask("End session?", default=True)
+        return Confirm.ask("End session?", default=True, console=self.console)
 
     def get_checkpoint_history(self) -> list:
         """Get checkpoint history."""

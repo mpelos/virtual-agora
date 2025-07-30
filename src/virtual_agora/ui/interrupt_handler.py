@@ -20,10 +20,11 @@ from rich.table import Table
 
 from virtual_agora.utils.logging import get_logger
 from virtual_agora.ui.components import VirtualAgoraTheme, create_status_panel
+from virtual_agora.ui.console import get_console
 from virtual_agora.state.manager import StateManager
 from virtual_agora.state.recovery import StateRecoveryManager
 
-console = Console()
+console = get_console().rich_console  # Use singleton console
 logger = get_logger(__name__)
 
 
@@ -234,7 +235,10 @@ class InterruptHandler:
         # Get user choice
         while True:
             choice = Prompt.ask(
-                "\nSelect action", choices=list(options.keys()), default="r"
+                "\nSelect action",
+                choices=list(options.keys()),
+                default="r",
+                console=console,
             ).lower()
 
             if choice in options:
@@ -356,7 +360,7 @@ class InterruptHandler:
         console.print(status_table)
 
         # Wait for user to continue
-        Prompt.ask("\nPress Enter to continue")
+        Prompt.ask("\nPress Enter to continue", console=console)
         console.clear()
 
     def _resume_session(self, context: InterruptContext) -> None:

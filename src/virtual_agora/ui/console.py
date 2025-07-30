@@ -455,6 +455,38 @@ def get_console() -> VirtualAgoraConsole:
     return _console
 
 
+def validate_console_usage() -> Dict[str, Any]:
+    """Validate that all UI components use the singleton console.
+
+    Returns:
+        Dict with validation results and potential issues
+    """
+    global _console
+    validation_result = {
+        "singleton_active": _console is not None,
+        "singleton_id": id(_console) if _console else None,
+        "issues_detected": [],
+        "recommendations": [],
+    }
+
+    # Check if Rich's default console is being used elsewhere
+    try:
+        from rich.console import Console
+
+        default_console = Console()
+        if id(default_console) != validation_result["singleton_id"]:
+            validation_result["issues_detected"].append(
+                "Multiple Console instances detected - potential console conflicts"
+            )
+            validation_result["recommendations"].append(
+                "Ensure all Rich components use console=get_console().rich_console parameter"
+            )
+    except Exception as e:
+        validation_result["issues_detected"].append(f"Console validation error: {e}")
+
+    return validation_result
+
+
 def print_agent_message(
     agent_id: str, provider: ProviderType, content: str, **kwargs
 ) -> None:
