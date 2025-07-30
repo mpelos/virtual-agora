@@ -228,10 +228,10 @@ class ContextWindowManager:
 
         # Add compression summary to warnings
         if compression_summary:
-            warnings = state.get("warnings", [])
-            updates["warnings"] = warnings + [
+            # Use reducer properly - pass individual warning string, not list
+            updates["warnings"] = (
                 f"Context compressed at {datetime.now().strftime('%H:%M:%S')}: {compression_summary}"
-            ]
+            )
 
         new_size = self.get_context_size({**state, **updates})
         logger.info(

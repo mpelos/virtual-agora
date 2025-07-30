@@ -591,6 +591,15 @@ def add_agent_message(
     topic: Optional[str] = None,
 ) -> None:
     """Add an agent message to the discussion display."""
+    # Check if messages should be hidden for debugging
+    try:
+        from virtual_agora.ui.display_modes import should_hide_messages
+
+        if should_hide_messages():
+            return  # Skip displaying the message
+    except ImportError:
+        pass  # Continue with normal display if import fails
+
     message = DiscussionMessage(
         content=content,
         agent_id=agent_id,
@@ -658,6 +667,15 @@ def display_agent_response(
     This creates a visual panel for each agent response, similar to the 'Your Topic' panel,
     giving users the experience of watching an assembly or deliberation with natural pacing.
     """
+    # Check if messages should be hidden for debugging
+    try:
+        from virtual_agora.ui.display_modes import should_hide_messages
+
+        if should_hide_messages():
+            return  # Skip displaying the agent response
+    except ImportError:
+        pass  # Continue with normal display if import fails
+
     import time
 
     console = get_console().rich_console

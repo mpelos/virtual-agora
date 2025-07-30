@@ -36,6 +36,7 @@ from virtual_agora.providers import create_provider
 
 from .nodes_v13 import V13FlowNodes
 from .edges_v13 import V13FlowConditions
+from .interrupt_manager import get_interrupt_manager
 
 logger = get_logger(__name__)
 
@@ -299,15 +300,12 @@ class VirtualAgoraV13Flow:
         # User approval with agenda check - enhanced to handle explicit final report requests
         graph.add_conditional_edges(
             "user_approval",
-            lambda state: (
-                "end_session"
-                if self.conditions.evaluate_session_continuation(state) == "end_session"
-                else "no_items" if not state.get("topic_queue", []) else "has_items"
-            ),
+            self._evaluate_user_approval_routing,
             {
                 "end_session": "final_report_generation",
                 "no_items": "final_report_generation",
-                "has_items": "agenda_modification",
+                "has_items": "announce_item",  # Go directly to next topic
+                "modify_agenda": "agenda_modification",  # Only when user explicitly requests it
             },
         )
 
@@ -327,6 +325,155 @@ class VirtualAgoraV13Flow:
 
         self.graph = graph
         return graph
+
+    def _evaluate_user_approval_routing(self, state: VirtualAgoraState) -> str:
+        """Evaluate user approval routing with proper state validation.
+
+        This replaces the complex lambda function with proper error handling
+        and state validation to prevent the third iteration bug.
+
+        Args:
+            state: Current state
+
+        Returns:
+            Routing decision: "end_session", "no_items", "has_items", or "modify_agenda"
+        """
+        logger.info("=== USER APPROVAL ROUTING EVALUATION START ===")
+
+        # LOG: Complete state context for routing decision
+        routing_context = {
+            "user_approves_continuation": state.get("user_approves_continuation"),
+            "agents_vote_end_session": state.get("agents_vote_end_session"),
+            "user_forced_conclusion": state.get("user_forced_conclusion"),
+            "user_requested_modification": state.get("user_requested_modification"),
+            "topic_queue": state.get("topic_queue", []),
+            "active_topic": state.get("active_topic"),
+            "completed_topics": state.get("completed_topics", []),
+            "current_phase": state.get("current_phase"),
+            "current_round": state.get("current_round", 0),
+        }
+        logger.info(f"Routing context: {routing_context}")
+
+        # First check explicit session continuation evaluation
+        logger.debug("Checking session continuation evaluation...")
+        session_decision = self.conditions.evaluate_session_continuation(state)
+        logger.info(f"Session continuation decision: {session_decision}")
+
+        if session_decision == "end_session":
+            logger.info(
+                "ROUTING DECISION: end_session (from session continuation evaluation)"
+            )
+            return "end_session"
+
+        # Check if user explicitly requested agenda modification
+        if state.get("user_requested_modification", False):
+            logger.info(
+                "ROUTING DECISION: modify_agenda (user explicitly requested modification)"
+            )
+            return "modify_agenda"
+
+        # Validate and clean topic_queue
+        topic_queue = state.get("topic_queue", [])
+        logger.debug(
+            f"Raw topic_queue from state: {topic_queue} (Type: {type(topic_queue)})"
+        )
+
+        # Handle nested list corruption
+        cleaned_queue = []
+        corruption_detected = False
+
+        for i, item in enumerate(topic_queue):
+            logger.debug(
+                f"Processing topic_queue item {i}: {item} (Type: {type(item)})"
+            )
+            if isinstance(item, list):
+                logger.warning(f"Nested list detected at index {i}: {item}")
+                corruption_detected = True
+                for nested_item in item:
+                    if isinstance(nested_item, str) and nested_item.strip():
+                        cleaned_queue.append(nested_item.strip())
+                        logger.debug(
+                            f"Extracted from nested list: '{nested_item.strip()}'"
+                        )
+                cleaned_queue.extend(item)
+            elif isinstance(item, str) and item.strip():
+                cleaned_queue.append(item.strip())
+                logger.debug(f"Added valid topic: '{item.strip()}'")
+            else:
+                logger.warning(
+                    f"Invalid topic_queue item ignored: {item} (Type: {type(item)})"
+                )
+
+        # Helper function to truncate long topic titles for cleaner logs
+        def truncate_topic(topic, max_length=60):
+            if isinstance(topic, str) and len(topic) > max_length:
+                return topic[:max_length] + "..."
+            return topic
+
+        def truncate_topic_list(topics):
+            return [truncate_topic(topic) for topic in topics]
+
+        # LOG: State validation results
+        logger.info(f"=== TOPIC QUEUE VALIDATION ===")
+        logger.debug(f"Original topic_queue: {topic_queue}")
+        logger.debug(f"Cleaned topic_queue: {cleaned_queue}")
+        logger.info(f"Original topic_queue: {truncate_topic_list(topic_queue)}")
+        logger.info(f"Cleaned topic_queue: {truncate_topic_list(cleaned_queue)}")
+        logger.info(f"Queue length: {len(topic_queue)} -> {len(cleaned_queue)}")
+        logger.info(f"Corruption detected: {corruption_detected}")
+        logger.info(f"Active topic: {truncate_topic(state.get('active_topic'))}")
+        logger.info(
+            f"Completed topics: {truncate_topic_list(state.get('completed_topics', []))}"
+        )
+        logger.info(f"Completed topics count: {len(state.get('completed_topics', []))}")
+
+        # Update state with cleaned queue if corruption was detected
+        if cleaned_queue != topic_queue:
+            logger.error(f"CRITICAL: Topic queue corruption detected!")
+            logger.error(f"  Original: {topic_queue}")
+            logger.error(f"  Cleaned:  {cleaned_queue}")
+            logger.error(
+                "  Note: Cannot update state from routing function - this may cause issues!"
+            )
+
+        # Handle interrupt context cleanup for completed topic
+        interrupt_manager = get_interrupt_manager()
+        completed_topics = state.get("completed_topics", [])
+        if completed_topics:
+            # Get the most recently completed topic for cleanup
+            last_completed_topic = (
+                completed_topics[-1]
+                if isinstance(completed_topics[-1], str)
+                else str(completed_topics[-1])
+            )
+            logger.info(f"=== TOPIC COMPLETION CLEANUP ===")
+            logger.info(
+                f"Clearing interrupt context for completed topic: {last_completed_topic}"
+            )
+            interrupt_manager.clear_topic_context(last_completed_topic)
+
+        # Make routing decision based on cleaned queue
+        if not cleaned_queue:
+            logger.info(
+                "ROUTING DECISION: no_items (no topics remaining in cleaned queue)"
+            )
+            logger.info(
+                f"Decision factors: cleaned_queue={cleaned_queue}, len={len(cleaned_queue)}"
+            )
+            return "no_items"
+        else:
+            # Set up interrupt context for next topic if we're continuing
+            if cleaned_queue:
+                next_topic = cleaned_queue[0]
+                logger.info(f"=== PREPARING FOR NEXT TOPIC ===")
+                logger.info(f"Resetting interrupt context for next topic: {next_topic}")
+                interrupt_manager.reset_for_new_topic(next_topic)
+
+            logger.info(
+                f"ROUTING DECISION: has_items ({len(cleaned_queue)} topics remaining)"
+            )
+            logger.info(f"Remaining topics: {truncate_topic_list(cleaned_queue)}")
+            return "has_items"
 
     def compile(self) -> Any:
         """Compile the graph with checkpointing.
@@ -399,14 +546,14 @@ class VirtualAgoraV13Flow:
         # Update state with v1.3 additions
         v13_updates = {
             "current_round": 0,
-            "round_history": [],
-            "turn_order_history": [],
+            # "round_history": [], # Remove - uses safe_list_append reducer
+            # "turn_order_history": [], # Remove - uses safe_list_append reducer
             "rounds_per_topic": {},
             "hitl_state": hitl_state,
             "flow_control": flow_control,
             "specialized_agents": {},  # Will be populated by agent_instantiation_node
             "agents": {},  # Will be populated by agent_instantiation_node
-            "vote_history": [],
+            # "vote_history": [], # Remove - uses safe_list_append reducer
             "periodic_stop_counter": 0,
             "user_forced_conclusion": False,
             "agents_vote_end_session": False,
@@ -423,6 +570,11 @@ class VirtualAgoraV13Flow:
         # Ensure graph is compiled
         if self.compiled_graph is None:
             self.compile()
+
+        # Initialize interrupt manager for this session
+        interrupt_manager = get_interrupt_manager()
+        interrupt_manager.set_session_context(session_id)
+        logger.debug(f"Initialized interrupt manager for session: {session_id}")
 
         # Start monitoring for this session
         if self.monitoring_enabled:
@@ -463,7 +615,7 @@ class VirtualAgoraV13Flow:
         config: Optional[Dict[str, Any]] = None,
         resume_from_checkpoint: bool = False,
     ):
-        """Stream graph execution.
+        """Stream graph execution with enhanced interrupt handling.
 
         Args:
             config: Optional configuration dictionary
@@ -512,16 +664,104 @@ class VirtualAgoraV13Flow:
                 )
             logger.debug(f"=== FLOW DEBUG: Stream config: {config}")
 
+            # LOG: Initial state snapshot for debugging
+            initial_state_snapshot = {
+                "topic_queue": self.state_manager.state.get("topic_queue", []),
+                "active_topic": self.state_manager.state.get("active_topic"),
+                "completed_topics": self.state_manager.state.get(
+                    "completed_topics", []
+                ),
+                "current_round": self.state_manager.state.get("current_round", 0),
+                "current_phase": self.state_manager.state.get("current_phase", 0),
+                "total_messages": len(self.state_manager.state.get("messages", [])),
+                "session_id": self.state_manager.state.get("session_id"),
+            }
+            logger.info(f"=== STREAM START STATE SNAPSHOT ===")
+            logger.debug(f"Initial state: {initial_state_snapshot}")
+
             update_count = 0
             for update in self.compiled_graph.stream(input_data, config):
                 update_count += 1
+
+                # LOG: Pre-processing state for each update
+                pre_state_snapshot = {
+                    "topic_queue": self.state_manager.state.get("topic_queue", []),
+                    "active_topic": self.state_manager.state.get("active_topic"),
+                    "completed_topics": self.state_manager.state.get(
+                        "completed_topics", []
+                    ),
+                    "current_round": self.state_manager.state.get("current_round", 0),
+                    "total_messages": len(self.state_manager.state.get("messages", [])),
+                }
+                logger.debug(f"=== PRE-UPDATE {update_count} STATE ===")
+                logger.debug(f"Pre-state: {pre_state_snapshot}")
+                logger.debug(f"Update received: {update}")
+
+                # CRITICAL FIX: Sync state manager with graph state after each update
+                # This prevents state corruption during interrupt processing
+                if isinstance(update, dict) and update:
+                    # Extract actual state updates from node results
+                    # LangGraph returns {node_name: node_result} format
+                    all_state_updates = {}
+                    for node_name, node_result in update.items():
+                        # Skip LangGraph internal keys
+                        if node_name in ["__interrupt__", "__end__", "__nodes__"]:
+                            continue
+                        # Only process if node_result is a dict with state updates
+                        if isinstance(node_result, dict):
+                            logger.debug(f"=== NODE {node_name} RESULT ===")
+                            logger.debug(f"Node result: {node_result}")
+                            all_state_updates.update(node_result)
+
+                    logger.debug(f"=== AGGREGATED STATE UPDATES ===")
+                    logger.debug(f"All state updates to apply: {all_state_updates}")
+
+                    if all_state_updates:
+                        try:
+                            self.state_manager.update_state(all_state_updates)
+                            logger.debug(
+                                f"✅ Synced state manager with {len(all_state_updates)} updates from nodes: {list(update.keys())}"
+                            )
+                        except Exception as sync_error:
+                            logger.error(f"❌ Failed to sync state: {sync_error}")
+                            logger.error(f"Failed updates: {all_state_updates}")
+
+                # LOG: Post-processing state for each update
+                post_state_snapshot = {
+                    "topic_queue": self.state_manager.state.get("topic_queue", []),
+                    "active_topic": self.state_manager.state.get("active_topic"),
+                    "completed_topics": self.state_manager.state.get(
+                        "completed_topics", []
+                    ),
+                    "current_round": self.state_manager.state.get("current_round", 0),
+                    "total_messages": len(self.state_manager.state.get("messages", [])),
+                }
+
+                # LOG: State diff analysis
+                state_changes = {}
+                for key in pre_state_snapshot:
+                    if pre_state_snapshot[key] != post_state_snapshot[key]:
+                        state_changes[key] = {
+                            "before": pre_state_snapshot[key],
+                            "after": post_state_snapshot[key],
+                        }
+
+                logger.debug(f"=== POST-UPDATE {update_count} STATE ===")
+                logger.debug(f"Post-state: {post_state_snapshot}")
+                if state_changes:
+                    logger.info(f"=== STATE CHANGES DETECTED ===")
+                    for field, change in state_changes.items():
+                        logger.info(
+                            f"  {field}: {change['before']} → {change['after']}"
+                        )
+                else:
+                    logger.debug("No state changes detected in critical fields")
+
                 # Log specific node executions
                 if isinstance(update, dict):
                     for key in update.keys():
                         if key not in ["__interrupt__", "__end__"]:
-                            logger.debug(
-                                f"=== FLOW DEBUG: Stream executing node: {key}"
-                            )
+                            logger.info(f"=== EXECUTING NODE: {key} ===")
 
                 yield update
             logger.debug(

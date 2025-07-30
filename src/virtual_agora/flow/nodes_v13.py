@@ -205,10 +205,10 @@ def retry_agent_call(
     """
     # Show thinking indicator if in assembly mode
     try:
-        from virtual_agora.ui.display_modes import is_assembly_mode
+        from virtual_agora.ui.display_modes import should_show_atmospheric_elements
         from virtual_agora.ui.atmospheric import show_thinking
 
-        use_atmospheric = is_assembly_mode()
+        use_atmospheric = should_show_atmospheric_elements()
     except ImportError:
         use_atmospheric = False
 
@@ -1017,54 +1017,219 @@ Provide your refined topic proposals, incorporating insights from the collaborat
     # ===== Phase 2: Discussion Loop Nodes =====
 
     def announce_item_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
-        """Announce current agenda item.
+        """Announce current agenda item with enhanced state validation.
 
-        Simple announcement, no complex logic.
+        This node handles topic transitions and prevents state corruption
+        by validating topic_queue integrity.
         """
-        logger.debug("=== FLOW DEBUG: Entering announce_item_node ===")
-        logger.info(f"topic_queue length: {len(state.get('topic_queue', []))}")
-        logger.info(f"active_topic: {state.get('active_topic')}")
-        logger.info("Node: announce_item - Announcing current topic")
+        logger.info("=== ANNOUNCE_ITEM NODE START ===")
 
-        # Get current topic
-        topic_queue = state.get("topic_queue", [])
+        # LOG: Complete entry state snapshot
+        entry_snapshot = {
+            "topic_queue": state.get("topic_queue", []),
+            "active_topic": state.get("active_topic"),
+            "completed_topics": state.get("completed_topics", []),
+            "current_round": state.get("current_round", 0),
+            "current_phase": state.get("current_phase", 0),
+            "total_messages": len(state.get("messages", [])),
+            "session_id": state.get("session_id"),
+            "user_approves_continuation": state.get("user_approves_continuation"),
+            "agents_vote_end_session": state.get("agents_vote_end_session"),
+            "user_forced_conclusion": state.get("user_forced_conclusion"),
+        }
+        logger.debug(f"Entry state snapshot: {entry_snapshot}")
+
+        # LOG: Topic queue corruption detection with detailed analysis
+        raw_topic_queue = state.get("topic_queue", [])
+        logger.info(f"=== TOPIC QUEUE VALIDATION START ===")
+
+        # Helper function to truncate long topic titles for cleaner logs
+        def truncate_topic(topic, max_length=60):
+            if isinstance(topic, str) and len(topic) > max_length:
+                return topic[:max_length] + "..."
+            return topic
+
+        def truncate_topic_list(topics):
+            return [truncate_topic(topic) for topic in topics]
+
+        logger.debug(
+            f"Raw topic_queue: {raw_topic_queue} (Type: {type(raw_topic_queue)}, Length: {len(raw_topic_queue)})"
+        )
+        logger.info(
+            f"Raw topic_queue: {truncate_topic_list(raw_topic_queue)} (Length: {len(raw_topic_queue)})"
+        )
+
+        topic_queue = []
+        corruption_detected = False
+        corruption_details = []
+
+        # Handle nested list corruption with detailed logging
+        for i, item in enumerate(raw_topic_queue):
+            logger.debug(
+                f"Processing topic_queue item [{i}]: {item} (Type: {type(item)})"
+            )
+            if isinstance(item, list):
+                corruption_detected = True
+                corruption_details.append(f"Nested list at index {i}: {item}")
+                logger.warning(f"CORRUPTION: Nested list detected at index {i}: {item}")
+                for j, nested_item in enumerate(item):
+                    if isinstance(nested_item, str) and nested_item.strip():
+                        topic_queue.append(nested_item.strip())
+                        logger.debug(
+                            f"  Extracted from nested[{j}]: '{nested_item.strip()}'"
+                        )
+                    else:
+                        logger.warning(
+                            f"  Invalid nested item ignored [{j}]: {nested_item} (Type: {type(nested_item)})"
+                        )
+            elif isinstance(item, str) and item.strip():
+                topic_queue.append(item.strip())
+                logger.debug(f"Valid topic added: '{item.strip()}'")
+            else:
+                corruption_detected = True
+                corruption_details.append(
+                    f"Invalid item at index {i}: {item} (Type: {type(item)})"
+                )
+                logger.warning(
+                    f"CORRUPTION: Invalid topic_queue item ignored [{i}]: {item} (Type: {type(item)})"
+                )
+
+        # LOG: Validation results
+        logger.info(f"=== TOPIC QUEUE VALIDATION RESULTS ===")
+        logger.info(
+            f"Original length: {len(raw_topic_queue)} -> Cleaned length: {len(topic_queue)}"
+        )
+        logger.info(f"Corruption detected: {corruption_detected}")
+        if corruption_detected:
+            logger.error(f"CRITICAL: Topic queue corruptions detected:")
+            for detail in corruption_details:
+                logger.error(f"  - {detail}")
+        logger.debug(f"Cleaned topic_queue: {topic_queue}")
+        logger.info(f"Cleaned topic_queue: {truncate_topic_list(topic_queue)}")
+
         if not topic_queue:
-            logger.error("No topics in queue")
-            return {
-                "last_error": "No topics in queue",
+            logger.error(
+                "CRITICAL: No topics in queue after validation - terminating announce_item"
+            )
+            error_result = {
+                "last_error": "No topics in queue after corruption cleanup",
                 "error_count": state.get("error_count", 0) + 1,
+                "topic_queue": [],  # Ensure clean state
             }
+            logger.error(f"ERROR RESULT: {error_result}")
+            return error_result
 
-        # Set active topic if not already set
-        if not state.get("active_topic"):
-            current_topic = topic_queue[0]
+        # LOG: Topic transition analysis
+        current_active = state.get("active_topic")
+        next_topic = topic_queue[0]
+        logger.info(f"=== TOPIC TRANSITION ANALYSIS ===")
+        logger.info(f"Current active topic: '{current_active}'")
+        logger.info(f"Next topic in queue: '{next_topic}'")
+
+        # LOG: Completed topics validation
+        completed_topics = state.get("completed_topics", [])
+        logger.debug(
+            f"Raw completed_topics: {completed_topics} (Type: {type(completed_topics)}, Length: {len(completed_topics)})"
+        )
+
+        flattened_completed = []
+        completion_corruption_detected = False
+        for i, item in enumerate(completed_topics):
+            logger.debug(
+                f"Processing completed_topics item [{i}]: {item} (Type: {type(item)})"
+            )
+            if isinstance(item, list):
+                completion_corruption_detected = True
+                logger.warning(
+                    f"CORRUPTION: Nested list in completed_topics at index {i}: {item}"
+                )
+                for nested_item in item:
+                    if isinstance(nested_item, str) and nested_item.strip():
+                        flattened_completed.append(nested_item.strip())
+            elif isinstance(item, str) and item.strip():
+                flattened_completed.append(item.strip())
+            else:
+                completion_corruption_detected = True
+                logger.warning(
+                    f"CORRUPTION: Invalid completed_topics item at index {i}: {item} (Type: {type(item)})"
+                )
+
+        logger.info(f"Flattened completed topics: {flattened_completed}")
+        logger.info(f"Completion corruption detected: {completion_corruption_detected}")
+
+        # LOG: Topic transition decision logic
+        decision_factors = {
+            "no_active_topic": not current_active,
+            "active_topic_completed": (
+                current_active in flattened_completed if current_active else False
+            ),
+            "topic_mismatch": current_active != next_topic if current_active else False,
+        }
+        should_start_new_topic = any(decision_factors.values())
+
+        logger.info(f"=== TOPIC TRANSITION DECISION ===")
+        logger.info(f"Decision factors: {decision_factors}")
+        logger.info(f"Should start new topic: {should_start_new_topic}")
+
+        if should_start_new_topic:
+            logger.info(f"=== STARTING NEW TOPIC: '{next_topic}' ===")
+
+            # LOG: Queue modification analysis
+            remaining_topics = [t for t in topic_queue if t != next_topic]
+            logger.info(f"Queue before topic removal: {topic_queue}")
+            logger.info(f"Queue after topic removal: {remaining_topics}")
+            logger.info(
+                f"Topics removed: {[t for t in topic_queue if t not in remaining_topics]}"
+            )
+
             updates = {
-                "active_topic": current_topic,
-                "current_round": 0,  # Reset round counter
+                "active_topic": next_topic,
+                "topic_queue": remaining_topics,
+                "current_round": 0,  # Reset round counter for new topic
             }
 
-            logger.info(f"Starting discussion on topic: {current_topic}")
-
-            # Set topic context for moderator to enable proper relevance evaluation
+            # LOG: Agent context updates
             moderator = self.specialized_agents.get("moderator")
             if moderator:
-                moderator.set_topic_context(current_topic)
-                logger.info(f"Set moderator topic context: {current_topic}")
+                try:
+                    moderator.set_topic_context(next_topic)
+                    logger.info(f"✅ Set moderator topic context: '{next_topic}'")
+                except Exception as e:
+                    logger.error(f"❌ Failed to set moderator topic context: {e}")
 
-            # Moderator announcement can be logged but not stored in state
-            announcement = f"We will now begin discussing: {current_topic}"
-            logger.info(f"Moderator announcement: {announcement}")
+            # LOG: Moderator announcement
+            announcement = f"We will now begin discussing: {next_topic}"
+            logger.info(f"Moderator announcement: '{announcement}'")
 
-            logger.info(
-                f"=== FLOW DEBUG: Exiting announce_item_node with updates: {updates} ==="
-            )
+            # LOG: Exit state and validation
+            logger.info(f"=== ANNOUNCE_ITEM NODE EXIT (NEW TOPIC) ===")
+            logger.info(f"Updates to return: {updates}")
+
+            # Final validation check
+            if not updates.get("active_topic"):
+                logger.error("CRITICAL: active_topic is empty in updates!")
+            if not isinstance(updates.get("topic_queue"), list):
+                logger.error("CRITICAL: topic_queue is not a list in updates!")
+
             return updates
 
-        # Topic is already active, just confirm it's still current
-        result = {"active_topic": state.get("active_topic")}
-        logger.info(
-            f"=== FLOW DEBUG: Exiting announce_item_node (topic already active) with: {result} ==="
-        )
+        # Topic is already active and valid, just confirm
+        logger.info(f"=== TOPIC ALREADY ACTIVE: '{current_active}' ===")
+        result = {
+            "active_topic": current_active,
+            "topic_queue": topic_queue,  # Ensure cleaned queue is maintained
+        }
+
+        # LOG: Exit state for active topic
+        logger.info(f"=== ANNOUNCE_ITEM NODE EXIT (ACTIVE TOPIC) ===")
+        logger.info(f"Result to return: {result}")
+
+        # Final validation check
+        if not result.get("active_topic"):
+            logger.error("CRITICAL: active_topic is empty in result!")
+        if not isinstance(result.get("topic_queue"), list):
+            logger.error("CRITICAL: topic_queue is not a list in result!")
+
         return result
 
     def discussion_round_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
@@ -1121,12 +1286,12 @@ Provide your refined topic proposals, incorporating insights from the collaborat
             # Rotate: [A,B,C] -> [B,C,A]
             speaking_order = speaking_order[1:] + [speaking_order[0]]
 
-        # Show round announcement with atmospheric effects if in assembly mode
+        # Show round announcement with atmospheric effects if enabled
         try:
-            from virtual_agora.ui.display_modes import is_assembly_mode
+            from virtual_agora.ui.display_modes import should_show_atmospheric_elements
             from virtual_agora.ui.atmospheric import show_round_announcement
 
-            if is_assembly_mode():
+            if should_show_atmospheric_elements():
                 show_round_announcement(current_round, current_topic, speaking_order)
         except ImportError:
             pass
@@ -1659,43 +1824,86 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         New in v1.3 - gives user periodic control every 5 rounds.
         Uses LangGraph interrupt mechanism to pause execution.
         """
-        logger.info("Node: periodic_user_stop - User checkpoint")
+        logger.info("=== PERIODIC_USER_STOP NODE START ===")
+
+        # LOG: Complete entry state snapshot
+        entry_snapshot = {
+            "topic_queue": state.get("topic_queue", []),
+            "active_topic": state.get("active_topic"),
+            "completed_topics": state.get("completed_topics", []),
+            "current_round": state.get("current_round", 0),
+            "current_phase": state.get("current_phase", 0),
+            "total_messages": len(state.get("messages", [])),
+            "periodic_stop_counter": state.get("periodic_stop_counter", 0),
+            "user_forced_conclusion": state.get("user_forced_conclusion"),
+            "user_requested_modification": state.get("user_requested_modification"),
+            "session_id": state.get("session_id"),
+        }
+        logger.debug(f"Entry state snapshot: {entry_snapshot}")
 
         current_round = state["current_round"]
         current_topic = state["active_topic"]
 
-        # Use LangGraph interrupt to pause execution and wait for user input
+        logger.info(f"=== PERIODIC CHECKPOINT ANALYSIS ===")
+        logger.info(f"Current round: {current_round}")
+        logger.info(f"Current topic: '{current_topic}'")
+        logger.info(f"Previous periodic stops: {state.get('periodic_stop_counter', 0)}")
+
+        # LOG: Interrupt preparation
+        interrupt_payload = {
+            "type": "periodic_stop",
+            "current_round": current_round,
+            "current_topic": current_topic,
+            "message": (
+                f"You've reached a 5-round checkpoint (Round {current_round}).\n"
+                f"Currently discussing: {current_topic}\n\n"
+                "What would you like to do?"
+            ),
+            "options": ["continue", "end_topic", "modify", "skip"],
+        }
+
+        logger.info(f"=== PERIODIC INTERRUPT PREPARATION ===")
+        logger.info(f"Interrupt payload: {interrupt_payload}")
         logger.info(
-            f"Interrupting for periodic user checkpoint at round {current_round}"
+            f"🔄 Interrupting for periodic user checkpoint at round {current_round}..."
         )
-        user_input = interrupt(
-            {
-                "type": "periodic_stop",
-                "current_round": current_round,
-                "current_topic": current_topic,
-                "message": (
-                    f"You've reached a 5-round checkpoint (Round {current_round}).\n"
-                    f"Currently discussing: {current_topic}\n\n"
-                    "What would you like to do?"
-                ),
-                "options": ["continue", "end_topic", "modify", "skip"],
-            }
-        )
+
+        user_input = interrupt(interrupt_payload)
+
+        # LOG: User input processing
+        logger.info(f"=== PERIODIC USER INPUT PROCESSING ===")
+        logger.info(f"Raw user input received: {user_input}")
+        logger.info(f"User input type: {type(user_input)}")
 
         # Process user input (this will be called when execution resumes)
         if user_input is None:
             # Fallback to continue discussion
+            decision = "continue"
             logger.warning(
-                "No user input received for periodic stop, continuing discussion"
+                f"⚠️ No user input received for periodic stop - using fallback: '{decision}'"
             )
-            return {
-                "user_periodic_decision": "continue",
+            fallback_updates = {
+                "user_periodic_decision": decision,
                 "periodic_stop_counter": state.get("periodic_stop_counter", 0) + 1,
             }
+            logger.warning(f"Fallback updates: {fallback_updates}")
+            return fallback_updates
 
         decision = user_input.get("action", "continue")
+        logger.info(f"✅ User periodic decision extracted: '{decision}'")
+        if "action" not in user_input:
+            logger.warning("User input missing 'action' key - using default 'continue'")
 
-        logger.info(f"User periodic decision: {decision}")
+        logger.info(f"Final user periodic decision: '{decision}'")
+
+        # LOG: Decision processing
+        logger.info(f"=== PERIODIC DECISION PROCESSING ===")
+        decision_flags = {
+            "user_forced_conclusion": decision == "end_topic",
+            "user_requested_modification": decision == "modify",
+            "user_skip_to_final": decision == "skip",
+        }
+        logger.info(f"Decision flags: {decision_flags}")
 
         # Store decision for conditional routing
         updates = {
@@ -1718,13 +1926,39 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
             },
         }
 
-        # Handle different user decisions
+        # Handle different user decisions with detailed logging
+        logger.info(f"=== APPLYING DECISION-SPECIFIC UPDATES ===")
         if decision == "end_topic":
             updates["user_forced_conclusion"] = True
+            logger.info("✅ Applied user_forced_conclusion = True")
         elif decision == "modify":
             updates["user_requested_modification"] = True
+            logger.info("✅ Applied user_requested_modification = True")
         elif decision == "skip":
             updates["user_skip_to_final"] = True
+            logger.info("✅ Applied user_skip_to_final = True")
+        else:
+            logger.info(f"No additional flags set for decision: '{decision}'")
+
+        # LOG: Final validation and exit
+        logger.info(f"=== PERIODIC_USER_STOP NODE EXIT ===")
+        logger.info(f"Updates to return: {updates}")
+
+        # Critical validation checks
+        validation_errors = []
+        if not isinstance(updates.get("periodic_stop_counter"), int):
+            validation_errors.append("periodic_stop_counter is not an integer")
+        if not isinstance(updates.get("user_periodic_decision"), str):
+            validation_errors.append("user_periodic_decision is not a string")
+
+        if validation_errors:
+            logger.error(
+                f"CRITICAL: Validation errors in periodic_user_stop_node updates:"
+            )
+            for error in validation_errors:
+                logger.error(f"  - {error}")
+        else:
+            logger.info("✅ All validation checks passed")
 
         return updates
 
@@ -1856,7 +2090,15 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
             }
 
             # Phase 1: Create report structure with progress feedback
-            console.print("\n[cyan]📝 Generating topic report...[/cyan]")
+            try:
+                from virtual_agora.ui.display_modes import (
+                    should_show_atmospheric_elements,
+                )
+
+                if should_show_atmospheric_elements():
+                    console.print("\n[cyan]📝 Generating topic report...[/cyan]")
+            except ImportError:
+                console.print("\n[cyan]📝 Generating topic report...[/cyan]")
 
             sections, structure_response = report_writer_agent.create_report_structure(
                 source_material, "topic"
@@ -1895,7 +2137,19 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
 
             # Show completion
             show_mini_progress(total_steps, total_steps, "Report generation completed")
-            console.print("[green]✅ Topic report generated successfully![/green]\n")
+            try:
+                from virtual_agora.ui.display_modes import (
+                    should_show_atmospheric_elements,
+                )
+
+                if should_show_atmospheric_elements():
+                    console.print(
+                        "[green]✅ Topic report generated successfully![/green]\n"
+                    )
+            except ImportError:
+                console.print(
+                    "[green]✅ Topic report generated successfully![/green]\n"
+                )
 
             # Combine all sections into final report
             report = "\n\n".join(report_parts)
@@ -1968,7 +2222,17 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         try:
             # Get console for user feedback
             console = get_console()
-            console.print("\n[cyan]📋 Creating topic conclusion summary...[/cyan]")
+            try:
+                from virtual_agora.ui.display_modes import (
+                    should_show_atmospheric_elements,
+                )
+
+                if should_show_atmospheric_elements():
+                    console.print(
+                        "\n[cyan]📋 Creating topic conclusion summary...[/cyan]"
+                    )
+            except ImportError:
+                console.print("\n[cyan]📋 Creating topic conclusion summary...[/cyan]")
 
             # Create topic conclusion summary using SummarizerAgent
             topic_conclusion_summary = summarizer_agent.summarize_topic_conclusion(
@@ -1977,7 +2241,17 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                 topic=current_topic,
             )
 
-            console.print("[green]✅ Topic conclusion summary created![/green]\n")
+            try:
+                from virtual_agora.ui.display_modes import (
+                    should_show_atmospheric_elements,
+                )
+
+                if should_show_atmospheric_elements():
+                    console.print(
+                        "[green]✅ Topic conclusion summary created![/green]\n"
+                    )
+            except ImportError:
+                console.print("[green]✅ Topic conclusion summary created![/green]\n")
 
             # Store the summary in topic_summaries state field using the reducer
             updates = {
@@ -2002,16 +2276,31 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         return updates
 
     def file_output_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
-        """Save topic report to file.
+        """Save topic report to file with defensive state validation.
 
         Pure I/O operation, no agent invocation.
         """
         logger.info("Node: file_output - Saving topic report")
 
-        current_topic = state["active_topic"]
+        # DEFENSIVE CHECK: Validate critical state before proceeding
+        current_topic = state.get("active_topic")
+        if not current_topic:
+            logger.error("No active topic found in file_output_node")
+            return {
+                "last_error": "No active topic for file output",
+                "error_count": state.get("error_count", 0) + 1,
+            }
+
+        session_id = state.get("session_id")
+        if not session_id:
+            logger.error("No session_id found in file_output_node")
+            return {
+                "last_error": "No session_id for file output",
+                "error_count": state.get("error_count", 0) + 1,
+            }
+
         topic_summaries = state.get("topic_summaries", {})
         report = topic_summaries.get(current_topic, "")
-        session_id = state["session_id"]
 
         # Create organized directory structure
         session_dir, topic_dir = create_report_directory_structure(
@@ -2059,9 +2348,19 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
 
             # Get console for user feedback
             console = get_console()
-            console.print(
-                f"\n[green]💾 Topic report saved to:[/green] [cyan]{filepath}[/cyan]"
-            )
+            try:
+                from virtual_agora.ui.display_modes import (
+                    should_show_atmospheric_elements,
+                )
+
+                if should_show_atmospheric_elements():
+                    console.print(
+                        f"\n[green]💾 Topic report saved to:[/green] [cyan]{filepath}[/cyan]"
+                    )
+            except ImportError:
+                console.print(
+                    f"\n[green]💾 Topic report saved to:[/green] [cyan]{filepath}[/cyan]"
+                )
             logger.info(f"Saved topic report to: {filepath}")
 
         except Exception as e:
@@ -2170,10 +2469,8 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         # Store session vote results in existing schema fields
         updates = {
             "agents_vote_end_session": agents_vote_end,
-            # Store vote details in the warnings field for now (similar to other fixes)
-            "warnings": [
-                f"Session vote: {votes_to_end} to end, {votes_to_continue} to continue"
-            ],
+            # Store vote details in the warnings field (fixed: pass string, not list)
+            "warnings": f"Session vote: {votes_to_end} to end, {votes_to_continue} to continue",
         }
 
         logger.info(
@@ -2189,63 +2486,200 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         Uses LangGraph interrupt mechanism to get user continuation decision.
         User has final say regardless of agent vote.
         """
-        logger.info("Node: user_approval - Getting user continuation approval")
+        logger.info("=== USER_APPROVAL NODE START ===")
 
-        # Handle potentially nested completed_topics structure
-        completed_topics = state.get("completed_topics", [])
+        # LOG: Complete entry state snapshot
+        entry_snapshot = {
+            "topic_queue": state.get("topic_queue", []),
+            "active_topic": state.get("active_topic"),
+            "completed_topics": state.get("completed_topics", []),
+            "current_round": state.get("current_round", 0),
+            "current_phase": state.get("current_phase", 0),
+            "total_messages": len(state.get("messages", [])),
+            "user_approves_continuation": state.get("user_approves_continuation"),
+            "agents_vote_end_session": state.get("agents_vote_end_session"),
+            "user_forced_conclusion": state.get("user_forced_conclusion"),
+            "user_requested_modification": state.get("user_requested_modification"),
+            "session_id": state.get("session_id"),
+        }
+        logger.debug(f"Entry state snapshot: {entry_snapshot}")
+
+        # LOG: Active topic completion processing
+        current_active = state.get("active_topic")
+        completed_topics = list(state.get("completed_topics", []))
+        logger.info(f"=== TOPIC COMPLETION PROCESSING ===")
+        logger.info(f"Current active topic: '{current_active}'")
+        logger.info(
+            f"Raw completed_topics: {completed_topics} (Type: {type(completed_topics)}, Length: {len(completed_topics)})"
+        )
+
+        # Handle potentially nested completed_topics structure with detailed logging
         flattened_completed = []
-        for item in completed_topics:
+        completion_corruption_detected = False
+        for i, item in enumerate(completed_topics):
+            logger.debug(
+                f"Processing completed_topics item [{i}]: {item} (Type: {type(item)})"
+            )
             if isinstance(item, list):
-                flattened_completed.extend(item)
-            elif isinstance(item, str):
-                flattened_completed.append(item)
+                completion_corruption_detected = True
+                logger.warning(
+                    f"CORRUPTION: Nested list in completed_topics at index {i}: {item}"
+                )
+                for nested_item in item:
+                    if isinstance(nested_item, str) and nested_item.strip():
+                        flattened_completed.append(nested_item.strip())
+                        logger.debug(
+                            f"  Extracted from nested: '{nested_item.strip()}'"
+                        )
+            elif isinstance(item, str) and item.strip():
+                flattened_completed.append(item.strip())
+                logger.debug(f"Added completed topic: '{item.strip()}'")
+            else:
+                completion_corruption_detected = True
+                logger.warning(
+                    f"CORRUPTION: Invalid completed_topics item at index {i}: {item} (Type: {type(item)})"
+                )
+
+        # Ensure current topic is marked as completed if not already
+        completion_updated = False
+        topic_to_complete = None
+        if current_active and current_active not in flattened_completed:
+            topic_to_complete = current_active
+            completion_updated = True
+            logger.info(
+                f"✅ Will mark '{current_active}' as completed in user_approval_node using reducer"
+            )
+
+        logger.info(f"Completion corruption detected: {completion_corruption_detected}")
+        logger.info(f"Completion list updated: {completion_updated}")
+        logger.info(f"Final flattened completed topics: {flattened_completed}")
 
         completed_topic = flattened_completed[-1] if flattened_completed else "Unknown"
-        remaining_topics = state.get("topic_queue", [])
-        agents_vote_end = state.get("agents_vote_end_session", False)
+        logger.info(f"Most recent completed topic: '{completed_topic}'")
 
-        # Use LangGraph interrupt to pause execution and wait for user input
-        logger.info("Interrupting for user continuation approval")
-        user_input = interrupt(
-            {
-                "type": "topic_continuation",
-                "completed_topic": completed_topic,
-                "remaining_topics": remaining_topics,
-                "agent_recommendation": (
-                    "end_session" if agents_vote_end else "continue"
-                ),
-                "message": (
-                    f"Topic '{completed_topic}' has been concluded.\n"
-                    f"Remaining topics: {len(remaining_topics)}\n"
-                    f"Agent recommendation: {'End session' if agents_vote_end else 'Continue'}\n\n"
-                    "What would you like to do?"
-                ),
-                "options": [
-                    "continue",
-                    "end_session",
-                    "generate_final_report",
-                    "modify_agenda",
-                ],
-            }
+        # LOG: Remaining topics validation
+        raw_remaining = state.get("topic_queue", [])
+        logger.info(f"=== REMAINING TOPICS VALIDATION ===")
+        logger.info(
+            f"Raw remaining topics: {raw_remaining} (Type: {type(raw_remaining)}, Length: {len(raw_remaining)})"
         )
+
+        remaining_topics = []
+        remaining_corruption_detected = False
+        for i, item in enumerate(raw_remaining):
+            logger.debug(
+                f"Processing remaining topic [{i}]: {item} (Type: {type(item)})"
+            )
+            if isinstance(item, list):
+                remaining_corruption_detected = True
+                logger.warning(
+                    f"CORRUPTION: Nested list in topic_queue at index {i}: {item}"
+                )
+                remaining_topics.extend(
+                    [t for t in item if isinstance(t, str) and t.strip()]
+                )
+            elif isinstance(item, str) and item.strip():
+                remaining_topics.append(item.strip())
+                logger.debug(f"Added remaining topic: '{item.strip()}'")
+            else:
+                remaining_corruption_detected = True
+                logger.warning(
+                    f"CORRUPTION: Invalid topic_queue item at index {i}: {item} (Type: {type(item)})"
+                )
+
+        # Remove completed topic from remaining if still there
+        original_remaining_count = len(remaining_topics)
+        remaining_topics = [t for t in remaining_topics if t != current_active]
+        if len(remaining_topics) != original_remaining_count:
+            logger.info(
+                f"Removed current active topic '{current_active}' from remaining topics"
+            )
+
+        logger.info(f"Remaining corruption detected: {remaining_corruption_detected}")
+        logger.info(f"Final remaining topics: {remaining_topics}")
+        logger.info(f"Remaining topics count: {len(remaining_topics)}")
+
+        agents_vote_end = state.get("agents_vote_end_session", False)
+        logger.info(f"Agents vote to end session: {agents_vote_end}")
+
+        # LOG: User interrupt preparation
+        interrupt_payload = {
+            "type": "topic_continuation",
+            "completed_topic": completed_topic,
+            "remaining_topics": remaining_topics,
+            "agent_recommendation": ("end_session" if agents_vote_end else "continue"),
+            "message": (
+                f"Topic '{completed_topic}' has been concluded.\n"
+                f"Remaining topics: {len(remaining_topics)}\n"
+                f"Agent recommendation: {'End session' if agents_vote_end else 'Continue'}\n\n"
+                "What would you like to do?"
+            ),
+            "options": [
+                "continue",
+                "end_session",
+                "generate_final_report",
+                "modify_agenda",
+            ],
+        }
+
+        logger.info(f"=== USER INTERRUPT PREPARATION ===")
+        logger.info(f"Interrupt payload: {interrupt_payload}")
+        logger.info("🔄 Interrupting for user continuation approval...")
+
+        user_input = interrupt(interrupt_payload)
+
+        # LOG: User input processing
+        logger.info(f"=== USER INPUT PROCESSING ===")
+        logger.info(f"Raw user input received: {user_input}")
+        logger.info(f"User input type: {type(user_input)}")
 
         # Process user input (this will be called when execution resumes)
         if user_input is None:
             # Fallback: continue if there are remaining topics, otherwise end
-            logger.warning("No user input received for continuation approval")
             decision = "continue" if remaining_topics else "end_session"
+            logger.warning(
+                f"⚠️ No user input received - using fallback decision: '{decision}'"
+            )
+            logger.warning(
+                f"Fallback logic: remaining_topics={len(remaining_topics)} -> decision='{decision}'"
+            )
         else:
             decision = user_input.get("action", "continue")
+            logger.info(f"✅ User decision extracted: '{decision}'")
+            if "action" not in user_input:
+                logger.warning(
+                    "User input missing 'action' key - using default 'continue'"
+                )
 
-        logger.info(f"User continuation decision: {decision}")
+        logger.info(f"Final user continuation decision: '{decision}'")
 
-        # Process user decision
-        updates = {
+        # LOG: Decision processing and state updates
+        logger.info(f"=== USER DECISION PROCESSING ===")
+        decision_mapping = {
             "user_approves_continuation": decision == "continue",
             "user_requests_end": decision == "end_session"
             or decision == "generate_final_report",
             "user_requests_final_report": decision == "generate_final_report",
             "user_requested_modification": decision == "modify_agenda",
+        }
+        logger.info(f"Decision mapping: {decision_mapping}")
+
+        # Process user decision with cleaned state
+        updates = {
+            "user_approves_continuation": decision_mapping[
+                "user_approves_continuation"
+            ],
+            "user_requests_end": decision_mapping["user_requests_end"],
+            "user_requests_final_report": decision_mapping[
+                "user_requests_final_report"
+            ],
+            "user_requested_modification": decision_mapping[
+                "user_requested_modification"
+            ],
+            # CRITICAL: Update state with cleaned values to prevent corruption
+            # NOTE: completed_topics is managed by the safe_list_append reducer and should not be directly assigned
+            "topic_queue": remaining_topics,
+            "active_topic": None,  # Clear active topic since it's completed
             "hitl_state": {
                 "awaiting_approval": False,
                 "approval_type": "topic_continuation",
@@ -2262,6 +2696,37 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
                 ],
             },
         }
+
+        # Add current topic to completed_topics using the reducer if needed
+        if topic_to_complete:
+            updates["completed_topics"] = (
+                topic_to_complete  # Uses safe_list_append reducer
+            )
+
+        # LOG: Final validation and exit
+        logger.info(f"=== USER_APPROVAL NODE EXIT ===")
+        logger.info(f"Updates to return: {updates}")
+
+        # Critical validation checks
+        validation_errors = []
+        # completed_topics should be a string (for reducer) or not present
+        if "completed_topics" in updates and not isinstance(
+            updates.get("completed_topics"), str
+        ):
+            validation_errors.append(
+                "completed_topics should be a string for the reducer"
+            )
+        if not isinstance(updates.get("topic_queue"), list):
+            validation_errors.append("topic_queue is not a list")
+        if updates.get("active_topic") is not None:
+            validation_errors.append("active_topic should be None after completion")
+
+        if validation_errors:
+            logger.error(f"CRITICAL: Validation errors in user_approval_node updates:")
+            for error in validation_errors:
+                logger.error(f"  - {error}")
+        else:
+            logger.info("✅ All validation checks passed")
 
         return updates
 
@@ -2411,7 +2876,17 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
             }
 
             # Phase 1: Create report structure with progress feedback
-            console.print("\n[cyan]📊 Generating final session report...[/cyan]")
+            try:
+                from virtual_agora.ui.display_modes import (
+                    should_show_atmospheric_elements,
+                )
+
+                if should_show_atmospheric_elements():
+                    console.print(
+                        "\n[cyan]📊 Generating final session report...[/cyan]"
+                    )
+            except ImportError:
+                console.print("\n[cyan]📊 Generating final session report...[/cyan]")
 
             sections, structure_response = report_writer_agent.create_report_structure(
                 source_material, "session"
@@ -2457,9 +2932,19 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
             show_mini_progress(
                 total_steps, total_steps, "Session report generation completed"
             )
-            console.print(
-                "[green]✅ Final session report generated successfully![/green]\n"
-            )
+            try:
+                from virtual_agora.ui.display_modes import (
+                    should_show_atmospheric_elements,
+                )
+
+                if should_show_atmospheric_elements():
+                    console.print(
+                        "[green]✅ Final session report generated successfully![/green]\n"
+                    )
+            except ImportError:
+                console.print(
+                    "[green]✅ Final session report generated successfully![/green]\n"
+                )
 
             # Extract section titles for backward compatibility
             report_sections = [section["title"] for section in sections]
@@ -2559,12 +3044,25 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
 
             # Get console for user feedback
             console = get_console()
-            console.print(
-                f"\n[green]📁 Final session report saved to:[/green] [cyan]{final_report_dir}[/cyan]"
-            )
-            console.print(
-                f"[green]📄 Generated {len(saved_files)} report sections + index[/green]"
-            )
+            try:
+                from virtual_agora.ui.display_modes import (
+                    should_show_atmospheric_elements,
+                )
+
+                if should_show_atmospheric_elements():
+                    console.print(
+                        f"\n[green]📁 Final session report saved to:[/green] [cyan]{final_report_dir}[/cyan]"
+                    )
+                    console.print(
+                        f"[green]📄 Generated {len(saved_files)} report sections + index[/green]"
+                    )
+            except ImportError:
+                console.print(
+                    f"\n[green]📁 Final session report saved to:[/green] [cyan]{final_report_dir}[/cyan]"
+                )
+                console.print(
+                    f"[green]📄 Generated {len(saved_files)} report sections + index[/green]"
+                )
             logger.info(f"Saved {len(saved_files)} report files to {final_report_dir}")
 
         except Exception as e:

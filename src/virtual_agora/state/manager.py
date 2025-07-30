@@ -114,12 +114,12 @@ class StateManager:
             },
             # Phase management
             current_phase=0,
-            phase_history=[],
+            # phase_history=[], # Remove - uses safe_list_append reducer
             phase_start_time=now,
             # Epic 6: Round management and orchestration
             current_round=0,
-            round_history=[],
-            turn_order_history=[],
+            # round_history=[], # Remove - uses safe_list_append reducer
+            # turn_order_history=[], # Remove - uses safe_list_append reducer
             rounds_per_topic={},
             # Epic 6: Human-in-the-Loop controls
             hitl_state={
@@ -142,7 +142,8 @@ class StateManager:
             topic_queue=[],
             proposed_topics=[],
             topics_info={},
-            completed_topics=[],
+            # completed_topics=[], # Remove explicit empty list initialization
+            # Let LangGraph handle reducer field initialization properly
             # Agent management
             agents=agents,
             moderator_id=moderator_id,
@@ -154,8 +155,8 @@ class StateManager:
             last_message_id="0",
             # Voting system
             active_vote=None,
-            vote_history=[],
-            votes=[],
+            # vote_history=[], # Remove - uses safe_list_append reducer
+            # votes=[], # Remove - uses safe_list_append reducer
             # Consensus tracking
             consensus_proposals={},
             consensus_reached={},
@@ -171,7 +172,7 @@ class StateManager:
             messages_by_topic={},
             vote_participation_rate={},
             # Tool execution tracking
-            tool_calls=[],
+            # tool_calls=[], # Remove - uses safe_list_append reducer
             active_tool_calls={},
             tool_metrics={
                 "total_calls": 0,
@@ -186,15 +187,15 @@ class StateManager:
             # Error tracking
             last_error=None,
             error_count=0,
-            warnings=[],
-            # v1.3 specific fields with list.append reducers
-            agent_invocations=[],
-            round_summaries=[],
-            agent_contexts=[],
-            user_stop_history=[],
-            # NotRequired fields with list.append reducers
-            topic_transition_history=[],
-            edge_cases_encountered=[],
+            # warnings=[], # Remove - uses safe_list_append reducer
+            # v1.3 specific fields with safe_list_append reducers - remove initializations
+            # agent_invocations=[], # Remove - uses safe_list_append reducer
+            # round_summaries=[], # Remove - uses safe_list_append reducer
+            # agent_contexts=[], # Remove - uses safe_list_append reducer
+            # user_stop_history=[], # Remove - uses safe_list_append reducer
+            # NotRequired fields with safe_list_append reducers - remove initializations
+            # topic_transition_history=[], # Remove - uses safe_list_append reducer
+            # edge_cases_encountered=[], # Remove - uses safe_list_append reducer
         )
 
         logger.debug(f"Initialized state for session {session_id}")
@@ -518,7 +519,12 @@ class StateManager:
             self.state["topics_info"][topic]["status"] = "active"
             self.state["topics_info"][topic]["start_time"] = datetime.now()
 
-        logger.info(f"Activated topic: {topic}")
+        # Reset interrupt context for the new topic
+        from virtual_agora.flow.interrupt_manager import get_interrupt_manager
+
+        interrupt_manager = get_interrupt_manager()
+        interrupt_manager.reset_for_new_topic(topic)
+        logger.info(f"Activated topic with fresh interrupt context: {topic}")
 
     def complete_topic(self) -> None:
         """Mark the current topic as completed."""
@@ -526,15 +532,25 @@ class StateManager:
         if not topic:
             return
 
-        self.state["completed_topics"].append(topic)
-        self.state["active_topic"] = None
+        # Use proper update mechanism with reducer instead of direct .append()
+        self.update_state(
+            {
+                "completed_topics": topic,  # This uses safe_list_append reducer
+                "active_topic": None,
+            }
+        )
 
         # Update topic info
         if topic in self.state["topics_info"]:
             self.state["topics_info"][topic]["status"] = "completed"
             self.state["topics_info"][topic]["end_time"] = datetime.now()
 
-        logger.info(f"Completed topic: {topic}")
+        # Clear interrupt context for the completed topic
+        from virtual_agora.flow.interrupt_manager import get_interrupt_manager
+
+        interrupt_manager = get_interrupt_manager()
+        interrupt_manager.clear_topic_context(topic)
+        logger.info(f"Completed topic and cleared interrupt context: {topic}")
 
     def _set_next_speaker(self) -> None:
         """Set the next speaker in rotation."""
@@ -625,6 +641,31 @@ class StateManager:
         if self._state is None:
             raise StateError("State not initialized")
 
+        # LOG: Pre-update state snapshot for critical fields
+        critical_fields = [
+            "topic_queue",
+            "active_topic",
+            "completed_topics",
+            "current_round",
+            "current_phase",
+            "messages",
+            "user_approves_continuation",
+            "agents_vote_end_session",
+            "user_forced_conclusion",
+        ]
+
+        pre_update_snapshot = {}
+        for field in critical_fields:
+            if field == "messages":
+                # For messages, just track the count to avoid massive logs
+                pre_update_snapshot[field + "_count"] = len(self._state.get(field, []))
+            else:
+                pre_update_snapshot[field] = self._state.get(field)
+
+        logger.info(f"=== STATE UPDATE START ===")
+        logger.debug(f"Updates to apply: {updates}")
+        logger.info(f"Pre-update critical fields: {pre_update_snapshot}")
+
         # Known NotRequired fields that may not exist yet
         known_optional_fields = {
             "main_topic",
@@ -657,15 +698,74 @@ class StateManager:
             "agents_vote_end_session",
             "user_approves_continuation",
             "user_requested_modification",
+            # v1.3 specific fields returned by nodes
+            "agenda_approved",
+            "agenda_rejected",
+            "final_agenda",
+            "error",
+            "report_error",
+            "user_periodic_decision",
+            # Note: last_error and error_count are already in VirtualAgoraState schema
         }
+
+        # Track which fields were actually updated
+        applied_updates = {}
+        rejected_updates = {}
 
         for key, value in updates.items():
             if key in self._state or key in known_optional_fields:
+                old_value = self._state.get(key)
                 self._state[key] = value
+                applied_updates[key] = {"old": old_value, "new": value}
+
+                # Special logging for critical state fields
+                if key in critical_fields:
+                    logger.info(f"CRITICAL FIELD UPDATE: {key}")
+                    logger.info(f"  Before: {old_value}")
+                    logger.info(f"  After:  {value}")
+                    logger.info(f"  Changed: {old_value != value}")
             else:
+                rejected_updates[key] = value
                 logger.warning(f"Attempting to set unknown state field: {key}")
 
-        logger.debug(f"Updated state with {len(updates)} fields")
+        # LOG: Post-update state snapshot for critical fields
+        post_update_snapshot = {}
+        for field in critical_fields:
+            if field == "messages":
+                post_update_snapshot[field + "_count"] = len(self._state.get(field, []))
+            else:
+                post_update_snapshot[field] = self._state.get(field)
+
+        # LOG: Field-level changes analysis
+        state_changes = {}
+        for field in critical_fields:
+            field_key = field + "_count" if field == "messages" else field
+            if pre_update_snapshot.get(field_key) != post_update_snapshot.get(
+                field_key
+            ):
+                state_changes[field] = {
+                    "before": pre_update_snapshot.get(field_key),
+                    "after": post_update_snapshot.get(field_key),
+                }
+
+        logger.info(f"=== STATE UPDATE RESULTS ===")
+        logger.info(f"Applied updates: {len(applied_updates)}")
+        logger.info(f"Rejected updates: {len(rejected_updates)}")
+        if rejected_updates:
+            logger.warning(f"Rejected updates: {rejected_updates}")
+
+        logger.debug(f"Post-update critical fields: {post_update_snapshot}")
+
+        if state_changes:
+            logger.info(f"=== CRITICAL FIELD CHANGES ===")
+            for field, change in state_changes.items():
+                logger.info(f"  {field}: {change['before']} → {change['after']}")
+        else:
+            logger.debug("No changes detected in critical fields")
+
+        logger.debug(
+            f"Total state update: applied {len(applied_updates)} fields, rejected {len(rejected_updates)} fields"
+        )
 
     def compress_context_if_needed(self) -> bool:
         """Compress context if approaching token limit.

@@ -257,9 +257,23 @@ class V13FlowConditions:
         Returns:
             Next node based on modification request
         """
+        logger.info("=== SHOULD_MODIFY_AGENDA ROUTING EVALUATION ===")
+
+        # Check routing context
+        routing_context = {
+            "user_requested_modification": state.get(
+                "user_requested_modification", False
+            ),
+            "topic_queue": state.get("topic_queue", []),
+            "completed_topics": state.get("completed_topics", []),
+            "current_phase": state.get("current_phase"),
+            "has_agenda_modifications": bool(state.get("agenda_modifications")),
+        }
+        logger.info(f"Routing context: {routing_context}")
+
         # Check if user requested modification
         if state.get("user_requested_modification", False):
-            logger.debug("User requested agenda modification")
+            logger.info("ROUTING DECISION: modify_agenda (user explicitly requested)")
             return "modify_agenda"
 
         # Check if significant changes detected
@@ -273,11 +287,12 @@ class V13FlowConditions:
                 original_count > 0
                 and abs(original_count - revised_count) / original_count > 0.5
             ):
-                logger.debug(
-                    "Significant agenda changes detected, suggesting modification"
+                logger.info(
+                    f"ROUTING DECISION: modify_agenda (significant changes: {original_count} -> {revised_count})"
                 )
                 return "modify_agenda"
 
+        logger.info("ROUTING DECISION: next_topic (continue to next topic)")
         return "next_topic"
 
     # ===== Advanced Conditions =====

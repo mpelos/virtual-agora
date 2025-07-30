@@ -51,11 +51,13 @@ from virtual_agora.ui.components import LoadingSpinner, create_header_panel
 from virtual_agora.ui.console import get_console
 from virtual_agora.ui.theme import get_current_theme, ProviderType
 from virtual_agora.ui.accessibility import initialize_accessibility
+from virtual_agora.ui.display_modes import initialize_display_manager
 from virtual_agora.ui.langgraph_integration import (
     get_ui_integration,
     initialize_ui_integration,
     update_ui_from_state_change,
 )
+from virtual_agora.flow.interrupt_manager import get_interrupt_manager
 from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
 from virtual_agora.app_v13 import VirtualAgoraApplicationV13
 
@@ -66,32 +68,65 @@ def process_interrupt_recursive(
     depth: int = 0,
     stream_depth: int = 0,
 ) -> Optional[Dict[str, Any]]:
-    """Recursively process LangGraph interrupts including nested interrupts.
+    """Process LangGraph interrupts with proper context management.
 
     Args:
         interrupt_data: The interrupt data from LangGraph
         config_dict: Configuration dictionary for LangGraph operations
-        depth: Current interrupt recursion depth for safety limits
-        stream_depth: Current stream recursion depth for safety limits
+        depth: Legacy parameter (now managed by InterruptStackManager)
+        stream_depth: Legacy parameter (now managed by InterruptStackManager)
 
     Returns:
         User response dictionary or None if processing fails
     """
+    # Get interrupt manager for proper context management
+    interrupt_manager = get_interrupt_manager()
+
     # Safety limits to prevent infinite recursion
     MAX_INTERRUPT_DEPTH = 5
-    MAX_STREAM_DEPTH = 3
 
-    if depth >= MAX_INTERRUPT_DEPTH:
+    # Use managed depth from interrupt manager instead of parameters
+    current_depth = interrupt_manager.get_current_depth()
+
+    # Validate interrupt stack integrity before processing
+    integrity_warnings = interrupt_manager.validate_stack_integrity()
+    if integrity_warnings:
+        logger.warning(
+            f"Interrupt stack integrity issues detected: {integrity_warnings}"
+        )
+        # Consider emergency recovery if there are serious issues
+        critical_issues = [
+            w
+            for w in integrity_warnings
+            if "mismatch" in w.lower() or "excessive" in w.lower()
+        ]
+        if critical_issues:
+            logger.error(f"Critical interrupt stack issues detected: {critical_issues}")
+            recovery_info = interrupt_manager.emergency_recovery()
+            logger.info(
+                f"Emergency recovery performed: {recovery_info['recovered_successfully']}"
+            )
+            # Recalculate depth after recovery
+            current_depth = interrupt_manager.get_current_depth()
+
+    if current_depth >= MAX_INTERRUPT_DEPTH:
         logger.error(
             f"Maximum interrupt depth ({MAX_INTERRUPT_DEPTH}) exceeded, terminating"
         )
-        return None
+        logger.error(f"Stack info: {interrupt_manager.get_stack_info()}")
+        # Attempt emergency recovery before giving up
+        logger.info("Attempting emergency recovery due to depth limit")
+        recovery_info = interrupt_manager.emergency_recovery()
+        if recovery_info["recovered_successfully"]:
+            current_depth = interrupt_manager.get_current_depth()
+            logger.info(f"Recovery successful, new depth: {current_depth}")
+            if current_depth >= MAX_INTERRUPT_DEPTH:
+                return None
+        else:
+            return None
 
-    if stream_depth >= MAX_STREAM_DEPTH:
-        logger.error(f"Maximum stream depth ({MAX_STREAM_DEPTH}) exceeded, terminating")
-        return None
-
-    logger.info(f"Processing interrupt at depth {depth} (stream_depth: {stream_depth})")
+    # Log interrupt processing with managed depth
+    logger.info(f"Processing interrupt at managed depth {current_depth}")
 
     # Extract interrupt information - format may vary
     interrupt_type = None
@@ -134,22 +169,67 @@ def process_interrupt_recursive(
             interrupt_payload = interrupt_data
             interrupt_type = interrupt_payload.get("type")
 
+    # Push interrupt context to stack for proper management
+    topic_name = interrupt_payload.get("completed_topic") or interrupt_payload.get(
+        "topic"
+    )
+    interrupt_context = interrupt_manager.push_interrupt(
+        interrupt_type=interrupt_type, payload=interrupt_payload, topic_name=topic_name
+    )
+
     user_response = None
 
-    # Handle different interrupt types
-    if interrupt_type == "agenda_approval":
-        user_response = handle_agenda_approval_interrupt(interrupt_payload)
-    elif interrupt_type == "periodic_stop":
-        user_response = handle_periodic_stop_interrupt(interrupt_payload)
-    elif interrupt_type == "topic_continuation":
-        user_response = handle_continuation_interrupt(interrupt_payload)
-    else:
-        logger.warning(f"Unknown interrupt type at depth {depth}: {interrupt_type}")
-        return None
+    try:
+        # Handle different interrupt types
+        if interrupt_type == "agenda_approval":
+            user_response = handle_agenda_approval_interrupt(interrupt_payload)
+        elif interrupt_type == "periodic_stop":
+            user_response = handle_periodic_stop_interrupt(interrupt_payload)
+        elif interrupt_type == "topic_continuation":
+            user_response = handle_continuation_interrupt(interrupt_payload)
+        else:
+            logger.warning(
+                f"Unknown interrupt type at managed depth {current_depth}: {interrupt_type}"
+            )
+            return None
 
-    logger.info(
-        f"Processed interrupt at depth {depth} (stream_depth: {stream_depth}), type: {interrupt_type}"
-    )
+        logger.info(
+            f"Processed interrupt {interrupt_context.interrupt_id} at depth {current_depth}, type: {interrupt_type}"
+        )
+
+    finally:
+        # Always pop interrupt context for cleanup
+        try:
+            popped_context = interrupt_manager.pop_interrupt()
+            if (
+                popped_context
+                and popped_context.interrupt_id != interrupt_context.interrupt_id
+            ):
+                logger.error(
+                    f"Interrupt stack corruption detected: expected {interrupt_context.interrupt_id}, got {popped_context.interrupt_id if popped_context else None}"
+                )
+                logger.error("This indicates serious interrupt stack corruption")
+                # Perform emergency recovery
+                recovery_info = interrupt_manager.emergency_recovery()
+                logger.error(
+                    f"Emergency recovery attempted: {recovery_info['recovered_successfully']}"
+                )
+                if not recovery_info["recovered_successfully"]:
+                    logger.error(
+                        "Emergency recovery failed - interrupt system may be unstable"
+                    )
+        except Exception as cleanup_error:
+            logger.error(f"Error during interrupt cleanup: {cleanup_error}")
+            logger.error("Attempting emergency recovery due to cleanup failure")
+            try:
+                recovery_info = interrupt_manager.emergency_recovery()
+                logger.error(
+                    f"Emergency recovery after cleanup error: {recovery_info['recovered_successfully']}"
+                )
+            except Exception as recovery_error:
+                logger.error(f"Emergency recovery also failed: {recovery_error}")
+                logger.error("Interrupt system may be in critical state")
+
     return user_response
 
 
@@ -427,6 +507,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Validate configuration without running the discussion",
     )
 
+    parser.add_argument(
+        "--hide-messages",
+        action="store_true",
+        help="Hide atmospheric UI messages during execution for debugging",
+    )
+
     return parser.parse_args()
 
 
@@ -470,6 +556,11 @@ async def run_application(args: argparse.Namespace) -> int:
         log_level = args.debug if args.debug else "WARNING"
         setup_logging(level=log_level)
         logger.info(f"Starting Virtual Agora v{__version__}")
+
+        # Initialize display manager with hide_messages setting
+        initialize_display_manager(hide_messages=args.hide_messages)
+        if args.hide_messages:
+            logger.info("Atmospheric UI messages hidden for debugging")
 
         # Track startup in error handler
         with error_handler.error_boundary("application_startup"):
@@ -651,558 +742,194 @@ async def run_application(args: argparse.Namespace) -> int:
                 save_to_disk=True,
             )
 
-            # Run the complete discussion workflow
+            # Run the complete discussion workflow using clean architecture
             console.print("[cyan]Starting discussion workflow...[/cyan]")
 
-            # Create spinner but don't use as context manager for interrupt handling
+            # Initialize the clean execution architecture
+            from virtual_agora.execution import (
+                SessionController,
+                StreamCoordinator,
+                UnifiedStateManager,
+                ExecutionTracker,
+            )
+
+            # Create unified state manager
+            unified_state_manager = UnifiedStateManager(session_id)
+
+            # Initialize session state from existing flow state
+            flow_state_dict = flow_state_manager.state
+            unified_state_manager.update_flow_state(flow_state_dict)
+            unified_state_manager.update_session_state(
+                {
+                    "main_topic": topic,
+                    "current_phase": flow_state_dict.get("current_phase", 0),
+                }
+            )
+
+            # Create session controller (single source of truth)
+            session_controller = SessionController(flow, session_id)
+
+            # Create stream coordinator (handles lifecycle without breaks)
+            stream_coordinator = StreamCoordinator(flow, process_interrupt_recursive)
+
+            # Create execution tracker (provides visibility)
+            execution_tracker = ExecutionTracker(session_id)
+
+            logger.info("Clean execution architecture initialized")
+
+            # Create spinner for UI feedback
             spinner = LoadingSpinner("Running discussion flow...")
             spinner.__enter__()
 
             try:
-                # Stream the graph execution to get real-time updates
+                # Execute session using clean architecture
                 config_dict = {"configurable": {"thread_id": session_id}}
-                logger.info(f"Starting graph stream with config: {config_dict}")
-                logger.debug(
-                    f"Current state before stream: {flow_state_manager.state.get('session_id')}"
+                logger.info(
+                    f"Starting clean session execution with config: {config_dict}"
                 )
 
-                for update in flow.stream(config_dict):
-                    logger.debug(f"Flow update: {update}")
+                # Use the stream coordinator instead of direct flow.stream()
+                for update in stream_coordinator.coordinate_stream_execution(
+                    config_dict
+                ):
+                    logger.debug(
+                        f"Clean flow update: {list(update.keys()) if isinstance(update, dict) else type(update)}"
+                    )
 
-                    # Log which nodes are executing for debugging
+                    # Update unified state manager
                     if isinstance(update, dict):
+                        # Extract state updates from the flow update
+                        state_updates = {}
                         for node_name, node_data in update.items():
-                            if node_name not in ["__interrupt__", "__end__"]:
-                                logger.debug(
-                                    f"=== FLOW DEBUG: Node '{node_name}' executed ==="
+                            if node_name not in [
+                                "__interrupt__",
+                                "__end__",
+                            ] and isinstance(node_data, dict):
+                                state_updates.update(node_data)
+                                # Track node execution
+                                execution_tracker.track_node_execution(
+                                    node_name,
+                                    unified_state_manager.get_legacy_state(),
+                                    state_updates,
                                 )
-                                if isinstance(node_data, dict) and node_data:
-                                    logger.info(
-                                        f"Node '{node_name}' updates: {list(node_data.keys())}"
-                                    )
 
-                    # Handle LangGraph interrupts for HITL interactions
+                        if state_updates:
+                            unified_state_manager.update_flow_state(state_updates)
+
+                    # Handle interrupts through the clean architecture
                     if "__interrupt__" in update:
-                        # Stop spinner to allow user input
+                        # Stop spinner for user input
                         spinner.__exit__(None, None, None)
 
+                        interrupt_start = datetime.now()
                         interrupt_data = update["__interrupt__"]
-                        logger.info(f"Handling interrupt: {interrupt_data}")
-
-                        # Process interrupt and get user response using recursive handler
-                        user_response = process_interrupt_recursive(
-                            interrupt_data, config_dict, depth=0, stream_depth=0
+                        logger.info(
+                            f"Handling interrupt via clean architecture: {interrupt_data}"
                         )
 
-                        # Resume execution with user input
-                        if user_response:
-                            logger.info(
-                                f"Resuming execution with user response: {user_response}"
-                            )
-
-                            # Update the graph with user input using the proper LangGraph API
-                            try:
-                                logger.debug(
-                                    "=== FLOW DEBUG: Starting state update after interrupt ==="
+                        # Extract interrupt type for tracking
+                        interrupt_type = "unknown"
+                        if (
+                            isinstance(interrupt_data, tuple)
+                            and len(interrupt_data) > 0
+                        ):
+                            interrupt_obj = interrupt_data[0]
+                            if hasattr(interrupt_obj, "value") and isinstance(
+                                interrupt_obj.value, dict
+                            ):
+                                interrupt_type = interrupt_obj.value.get(
+                                    "type", "unknown"
                                 )
 
-                                # For LangGraph interrupts, we need to update the state and then continue streaming
-                                # The interrupt contains namespace information for resuming
-                                if (
-                                    isinstance(interrupt_data, tuple)
-                                    and len(interrupt_data) > 0
-                                ):
-                                    interrupt_obj = interrupt_data[0]
-                                    logger.debug(
-                                        f"=== FLOW DEBUG: Interrupt object namespace: {getattr(interrupt_obj, 'ns', 'No ns attribute')}"
-                                    )
+                        # The StreamCoordinator handles the interrupt processing
+                        # We just need to track it and restart the spinner
+                        interrupt_end = datetime.now()
+                        execution_tracker.track_interrupt_handling(
+                            interrupt_type, interrupt_start, interrupt_end
+                        )
 
-                                    if (
-                                        hasattr(interrupt_obj, "ns")
-                                        and interrupt_obj.ns
-                                    ):
-                                        # Use the namespace from the interrupt for proper resuming
-                                        node_name = (
-                                            interrupt_obj.ns[0].split(":")[0]
-                                            if ":" in interrupt_obj.ns[0]
-                                            else interrupt_obj.ns[0]
-                                        )
-                                        logger.debug(
-                                            f"=== FLOW DEBUG: Updating state for node: {node_name}"
-                                        )
-                                        logger.debug(
-                                            f"=== FLOW DEBUG: User response: {user_response}"
-                                        )
+                        # Restart spinner for continued execution
+                        spinner = LoadingSpinner("Continuing discussion flow...")
+                        spinner.__enter__()
 
-                                        flow.compiled_graph.update_state(
-                                            config_dict,
-                                            user_response,
-                                            as_node=node_name,
-                                        )
-                                        logger.debug(
-                                            f"=== FLOW DEBUG: State updated for node {node_name} ==="
-                                        )
-                                    else:
-                                        # Fallback: update state without specific node
-                                        logger.debug(
-                                            "=== FLOW DEBUG: Updating state without specific node ==="
-                                        )
-                                        flow.compiled_graph.update_state(
-                                            config_dict, user_response
-                                        )
-                                        logger.debug(
-                                            "=== FLOW DEBUG: State updated without node specification ==="
-                                        )
-                                else:
-                                    # Fallback: update state without specific node
-                                    logger.debug(
-                                        "=== FLOW DEBUG: Updating state without specific node (fallback) ==="
-                                    )
-                                    flow.compiled_graph.update_state(
-                                        config_dict, user_response
-                                    )
-                                    logger.debug(
-                                        "=== FLOW DEBUG: State updated (fallback) ==="
-                                    )
-
-                                logger.debug(
-                                    "=== FLOW DEBUG: State update complete, execution should continue ==="
-                                )
-                                logger.info(
-                                    "State updated successfully, starting new stream for continuation"
-                                )
-
-                                # After update_state(), we need to start a new stream from current state
-                                # The original stream is exhausted, so we create a fresh stream
-                                logger.debug(
-                                    "=== FLOW DEBUG: Starting fresh stream after state update ==="
-                                )
-
-                                # Restart spinner for continued execution
-                                # First stop any existing spinner to prevent orphaned spinners
-                                try:
-                                    if "spinner" in locals():
-                                        spinner.__exit__(None, None, None)
-                                except:
-                                    pass
-                                spinner = LoadingSpinner(
-                                    "Continuing discussion flow..."
-                                )
-                                spinner.__enter__()
-
-                                # Start new stream from checkpoint - this will continue from where we left off
-                                try:
-                                    for continuation_update in flow.stream(
-                                        config_dict, resume_from_checkpoint=True
-                                    ):
-                                        # Log which nodes are executing in continuation
-                                        if isinstance(continuation_update, dict):
-                                            for (
-                                                node_name,
-                                                node_data,
-                                            ) in continuation_update.items():
-                                                if node_name not in [
-                                                    "__interrupt__",
-                                                    "__end__",
-                                                ]:
-                                                    logger.debug(
-                                                        f"=== FLOW DEBUG: Continuation node '{node_name}' executed ==="
-                                                    )
-                                                    if (
-                                                        isinstance(node_data, dict)
-                                                        and node_data
-                                                    ):
-                                                        logger.info(
-                                                            f"Continuation node '{node_name}' updates: {list(node_data.keys())}"
-                                                        )
-
-                                        # Handle potential nested interrupts
-                                        if "__interrupt__" in continuation_update:
-                                            logger.debug(
-                                                "=== FLOW DEBUG: Nested interrupt detected - handling recursively ==="
-                                            )
-                                            nested_interrupt_data = continuation_update[
-                                                "__interrupt__"
-                                            ]
-                                            logger.info(
-                                                f"Processing nested interrupt: {nested_interrupt_data}"
-                                            )
-
-                                            # Stop spinner for nested user input
-                                            spinner.__exit__(None, None, None)
-
-                                            # Process nested interrupt recursively with increased depth
-                                            nested_user_response = (
-                                                process_interrupt_recursive(
-                                                    nested_interrupt_data,
-                                                    config_dict,
-                                                    depth=1,
-                                                    stream_depth=1,
-                                                )
-                                            )
-
-                                            if nested_user_response:
-                                                logger.debug(
-                                                    f"=== FLOW DEBUG: Nested interrupt processed, updating state ==="
-                                                )
-
-                                                # Update state with nested interrupt response
-                                                try:
-                                                    if (
-                                                        isinstance(
-                                                            nested_interrupt_data, tuple
-                                                        )
-                                                        and len(nested_interrupt_data)
-                                                        > 0
-                                                    ):
-                                                        nested_interrupt_obj = (
-                                                            nested_interrupt_data[0]
-                                                        )
-                                                        if (
-                                                            hasattr(
-                                                                nested_interrupt_obj,
-                                                                "ns",
-                                                            )
-                                                            and nested_interrupt_obj.ns
-                                                        ):
-                                                            nested_node_name = (
-                                                                nested_interrupt_obj.ns[
-                                                                    0
-                                                                ].split(":")[0]
-                                                                if ":"
-                                                                in nested_interrupt_obj.ns[
-                                                                    0
-                                                                ]
-                                                                else nested_interrupt_obj.ns[
-                                                                    0
-                                                                ]
-                                                            )
-                                                            flow.compiled_graph.update_state(
-                                                                config_dict,
-                                                                nested_user_response,
-                                                                as_node=nested_node_name,
-                                                            )
-                                                        else:
-                                                            flow.compiled_graph.update_state(
-                                                                config_dict,
-                                                                nested_user_response,
-                                                            )
-                                                    else:
-                                                        flow.compiled_graph.update_state(
-                                                            config_dict,
-                                                            nested_user_response,
-                                                        )
-
-                                                    logger.debug(
-                                                        "=== FLOW DEBUG: Nested interrupt state updated successfully ==="
-                                                    )
-
-                                                    # Restart spinner and continue with a fresh stream to reach discussion phases
-                                                    spinner = LoadingSpinner(
-                                                        "Continuing to discussion phases..."
-                                                    )
-                                                    spinner.__enter__()
-
-                                                    # Start fresh stream recursively to continue to discussion phases
-                                                    logger.debug(
-                                                        "=== FLOW DEBUG: Starting recursive stream after nested interrupt ==="
-                                                    )
-                                                    try:
-                                                        for (
-                                                            final_continuation_update
-                                                        ) in flow.stream(
-                                                            config_dict,
-                                                            resume_from_checkpoint=True,
-                                                        ):
-                                                            # Log which nodes are executing in final continuation
-                                                            if isinstance(
-                                                                final_continuation_update,
-                                                                dict,
-                                                            ):
-                                                                for (
-                                                                    node_name,
-                                                                    node_data,
-                                                                ) in (
-                                                                    final_continuation_update.items()
-                                                                ):
-                                                                    if (
-                                                                        node_name
-                                                                        not in [
-                                                                            "__interrupt__",
-                                                                            "__end__",
-                                                                        ]
-                                                                    ):
-                                                                        logger.debug(
-                                                                            f"=== FLOW DEBUG: Final continuation node '{node_name}' executed ==="
-                                                                        )
-                                                                        if (
-                                                                            isinstance(
-                                                                                node_data,
-                                                                                dict,
-                                                                            )
-                                                                            and node_data
-                                                                        ):
-                                                                            logger.info(
-                                                                                f"Final continuation node '{node_name}' updates: {list(node_data.keys())}"
-                                                                            )
-
-                                                            # Handle any further nested interrupts recursively
-                                                            if (
-                                                                "__interrupt__"
-                                                                in final_continuation_update
-                                                            ):
-                                                                logger.debug(
-                                                                    "=== FLOW DEBUG: Additional nested interrupt detected - handling recursively ==="
-                                                                )
-                                                                additional_nested_interrupt_data = final_continuation_update[
-                                                                    "__interrupt__"
-                                                                ]
-                                                                logger.info(
-                                                                    f"Processing additional nested interrupt: {additional_nested_interrupt_data}"
-                                                                )
-
-                                                                # Stop spinner for additional nested user input
-                                                                spinner.__exit__(
-                                                                    None, None, None
-                                                                )
-
-                                                                # Process additional nested interrupt recursively with increased depth
-                                                                additional_nested_user_response = process_interrupt_recursive(
-                                                                    additional_nested_interrupt_data,
-                                                                    config_dict,
-                                                                    depth=2,
-                                                                    stream_depth=2,
-                                                                )
-
-                                                                if additional_nested_user_response:
-                                                                    logger.debug(
-                                                                        f"=== FLOW DEBUG: Additional nested interrupt processed ==="
-                                                                    )
-
-                                                                    # Update state with additional nested interrupt response
-                                                                    try:
-                                                                        if (
-                                                                            isinstance(
-                                                                                additional_nested_interrupt_data,
-                                                                                tuple,
-                                                                            )
-                                                                            and len(
-                                                                                additional_nested_interrupt_data
-                                                                            )
-                                                                            > 0
-                                                                        ):
-                                                                            additional_nested_interrupt_obj = additional_nested_interrupt_data[
-                                                                                0
-                                                                            ]
-                                                                            if (
-                                                                                hasattr(
-                                                                                    additional_nested_interrupt_obj,
-                                                                                    "ns",
-                                                                                )
-                                                                                and additional_nested_interrupt_obj.ns
-                                                                            ):
-                                                                                additional_nested_node_name = (
-                                                                                    additional_nested_interrupt_obj.ns[
-                                                                                        0
-                                                                                    ].split(
-                                                                                        ":"
-                                                                                    )[
-                                                                                        0
-                                                                                    ]
-                                                                                    if ":"
-                                                                                    in additional_nested_interrupt_obj.ns[
-                                                                                        0
-                                                                                    ]
-                                                                                    else additional_nested_interrupt_obj.ns[
-                                                                                        0
-                                                                                    ]
-                                                                                )
-                                                                                flow.compiled_graph.update_state(
-                                                                                    config_dict,
-                                                                                    additional_nested_user_response,
-                                                                                    as_node=additional_nested_node_name,
-                                                                                )
-                                                                            else:
-                                                                                flow.compiled_graph.update_state(
-                                                                                    config_dict,
-                                                                                    additional_nested_user_response,
-                                                                                )
-                                                                        else:
-                                                                            flow.compiled_graph.update_state(
-                                                                                config_dict,
-                                                                                additional_nested_user_response,
-                                                                            )
-
-                                                                        logger.debug(
-                                                                            "=== FLOW DEBUG: Additional nested interrupt state updated successfully ==="
-                                                                        )
-
-                                                                        # Restart spinner and continue
-                                                                        spinner = LoadingSpinner(
-                                                                            "Continuing after additional nested interrupt..."
-                                                                        )
-                                                                        spinner.__enter__()
-
-                                                                    except (
-                                                                        Exception
-                                                                    ) as additional_nested_error:
-                                                                        logger.error(
-                                                                            f"Error updating state for additional nested interrupt: {additional_nested_error}",
-                                                                            exc_info=True,
-                                                                        )
-                                                                else:
-                                                                    logger.debug(
-                                                                        "=== FLOW DEBUG: Additional nested interrupt returned no response ==="
-                                                                    )
-                                                                    # Restart spinner anyway
-                                                                    # First stop any existing spinner to prevent orphaned spinners
-                                                                    try:
-                                                                        if (
-                                                                            "spinner"
-                                                                            in locals()
-                                                                        ):
-                                                                            spinner.__exit__(
-                                                                                None,
-                                                                                None,
-                                                                                None,
-                                                                            )
-                                                                    except:
-                                                                        pass
-                                                                    spinner = LoadingSpinner(
-                                                                        "Continuing discussion flow..."
-                                                                    )
-                                                                    spinner.__enter__()
-
-                                                            # Update UI with final continuation steps
-                                                            current_state = (
-                                                                flow_state_manager.state
-                                                            )
-                                                            ui_integration.update_ui_from_state(
-                                                                current_state
-                                                            )
-
-                                                            # Create checkpoints for final continuation phases
-                                                            if (
-                                                                "current_phase"
-                                                                in final_continuation_update
-                                                            ):
-                                                                recovery_manager.create_checkpoint(
-                                                                    current_state,
-                                                                    operation=f"final_continuation_phase_{final_continuation_update['current_phase']}",
-                                                                    save_to_disk=True,
-                                                                )
-
-                                                        logger.debug(
-                                                            "=== FLOW DEBUG: Final continuation stream completed successfully ==="
-                                                        )
-
-                                                    except (
-                                                        Exception
-                                                    ) as final_continuation_error:
-                                                        logger.debug(
-                                                            f"=== FLOW DEBUG: Error in final continuation stream: {final_continuation_error}",
-                                                            exc_info=True,
-                                                        )
-                                                        spinner.__exit__(
-                                                            None, None, None
-                                                        )
-                                                        raise
-
-                                                except Exception as nested_error:
-                                                    logger.error(
-                                                        f"Error updating state for nested interrupt: {nested_error}",
-                                                        exc_info=True,
-                                                    )
-                                            else:
-                                                logger.debug(
-                                                    "=== FLOW DEBUG: Nested interrupt returned no response ==="
-                                                )
-                                                # Restart spinner anyway
-                                                # First stop any existing spinner to prevent orphaned spinners
-                                                try:
-                                                    if "spinner" in locals():
-                                                        spinner.__exit__(
-                                                            None, None, None
-                                                        )
-                                                except:
-                                                    pass
-                                                spinner = LoadingSpinner(
-                                                    "Continuing discussion flow..."
-                                                )
-                                                spinner.__enter__()
-
-                                        # Update UI with continuation steps
-                                        current_state = flow_state_manager.state
-                                        ui_integration.update_ui_from_state(
-                                            current_state
-                                        )
-
-                                        # Create checkpoints for continuation phases
-                                        if "current_phase" in continuation_update:
-                                            recovery_manager.create_checkpoint(
-                                                current_state,
-                                                operation=f"continuation_phase_{continuation_update['current_phase']}",
-                                                save_to_disk=True,
-                                            )
-
-                                    logger.debug(
-                                        "=== FLOW DEBUG: Continuation stream completed successfully ==="
-                                    )
-
-                                except Exception as continuation_error:
-                                    logger.debug(
-                                        f"=== FLOW DEBUG: Error in continuation stream: {continuation_error}",
-                                        exc_info=True,
-                                    )
-                                    spinner.__exit__(None, None, None)
-                                    raise
-
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to resume with user input: {e}",
-                                    exc_info=True,
-                                )
-                                logger.error(f"User response was: {user_response}")
-                                logger.error(f"Config was: {config_dict}")
-                                # Don't continue on error - let the stream naturally complete
-
-                        # After handling interrupt and continuation, break out of the original stream
-                        # since we've completed the execution in the continuation stream
-                        logger.debug(
-                            "=== FLOW DEBUG: Breaking from original stream after continuation ==="
+                    # Handle natural completion
+                    elif "__end__" in update:
+                        logger.info(
+                            "Session completed naturally via clean architecture"
                         )
                         break
 
-                    # Update UI with each step (for non-interrupt updates)
-                    logger.debug(
-                        f"=== FLOW DEBUG: Processing non-interrupt update: {list(update.keys()) if isinstance(update, dict) else type(update)}"
-                    )
-                    current_state = flow_state_manager.state
+                    # Update UI with current state
+                    current_state = unified_state_manager.get_legacy_state()
                     ui_integration.update_ui_from_state(current_state)
 
                     # Create checkpoints at key phases
-                    if "current_phase" in update:
-                        recovery_manager.create_checkpoint(
-                            current_state,
-                            operation=f"phase_{update['current_phase']}",
-                            save_to_disk=True,
-                        )
+                    if isinstance(update, dict):
+                        for node_name, node_data in update.items():
+                            if (
+                                isinstance(node_data, dict)
+                                and "current_phase" in node_data
+                            ):
+                                recovery_manager.create_checkpoint(
+                                    current_state,
+                                    operation=f"phase_{node_data['current_phase']}",
+                                    save_to_disk=True,
+                                )
+                                execution_tracker.track_phase_transition(
+                                    current_state.get("current_phase", 0),
+                                    node_data["current_phase"],
+                                    {"node": node_name, "update": node_data},
+                                )
 
                 # Stop spinner when execution completes
                 spinner.__exit__(None, None, None)
-                logger.debug("=== FLOW DEBUG: Main stream loop completed naturally ===")
+                logger.info(
+                    "Clean architecture session execution completed successfully"
+                )
                 console.print("[green]Discussion completed successfully![/green]")
 
-                # Get final state and show summary
-                final_state = flow_state_manager.state
+                # Get final state and statistics from unified state manager
+                final_unified_state = unified_state_manager.get_unified_state()
+                final_statistics = unified_state_manager.statistics
+                execution_report = execution_tracker.get_performance_report()
+
+                # LOG: Debug session completion with clean architecture
+                logger.info(f"=== CLEAN ARCHITECTURE SESSION COMPLETION ===")
+                logger.info(f"Session completed successfully using clean architecture")
+                logger.info(f"Session ID: {session_id}")
+                logger.info(f"Topics completed: {final_statistics.topics_discussed}")
+                logger.info(f"Total messages: {final_statistics.total_messages}")
+                logger.info(
+                    f"Session duration: {final_statistics.session_duration:.1f}s"
+                )
+                logger.info(
+                    f"Execution events tracked: {execution_report['total_events']}"
+                )
+
+                # Validate state consistency
+                validation_errors = unified_state_manager.validate_state_consistency()
+                if validation_errors:
+                    logger.warning(
+                        f"State validation found {len(validation_errors)} issues:"
+                    )
+                    for error in validation_errors:
+                        logger.warning(f"  - {error}")
+                else:
+                    logger.info("State validation passed - all state layers consistent")
+
+                # Display accurate statistics
+                console.print(f"[dim]Final session ID: {session_id}[/dim]")
                 console.print(
-                    f"[dim]Final session ID: {final_state['session_id']}[/dim]"
+                    f"[dim]Topics discussed: {final_statistics.topics_discussed}[/dim]"
                 )
                 console.print(
-                    f"[dim]Topics discussed: {len(final_state.get('completed_topics', []))}[/dim]"
+                    f"[dim]Total messages: {final_statistics.total_messages}[/dim]"
                 )
                 console.print(
-                    f"[dim]Total messages: {len(final_state.get('messages', []))}[/dim]"
+                    f"[dim]Session duration: {final_statistics.session_duration:.1f}s[/dim]"
+                )
+                console.print(
+                    f"[dim]Execution events: {execution_report['total_events']}[/dim]"
                 )
 
             except Exception as e:

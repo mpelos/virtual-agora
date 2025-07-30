@@ -98,7 +98,9 @@ def update_tool_call_status(
             updates["active_tool_calls"] = active_calls
 
             # Add to tool calls history
-            updates["tool_calls"] = [tool_call]
+            updates["tool_calls"] = (
+                tool_call  # Use reducer properly - pass individual tool call, not list
+            )
         else:
             # Update in active calls
             active_calls = state.get("active_tool_calls", {}).copy()

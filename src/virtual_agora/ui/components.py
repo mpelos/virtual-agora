@@ -68,20 +68,20 @@ class LoadingSpinner:
         self.task_id = None
 
     def __enter__(self):
-        # Check if we're in assembly mode and this is a flow spinner
+        # Check if messages should be hidden for debugging
         try:
-            from virtual_agora.ui.display_modes import is_assembly_mode
+            from virtual_agora.ui.display_modes import should_hide_messages
 
-            if is_assembly_mode() and "discussion flow" in self.message.lower():
-                # In assembly mode, disable flow spinners entirely to prevent residue
+            if should_hide_messages():
+                # Create a dummy progress that doesn't display anything
                 self.progress = None
                 self.task_id = None
-                self._is_assembly_flow_spinner = True
                 return self
         except ImportError:
-            pass
+            pass  # Continue with normal display if import fails
 
-        # Normal spinner behavior for all other cases
+        # Initialize spinner consistently regardless of assembly mode
+        # This fixes the inconsistent loading state behavior across iterations
         self.progress = Progress(
             SpinnerColumn(style=self.style),
             TextColumn("[progress.description]{task.description}"),
@@ -98,6 +98,15 @@ class LoadingSpinner:
 
     def update(self, message: str):
         """Update the spinner message."""
+        # Check if messages should be hidden for debugging
+        try:
+            from virtual_agora.ui.display_modes import should_hide_messages
+
+            if should_hide_messages():
+                return  # Skip updating the spinner message
+        except ImportError:
+            pass  # Continue with normal display if import fails
+
         if self.progress and self.task_id is not None:
             self.progress.update(self.task_id, description=message)
 

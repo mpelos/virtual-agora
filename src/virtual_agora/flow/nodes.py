@@ -687,7 +687,7 @@ class FlowNodes:
                 **state.get("topic_summaries", {}),
                 current_topic: topic_summary,
             },
-            "completed_topics": [current_topic],
+            "completed_topics": current_topic,  # Use reducer properly - pass individual topic string, not list
             "topic_summary_files": {
                 **state.get("topic_summary_files", {}),
                 current_topic: filename,

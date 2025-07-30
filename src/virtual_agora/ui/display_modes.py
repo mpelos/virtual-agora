@@ -37,6 +37,7 @@ class DisplayConfig:
     use_enhanced_panels: bool
     enable_animations: bool
     log_level_override: Optional[str] = None
+    hide_messages: bool = False  # New parameter to hide atmospheric messages
 
 
 class DisplayModeManager:
@@ -70,11 +71,25 @@ class DisplayModeManager:
         ),
     }
 
-    def __init__(self):
-        """Initialize display mode manager."""
+    def __init__(self, hide_messages: bool = False):
+        """Initialize display mode manager.
+
+        Args:
+            hide_messages: If True, suppress atmospheric UI messages regardless of mode
+        """
         self._current_mode = self._detect_default_mode()
         self._config = self.DISPLAY_CONFIGS[self._current_mode]
-        logger.debug(f"Initialized display mode: {self._current_mode.value}")
+
+        # Override hide_messages if explicitly requested
+        if hide_messages:
+            # Create a copy of the config with hide_messages enabled
+            from dataclasses import replace
+
+            self._config = replace(self._config, hide_messages=True)
+
+        logger.debug(
+            f"Initialized display mode: {self._current_mode.value}, hide_messages: {hide_messages}"
+        )
 
     def _detect_default_mode(self) -> DisplayMode:
         """Detect the default display mode based on environment."""
@@ -177,6 +192,24 @@ class DisplayModeManager:
         """
         return self._current_mode == DisplayMode.DEVELOPER
 
+    def should_hide_messages(self) -> bool:
+        """Check if atmospheric messages should be hidden.
+
+        Returns:
+            True if messages should be hidden
+        """
+        return self._config.hide_messages
+
+    def should_show_atmospheric_elements(self) -> bool:
+        """Check if atmospheric elements should be shown.
+
+        This considers both the mode setting and the hide_messages override.
+
+        Returns:
+            True if atmospheric elements should be displayed
+        """
+        return self._config.show_atmospheric_elements and not self._config.hide_messages
+
 
 # Global display mode manager instance
 _display_manager: Optional[DisplayModeManager] = None
@@ -187,6 +220,20 @@ def get_display_manager() -> DisplayModeManager:
     global _display_manager
     if _display_manager is None:
         _display_manager = DisplayModeManager()
+    return _display_manager
+
+
+def initialize_display_manager(hide_messages: bool = False) -> DisplayModeManager:
+    """Initialize the global display mode manager with specific settings.
+
+    Args:
+        hide_messages: If True, suppress atmospheric UI messages
+
+    Returns:
+        The initialized display manager
+    """
+    global _display_manager
+    _display_manager = DisplayModeManager(hide_messages=hide_messages)
     return _display_manager
 
 
@@ -245,3 +292,23 @@ def is_developer_mode() -> bool:
         True if in developer mode
     """
     return get_display_manager().is_developer_mode()
+
+
+def should_hide_messages() -> bool:
+    """Check if atmospheric messages should be hidden.
+
+    Returns:
+        True if messages should be hidden
+    """
+    return get_display_manager().should_hide_messages()
+
+
+def should_show_atmospheric_elements() -> bool:
+    """Check if atmospheric elements should be shown.
+
+    This considers both the mode setting and the hide_messages override.
+
+    Returns:
+        True if atmospheric elements should be displayed
+    """
+    return get_display_manager().should_show_atmospheric_elements()

@@ -9,21 +9,68 @@ from datetime import datetime
 
 
 def safe_list_append(current_list: Optional[List[Any]], new_item: Any) -> List[Any]:
-    """Safely append to a list, handling None values.
+    """Safely append to a list, handling None values and validating inputs.
 
-    This is a robust version of list.append that ensures the list is never None.
-    If current_list is None, it creates a new list with the item.
+    This is a robust version of list.append that ensures the list is never None
+    and prevents common corruption patterns.
 
     Args:
         current_list: Current list value (may be None)
-        new_item: Item to append
+        new_item: Item to append (should NOT be a list for most use cases)
 
     Returns:
         List with the new item appended
+
+    Raises:
+        ValueError: If invalid input patterns are detected
     """
+    # LOG: Debug reducer calls for completed_topics corruption investigation
+    from virtual_agora.utils.logging import get_logger
+
+    logger = get_logger(__name__)
+
+    logger.info(f"=== SAFE_LIST_APPEND REDUCER CALLED ===")
+    logger.info(f"Current list: {current_list} (Type: {type(current_list)})")
+    logger.info(f"New item: {new_item} (Type: {type(new_item)})")
+
+    # VALIDATION: Reject empty lists being passed as new_item
+    if isinstance(new_item, list) and len(new_item) == 0:
+        logger.error(f"REJECTED: Empty list passed as new_item: {new_item}")
+        logger.error(
+            f"This is likely a bug - reducers expect individual items, not empty lists"
+        )
+        # Return current list unchanged to prevent corruption
+        return current_list if current_list is not None else []
+
+    # VALIDATION: Warn about lists being passed (may be intentional in some cases)
+    if isinstance(new_item, list):
+        logger.warning(f"LIST PASSED as new_item: {new_item}")
+        logger.warning(
+            f"Verify this is intentional - reducers typically expect individual items"
+        )
+
     if current_list is None:
-        return [new_item]
-    return current_list + [new_item]
+        result = [new_item]
+        logger.info(f"None list case - created new: {result}")
+        return result
+
+    # Validate current_list is actually a list
+    if not isinstance(current_list, list):
+        logger.error(
+            f"CRITICAL: current_list is not a list! Type: {type(current_list)}, Value: {current_list}"
+        )
+        # Try to recover by converting to list
+        if current_list:
+            current_list = [current_list]
+        else:
+            current_list = []
+        logger.info(f"Recovered current_list: {current_list}")
+
+    result = current_list + [new_item]
+    logger.info(
+        f"Append result: {result} (Type: {type(result)}, Length: {len(result)})"
+    )
+    return result
 
 
 def merge_hitl_state(
