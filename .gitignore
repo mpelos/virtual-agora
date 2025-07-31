@@ -160,6 +160,7 @@ checkpoints/*
 context/*
 !context/.gitkeep
 .gemini-clipboard/
+tmp/
 config.yml
 
 # Test files with sensitive data

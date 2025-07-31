@@ -68,7 +68,7 @@ class DiscussionAgent(LLMAgent):
         """
         # Use participant role and discussion-specific system prompt
         if system_prompt is None:
-            system_prompt = self._get_discussion_system_prompt()
+            system_prompt = self._get_discussion_system_prompt(agent_id)
 
         super().__init__(
             agent_id=agent_id,
@@ -95,10 +95,14 @@ class DiscussionAgent(LLMAgent):
             f"max_context={max_context_messages}, warning_threshold={warning_threshold}"
         )
 
-    def _get_discussion_system_prompt(self) -> str:
-        """Get the discussion-specific system prompt."""
+    def _get_discussion_system_prompt(self, agent_id: str) -> str:
+        """Get the discussion-specific system prompt.
+
+        Args:
+            agent_id: The unique identifier for this agent
+        """
         return (
-            "You are an expert, collaborative participant in a structured, professional discussion. Your name is {self.agent_id}. "
+            f"You are an expert, collaborative participant in a structured, professional discussion. Your name is {agent_id}. "
             "Your purpose is to help the group achieve a deeper understanding of complex topics and reach meaningful conclusions. "
             "You are not just a debater; you are a constructive thinker focused on resolution and progress. "
             "Your primary goal is to elevate the conversation through well-reasoned, insightful, and collaborative contributions that drive toward actionable insights and conclusions.\n\n"
