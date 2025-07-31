@@ -69,13 +69,18 @@ def setup_logging(
     level: str = "WARNING",
     log_dir: Optional[Path] = None,
     session_id: Optional[str] = None,
-) -> None:
+    always_debug_file: bool = True,
+) -> Path:
     """Set up logging configuration for the application with display mode awareness.
 
     Args:
-        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Default: WARNING.
+        level: Console logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Default: WARNING.
         log_dir: Directory for log files. Defaults to 'logs' in project root.
         session_id: Unique session identifier for log file naming.
+        always_debug_file: Always log DEBUG level to file regardless of console level.
+
+    Returns:
+        Path to the main log file.
     """
     try:
         # Import display mode here to avoid circular dependency
@@ -138,14 +143,33 @@ def setup_logging(
     console_formatter = logging.Formatter("%(message)s")
     console_handler.setFormatter(console_formatter)
 
-    # File handler with detailed formatting (always logs everything)
+    # File handler with detailed formatting - always logs everything at DEBUG level
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setLevel(logging.DEBUG)  # Always log everything to file
+
+    # Always set file handler to DEBUG level for comprehensive logging
+    if always_debug_file:
+        file_handler.setLevel(logging.DEBUG)
+    else:
+        file_handler.setLevel(log_level)
+
     file_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     file_handler.setFormatter(file_formatter)
+
+    # Create a separate debug file handler for enhanced debug logging
+    debug_log_file = None
+    if always_debug_file and log_level > logging.DEBUG:
+        debug_log_file = log_dir / f"debug_{session_id}.log"
+        debug_handler = logging.FileHandler(debug_log_file, encoding="utf-8")
+        debug_handler.setLevel(logging.DEBUG)
+        debug_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        debug_handler.setFormatter(debug_formatter)
+        root_logger.addHandler(debug_handler)
 
     # Add handlers to root logger
     root_logger.addHandler(console_handler)
@@ -154,7 +178,12 @@ def setup_logging(
     # Log startup message (this will be filtered in assembly mode)
     logger = get_logger(__name__)
     logger.debug(f"Logging initialized - Session ID: {session_id}")
-    logger.debug(f"Log file: {log_file.absolute()}")
+    logger.debug(f"Console log level: {level}")
+    logger.debug(f"Main log file: {log_file.absolute()}")
+    if debug_log_file:
+        logger.debug(f"Debug log file: {debug_log_file.absolute()}")
+
+    return log_file
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -286,3 +315,52 @@ def log_system_transition(from_phase: str, to_phase: str, details: str = "") -> 
         # Fallback
         logger = get_logger("virtual_agora.system")
         logger.info(f"Phase transition: {from_phase} → {to_phase} ({details})")
+
+
+def get_current_log_files() -> dict[str, Path]:
+    """Get paths to current log files.
+
+    Returns:
+        Dictionary mapping log type to file path
+    """
+    log_files = {}
+
+    # Get all handlers from root logger
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            log_path = Path(handler.baseFilename)
+            if "debug_" in log_path.name:
+                log_files["debug"] = log_path
+            else:
+                log_files["main"] = log_path
+
+    return log_files
+
+
+def log_debug_system_state(state_info: dict) -> None:
+    """Log comprehensive system state information for debugging.
+
+    Args:
+        state_info: Dictionary containing system state information
+    """
+    logger = get_logger("virtual_agora.debug")
+    logger.debug("=" * 50)
+    logger.debug("SYSTEM STATE DEBUG SNAPSHOT")
+    logger.debug("=" * 50)
+
+    for key, value in state_info.items():
+        if isinstance(value, dict):
+            logger.debug(f"{key}:")
+            for sub_key, sub_value in value.items():
+                logger.debug(f"  {sub_key}: {sub_value}")
+        elif isinstance(value, (list, tuple)):
+            logger.debug(f"{key}: [{len(value)} items]")
+            for i, item in enumerate(value[:5]):  # Log first 5 items
+                logger.debug(f"  [{i}]: {item}")
+            if len(value) > 5:
+                logger.debug(f"  ... and {len(value) - 5} more items")
+        else:
+            logger.debug(f"{key}: {value}")
+
+    logger.debug("=" * 50)

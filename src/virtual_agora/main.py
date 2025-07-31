@@ -528,7 +528,7 @@ def parse_arguments() -> argparse.Namespace:
         nargs="?",
         const="DEBUG",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Enable debug mode with optional log level (default: DEBUG)",
+        help="Enable debug console output with optional log level (default: DEBUG). Debug info is always saved to log files.",
     )
 
     parser.add_argument(
@@ -595,10 +595,22 @@ async def run_application(args: argparse.Namespace) -> int:
             )
 
     try:
-        # Set up logging
-        log_level = args.debug if args.debug else "WARNING"
-        setup_logging(level=log_level)
+        # Set up logging - always enable debug file logging regardless of console level
+        console_log_level = args.debug if args.debug else "WARNING"
+        main_log_file = setup_logging(level=console_log_level, always_debug_file=True)
         logger.info(f"Starting Virtual Agora v{__version__}")
+
+        # Report log file locations to user
+        if args.debug:
+            console.print(
+                f"[dim]Debug mode enabled. Console output: {console_log_level}[/dim]"
+            )
+        console.print(f"[dim]Session logs: {main_log_file}[/dim]")
+
+        # Enhanced debug logging for development
+        logger.debug(f"Command line arguments: {vars(args)}")
+        logger.debug(f"Python version: {sys.version}")
+        logger.debug(f"Working directory: {os.getcwd()}")
 
         # LangSmith should already be initialized if LANGSMITH_TRACING=true
         # Re-initialize to get status and show URL
@@ -693,12 +705,16 @@ async def run_application(args: argparse.Namespace) -> int:
                 env_config.validate_required_keys(required_providers)
 
                 # Use environment config for application settings
-                current_log_level = args.debug if args.debug else "WARNING"
-                if env_config.log_level != current_log_level:
+                current_console_level = args.debug if args.debug else "WARNING"
+                if env_config.log_level != current_console_level:
                     logger.info(
-                        f"Using log level from environment: {env_config.log_level}"
+                        f"Using console log level from environment: {env_config.log_level}"
                     )
-                    setup_logging(level=env_config.log_level)
+                    # Reconfigure logging with environment level, always keeping debug file logging
+                    main_log_file = setup_logging(
+                        level=env_config.log_level, always_debug_file=True
+                    )
+                    console.print(f"[dim]Updated session logs: {main_log_file}[/dim]")
 
             except ConfigurationError as e:
                 # Already handled above, this shouldn't happen

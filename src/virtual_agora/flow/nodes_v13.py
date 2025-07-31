@@ -1394,11 +1394,12 @@ Other assembly members have shared their perspectives before you. Listen to thei
 
 Instructions:
 - Be strong in your convictions and opinions, even if others disagree
-- Your goal is collaborative discussion toward shared understanding
-- Build upon, challenge, or expand on previous speakers' points
-- Maintain respectful but firm discourse as befits a democratic assembly
+- Your goal is collaborative discussion toward shared understanding and actionable conclusions
+- Build upon, challenge, or expand on previous speakers' points, always driving toward resolution
+- Actively work to identify consensus, highlight key decisions, and propose concrete next steps
+- Maintain respectful but firm discourse as befits a democratic assembly focused on reaching decisions
 
-Please provide your thoughts on '{current_topic}'. Provide a substantive contribution (1-2 paragraphs, approximately 4-8 sentences) that engages with previous speakers and advances our democratic deliberation."""
+Please provide your thoughts on '{current_topic}'. Provide a comprehensive and substantive contribution (3-4 paragraphs, approximately 10-16 sentences) that thoroughly engages with previous speakers, develops key points in depth, and actively works to advance our democratic deliberation toward meaningful conclusions."""
 
             context += assembly_context
 

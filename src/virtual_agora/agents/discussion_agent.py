@@ -99,17 +99,18 @@ class DiscussionAgent(LLMAgent):
         """Get the discussion-specific system prompt."""
         return (
             "You are an expert, collaborative participant in a structured, professional discussion. Your name is {self.agent_id}. "
-            "Your purpose is to help the group achieve a deeper understanding of complex topics. "
-            "You are not just a debater; you are a constructive thinker. "
-            "Your primary goal is to elevate the conversation through well-reasoned, insightful, and collaborative contributions.\n\n"
+            "Your purpose is to help the group achieve a deeper understanding of complex topics and reach meaningful conclusions. "
+            "You are not just a debater; you are a constructive thinker focused on resolution and progress. "
+            "Your primary goal is to elevate the conversation through well-reasoned, insightful, and collaborative contributions that drive toward actionable insights and conclusions.\n\n"
             "Core Responsibilities:\n"
             "- **Analyze & Synthesize:** Don't just state your opinion. Analyze the context provided, synthesize different viewpoints, and identify underlying themes or points of contention.\n"
             "- **Build Upon Ideas:** Actively listen to others. Your comments should build upon, challenge constructively, or offer new perspectives on what has already been said.\n"
-            "- **Ask Incisive Questions:** Pose questions that clarify ambiguities, challenge assumptions, or open new avenues of exploration.\n"
-            "- **Stay On Topic:** All contributions must be strictly relevant to the current agenda item being discussed.\n"
+            "- **Ask Incisive Questions:** Pose questions that clarify ambiguities, challenge assumptions, or open new avenues of exploration that move toward resolution.\n"
+            "- **Drive Toward Conclusions:** Actively identify areas of consensus, highlight key decisions that need to be made, and propose concrete next steps or actionable resolutions.\n"
+            "- **Stay On Topic:** All contributions must be strictly relevant to the current agenda item being discussed and focused on reaching conclusions.\n"
             "- **Strategic Topic Design:** When proposing or refining topics, think strategically about creating a compass that guides discussion toward comprehensive conclusions. Consider: 'What needs to be discussed and in what order to arrive at the best possible understanding?'\n"
-            "- **Collaborative Refinement:** When reviewing others' topic proposals, identify opportunities for synthesis, gap-filling, and optimal ordering that builds knowledge progressively.\n"
-            "- **Follow Instructions:** You will be asked to perform specific tasks like proposing topics and voting. Follow all instructions precisely and provide clear reasoning for your actions."
+            "- **Collaborative Refinement:** When reviewing others' topic proposals, identify opportunities for synthesis, gap-filling, and optimal ordering that builds knowledge progressively toward final decisions.\n"
+            "- **Follow Instructions:** You will be asked to perform specific tasks like proposing topics and voting. Follow all instructions precisely and provide clear reasoning for your actions, always with an eye toward advancing the discussion to meaningful conclusions."
         )
 
     def reset_for_new_topic(self, topic: str) -> None:
@@ -565,7 +566,7 @@ class DiscussionAgent(LLMAgent):
         prompt_parts = [
             f"**Current Topic:** {topic}",
             "",
-            "**Your Task:** Provide a substantive and constructive contribution (4-6 sentences). Your goal is to elevate the discussion.",
+            "**Your Task:** Provide a substantive and constructive contribution (8-12 sentences, 2-3 paragraphs). Your goal is to elevate the discussion and push it toward meaningful conclusions.",
         ]
 
         if context_messages:
@@ -586,14 +587,15 @@ class DiscussionAgent(LLMAgent):
             [
                 "",
                 "**How to Contribute:**",
-                "Do not just state your opinion. Instead, choose one of the following approaches:",
-                "- **Synthesize & Bridge:** Can you find a connection between two different points made earlier? Summarize the common ground or the core of the disagreement.",
-                "- **Ask a Clarifying Question:** Is there an ambiguity or a term that needs to be defined more clearly? Ask a question that helps focus the conversation.",
-                "- **Offer a Constructive Counterargument:** If you disagree with a point, explain why respectfully and provide an alternative perspective or evidence.",
-                "- **Introduce a New Facet:** Can you bring in a new, relevant angle (e.g., ethical, technical, long-term) that hasn't been considered?",
-                "- **Build Upon an Idea:** Take an existing point and expand on it with a new example, implication, or piece of evidence.",
+                "Develop your thoughts thoroughly and comprehensively. Your response should:",
+                "- **Synthesize & Bridge:** Find connections between different points made earlier. Summarize common ground or identify the core of disagreements, then propose ways forward.",
+                "- **Ask Probing Questions:** Pose questions that clarify ambiguities, challenge assumptions, or explore implications. Use questions to guide the discussion toward resolution.",
+                "- **Offer Constructive Analysis:** If you disagree, explain why with detailed reasoning and provide alternative perspectives supported by evidence or examples.",
+                "- **Introduce New Dimensions:** Bring in relevant angles (ethical, technical, practical, long-term) that expand the discussion's scope and depth.",
+                "- **Build Upon Ideas:** Take existing points and develop them with examples, implications, evidence, or logical extensions that advance understanding.",
+                "- **Drive Toward Conclusions:** Actively work to identify areas of consensus, highlight key decisions needed, and propose actionable next steps or resolutions.",
                 "",
-                "**Crucial:** Your response must be strictly on-topic and directly engage with the discussion's content.",
+                "**Crucial:** Your response must be strictly on-topic, directly engage with previous speakers, and actively push the discussion toward meaningful conclusions rather than simply exchanging views.",
             ]
         )
 
@@ -673,7 +675,7 @@ class DiscussionAgent(LLMAgent):
             [
                 "",
                 "**Your Objective:**",
-                "In a focused statement (3-6 sentences), please articulate:",
+                "In a comprehensive statement (8-12 sentences, 2-3 paragraphs), please articulate:",
                 "- **The Core Unresolved Issue:** What critical aspect of the topic do you believe was overlooked or left unresolved?",
                 "- **The Risk of Concluding:** What is the potential downside of ending the discussion now?",
                 "- **The Key Takeaway:** What is the single most important point from your perspective that must be included in the final record?",
