@@ -399,6 +399,18 @@ class LLMAgent:
             if not isinstance(response_text, str):
                 response_text = str(response_text)
 
+            # Check for empty or whitespace-only responses
+            if not response_text or not response_text.strip():
+                logger.warning(
+                    f"Agent {self.agent_id} received empty response from LLM. "
+                    f"Response: '{response_text}'"
+                )
+                # Provide a fallback response indicating the issue
+                response_text = (
+                    f"[Agent {self.agent_id} received an empty response from the LLM. "
+                    "This may indicate an API issue, rate limiting, or content filtering.]"
+                )
+
             # Update message count with thread safety
             with self._count_lock:
                 self.message_count += 1
@@ -496,6 +508,18 @@ class LLMAgent:
 
             if not isinstance(response_text, str):
                 response_text = str(response_text)
+
+            # Check for empty or whitespace-only responses
+            if not response_text or not response_text.strip():
+                logger.warning(
+                    f"Agent {self.agent_id} received empty async response from LLM. "
+                    f"Response: '{response_text}'"
+                )
+                # Provide a fallback response indicating the issue
+                response_text = (
+                    f"[Agent {self.agent_id} received an empty response from the LLM. "
+                    "This may indicate an API issue, rate limiting, or content filtering.]"
+                )
 
             # Update message count with thread safety
             with self._count_lock:

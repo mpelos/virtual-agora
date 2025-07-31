@@ -223,22 +223,37 @@ Ensure the structure covers: executive summary, overarching themes, connections 
             # The JsonOutputParser can handle various formats including markdown-wrapped JSON
             try:
                 parsed_data = parser.parse(response)
-                return parsed_data.sections
+                # Handle both Pydantic object and dictionary returns from JsonOutputParser
+                if hasattr(parsed_data, "sections"):
+                    return parsed_data.sections
+                elif isinstance(parsed_data, dict) and "sections" in parsed_data:
+                    return parsed_data["sections"]
+                else:
+                    raise ValueError(
+                        f"Unexpected parsed_data format: {type(parsed_data)}"
+                    )
             except Exception as parse_error:
                 logger.warning(
                     f"JsonOutputParser failed: {parse_error}, trying direct JSON parsing"
                 )
 
                 # Fallback: try to extract JSON manually and use the parser
+                # Handle both markdown-wrapped JSON (```json ... ```) and plain JSON
                 json_match = re.search(
-                    r'\{\s*"sections"\s*:\s*\[.*?\]\s*\}', response, re.DOTALL
+                    r'```json\s*(\{.*?\})\s*```|(\{.*?"sections"\s*:\s*\[.*?\]\s*\})',
+                    response,
+                    re.DOTALL,
                 )
                 if json_match:
-                    json_str = json_match.group()
+                    # Get the first non-None group (either markdown-wrapped or plain)
+                    json_str = json_match.group(1) or json_match.group(2)
                     data = json.loads(json_str)
                     validated_data = ReportStructure(**data)
                     return validated_data.sections
                 else:
+                    logger.warning(
+                        f"Could not find valid structure JSON in response: {response[:500]}..."
+                    )
                     raise ValueError("Could not find valid structure JSON in response")
 
         except (json.JSONDecodeError, ValidationError, ValueError) as e:
@@ -346,6 +361,27 @@ Use Markdown formatting and ensure no key points from the source material are mi
 
         content = self.generate_response(prompt)
 
+        # Handle empty responses with a meaningful fallback
+        if (
+            not content
+            or not content.strip()
+            or "[Agent" in content
+            and "empty response" in content
+        ):
+            logger.warning(
+                f"Empty or fallback response for section '{section['title']}', providing default content"
+            )
+            content = f"""# {section['title']}
+
+*[This section could not be generated due to an LLM response issue. Please regenerate the report or check the system logs for details.]*
+
+**Section Purpose**: {section['description']}
+
+**Topic**: {source_material.get('topic', 'Unknown Topic')}
+
+**Available Data**: {len(source_material.get('round_summaries', []))} round summaries, {len(source_material.get('final_considerations', []))} final considerations.
+"""
+
         logger.info(
             f"Generated topic section '{section['title']}' ({len(content)} chars)"
         )
@@ -397,6 +433,27 @@ Write comprehensive, standalone content for the section "{section['title']}". Th
 Use Markdown formatting and focus on cross-topic analysis and synthesis."""
 
         content = self.generate_response(prompt)
+
+        # Handle empty responses with a meaningful fallback
+        if (
+            not content
+            or not content.strip()
+            or "[Agent" in content
+            and "empty response" in content
+        ):
+            logger.warning(
+                f"Empty or fallback response for session section '{section['title']}', providing default content"
+            )
+            content = f"""# {section['title']}
+
+*[This section could not be generated due to an LLM response issue. Please regenerate the report or check the system logs for details.]*
+
+**Section Purpose**: {section['description']}
+
+**Discussion Theme**: {source_material.get('theme', 'Unknown Theme')}
+
+**Available Topics**: {len(source_material.get('topic_reports', {}))} topic reports available for analysis.
+"""
 
         logger.info(
             f"Generated session section '{section['title']}' ({len(content)} chars)"
