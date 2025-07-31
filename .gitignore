@@ -157,8 +157,8 @@ sessions/*
 !sessions/.gitkeep
 checkpoints/*
 !checkpoints/.gitkeep
-context_docs/*
-!context_docs/.gitkeep
+context/*
+!context/.gitkeep
 .gemini-clipboard/
 config.yml
 

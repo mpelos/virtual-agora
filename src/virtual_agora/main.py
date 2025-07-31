@@ -8,9 +8,22 @@ the application startup and execution flow.
 import argparse
 import asyncio
 import sys
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+# Initialize LangSmith BEFORE any LangChain imports
+# This is critical for proper tracing to work
+if os.getenv("LANGSMITH_TRACING", "false").lower() == "true":
+    # We need to set up LangSmith environment variables before importing any LangChain components
+    from virtual_agora.config.langsmith import initialize_langsmith
+
+    langsmith_status = initialize_langsmith()
+    if langsmith_status.enabled:
+        print(
+            f"LangSmith tracing initialized early for project: {langsmith_status.project}"
+        )
 
 from rich.console import Console
 from rich.traceback import install as install_rich_traceback
@@ -24,6 +37,7 @@ from virtual_agora.config.env_schema import EnvironmentConfig
 from virtual_agora.utils.env_manager import EnvironmentManager
 from virtual_agora.utils.security import create_provider_help_message
 from virtual_agora.utils.logging import setup_logging, get_logger
+from virtual_agora.utils.document_context import get_detailed_context_info
 from virtual_agora.utils.exceptions import (
     VirtualAgoraError,
     ConfigurationError,
@@ -62,8 +76,10 @@ from virtual_agora.ui.langgraph_integration import (
     update_ui_from_state_change,
 )
 from virtual_agora.flow.interrupt_manager import get_interrupt_manager
-from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
-from virtual_agora.app_v13 import VirtualAgoraApplicationV13
+
+# Delay importing LangGraph components until after LangSmith initialization
+# from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
+# from virtual_agora.app_v13 import VirtualAgoraApplicationV13
 
 
 def process_interrupt_recursive(
@@ -584,6 +600,28 @@ async def run_application(args: argparse.Namespace) -> int:
         setup_logging(level=log_level)
         logger.info(f"Starting Virtual Agora v{__version__}")
 
+        # LangSmith should already be initialized if LANGSMITH_TRACING=true
+        # Re-initialize to get status and show URL
+        from virtual_agora.config.langsmith import (
+            initialize_langsmith,
+            get_langsmith_url,
+        )
+
+        langsmith_status = initialize_langsmith()
+        if langsmith_status.enabled:
+            logger.info(
+                f"LangSmith tracing enabled for project: {langsmith_status.project}"
+            )
+            langsmith_url = get_langsmith_url()
+            if langsmith_url:
+                console.print(f"[dim]LangSmith traces: {langsmith_url}[/dim]")
+        elif langsmith_status.error:
+            logger.debug(f"LangSmith not configured: {langsmith_status.error}")
+
+        # Now it's safe to import LangGraph components
+        from virtual_agora.flow.graph_v13 import VirtualAgoraV13Flow
+        from virtual_agora.app_v13 import VirtualAgoraApplicationV13
+
         # Validate checkpoint interval
         if args.checkpoint_interval < 1 or args.checkpoint_interval > 20:
             raise ConfigurationError(
@@ -688,6 +726,23 @@ async def run_application(args: argparse.Namespace) -> int:
                     f"  - {agent_config.model} ({agent_config.provider.value}) "
                     f"x{agent_config.count}"
                 )
+
+            # Show context documents information
+            context_info = get_detailed_context_info()
+            if context_info["status"] == "success" and context_info["total_files"] > 0:
+                console.print(
+                    f"\n[bold]Context Documents:[/bold] {context_info['total_files']} files loaded ({context_info['total_tokens']:,} total tokens)"
+                )
+                for file_info in context_info["files"]:
+                    console.print(
+                        f"  - {file_info['name']} ({file_info['tokens']:,} tokens)"
+                    )
+            elif context_info["status"] == "directory_not_found":
+                console.print(
+                    "\n[dim]Context Documents: None (context directory not found)[/dim]"
+                )
+            else:
+                console.print("\n[dim]Context Documents: None[/dim]")
 
             # Show any validation warnings
             if validation_report.get("warnings"):

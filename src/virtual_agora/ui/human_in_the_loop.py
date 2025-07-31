@@ -26,6 +26,7 @@ from rich import box
 from rich.align import Align
 
 from virtual_agora.utils.logging import get_logger
+from virtual_agora.utils.document_context import get_detailed_context_info
 from virtual_agora.ui.console import get_console
 from virtual_agora.ui.interactive import (
     get_prompts,
@@ -49,12 +50,53 @@ logger = get_logger(__name__)
 MIN_TOPIC_LENGTH = 10
 MIN_AGENDA_ITEMS = 2
 MAX_AGENDA_ITEMS = 10
+MAX_FILENAME_LENGTH = 30
 INPUT_TIMEOUT = 300  # 5 minutes
 MAX_RETRY_ATTEMPTS = 3
 
 # Session state tracking
 session_start_time = datetime.now()
 input_history: List[Dict[str, Any]] = []
+
+
+def truncate_filename(filename: str, max_length: int = MAX_FILENAME_LENGTH) -> str:
+    """Truncate filename preserving extension.
+
+    Args:
+        filename: The filename to truncate
+        max_length: Maximum length for the filename
+
+    Returns:
+        Truncated filename with ... in the middle if needed
+    """
+    if len(filename) <= max_length:
+        return filename
+
+    # Split name and extension
+    parts = filename.rsplit(".", 1)
+    if len(parts) == 2:
+        name, ext = parts
+        ext_with_dot = f".{ext}"
+    else:
+        name = filename
+        ext_with_dot = ""
+
+    # Calculate how much we can keep
+    available = max_length - len(ext_with_dot) - 3  # 3 for "..."
+    if available <= 0:
+        # Extension alone is too long, just truncate the whole thing
+        return filename[: max_length - 3] + "..."
+
+    # Keep start and end of filename
+    keep_start = available // 2
+    keep_end = available - keep_start
+
+    if keep_end > 0:
+        truncated = name[:keep_start] + "..." + name[-keep_end:] + ext_with_dot
+    else:
+        truncated = name[:keep_start] + "..." + ext_with_dot
+
+    return truncated
 
 
 def record_input(input_type: str, value: Any, metadata: Optional[Dict] = None) -> None:
@@ -93,9 +135,44 @@ def get_initial_topic() -> str:
     - Suitable for structured debate
     """
 
+    # Check for context documents
+    context_info = get_detailed_context_info()
+
+    # Build panel content - Markdown for main text, then add context separately
+    panel_content = Markdown(welcome_text)
+
+    # Add context information if available
+    if context_info["status"] == "success" and context_info["total_files"] > 0:
+        # Create a formatted text for context instead of adding to Markdown
+        from rich.text import Text
+
+        context_text = Text()
+        context_text.append(
+            f"\n📄 Context: {context_info['total_files']} documents loaded ({context_info['total_tokens']:,} tokens)\n",
+            style="",
+        )
+
+        # Add individual files
+        if context_info["files"]:
+            for i, file_info in enumerate(context_info["files"]):
+                is_last = i == len(context_info["files"]) - 1
+                prefix = "   └─ " if is_last else "   ├─ "
+                truncated_name = truncate_filename(file_info["name"])
+                context_text.append(
+                    f"{prefix}{truncated_name} ({file_info['tokens']:,} tokens)",
+                    style="dim",
+                )
+                if not is_last:
+                    context_text.append("\n")
+
+        # Combine Markdown and Text objects
+        from rich.console import Group
+
+        panel_content = Group(panel_content, context_text)
+
     console.print(
         Panel(
-            Markdown(welcome_text),
+            panel_content,
             title="[bold cyan]Virtual Agora[/bold cyan]",
             border_style="cyan",
             padding=(1, 2),

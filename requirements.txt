@@ -24,6 +24,9 @@ langchain-anthropic>=0.2.0
 langchain-google-genai>=2.0.0
 langchain-xai>=0.2.5  # For xAI Grok integration
 
+# Observability and tracing
+langsmith>=0.2.0  # For LangChain/LangGraph tracing and observability
+
 # Development dependencies
 pytest>=8.3.0
 pytest-asyncio>=0.24.0
