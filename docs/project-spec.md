@@ -186,7 +186,8 @@ The application is a state machine where the graph dictates the flow from one no
 
 1.  **Announce Item Node:** This node announces the first item from the approved agenda that will be discussed.
 2.  **Discussion Round Node:** The system enters the core discussion loop for the current agenda item.
-    - **Turn Order:** The order of agents is rotated each round (e.g., \[A,B,C] -> \[B,C,A]).
+    - **Agent Order Randomization:** The initial agent order is randomized at the start of each agenda item to ensure fairness and eliminate positional bias.
+    - **Turn Order:** The order of agents is rotated each round (e.g., \[A,B,C] -> \[B,C,A]) after the initial randomization.
     - **Context Flow:** The context provided to each agent is critical. For any given turn, an agent receives:
       1.  The initial user-provided theme.
       2.  The specific agenda item being discussed.

@@ -162,6 +162,10 @@ virtual-agora --log-level DEBUG
 virtual-agora --dry-run
 ```
 
+### Context Documents
+
+Place `.txt` or `.md` files in a `context_docs/` directory to provide additional context that will be available to all agents during discussions. Files are automatically loaded and included in agent prompts.
+
 ## 🔧 Troubleshooting
 
 **API Key Issues:**
