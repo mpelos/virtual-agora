@@ -343,6 +343,9 @@ def create_langchain_message(
     Returns:
         BaseMessage compatible with LangGraph add_messages reducer
     """
+    # Ensure speaker_role is stored in metadata for later retrieval
+    metadata["speaker_role"] = speaker_role
+
     if speaker_role == "moderator":
         return HumanMessage(content=content, additional_kwargs=metadata)
     else:
@@ -795,11 +798,14 @@ Provide your refined topic proposals, incorporating insights from the collaborat
                 }
                 votes.append(vote_obj)
 
+        # Fix W007: Pass vote batch to improved safe_list_append reducer
+        # The reducer now properly handles vote batches from agenda voting phase
         updates = {
-            "votes": votes,  # Store votes in the proper schema field
+            "votes": votes,  # Vote batch - handled properly by enhanced reducer
             "current_phase": 2,  # Progress to next phase after voting
         }
 
+        logger.info(f"Collected {len(votes)} votes for agenda ordering")
         return updates
 
     def synthesize_agenda_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
@@ -1581,8 +1587,24 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         current_round = state["current_round"]
         current_topic = state["active_topic"]
 
-        # Get messages from current round using standardized attribute access
+        # DEBUG: Enhanced message debugging
+        logger.info(
+            f"DEBUG: Looking for messages with round={current_round}, topic='{current_topic}'"
+        )
         all_messages = state.get("messages", [])
+        logger.info(f"DEBUG: Total messages in state: {len(all_messages)}")
+
+        # DEBUG: Show details of all messages for debugging
+        for i, msg in enumerate(all_messages):
+            msg_round = get_message_attribute(msg, "round")
+            msg_topic = get_message_attribute(msg, "topic")
+            msg_speaker_role = get_message_attribute(msg, "speaker_role")
+            msg_speaker_id = get_message_attribute(msg, "speaker_id")
+            logger.debug(
+                f"DEBUG: Message {i}: round={msg_round} (type: {type(msg_round)}), topic='{msg_topic}', speaker_role='{msg_speaker_role}', speaker_id='{msg_speaker_id}'"
+            )
+
+        # Get messages from current round using standardized attribute access
         round_messages = [
             msg
             for msg in all_messages
@@ -1593,8 +1615,13 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
             )  # Only participant messages
         ]
 
+        logger.info(f"DEBUG: Found {len(round_messages)} messages matching criteria")
+
         if not round_messages:
             logger.warning(f"No messages found for round {current_round}")
+            logger.warning(
+                f"Expected: round={current_round} (type: {type(current_round)}), topic='{current_topic}'"
+            )
             # Return minimal state update
             return {"current_round": current_round}
 
@@ -1625,7 +1652,7 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
             )
 
             updates = {
-                "round_summaries": [round_summary_obj],  # Appends via reducer
+                "round_summaries": round_summary_obj,  # Individual object for safe_list_append reducer
                 "current_round": current_round,  # Update current round
             }
 

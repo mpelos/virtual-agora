@@ -98,6 +98,7 @@ class StateRecoveryManager:
         state: VirtualAgoraState,
         operation: Optional[str] = None,
         save_to_disk: bool = False,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> StateCheckpoint:
         """Create a state checkpoint.
 
@@ -105,6 +106,7 @@ class StateRecoveryManager:
             state: Current state to checkpoint
             operation: Operation triggering checkpoint
             save_to_disk: Whether to persist to disk
+            metadata: Additional checkpoint metadata
 
         Returns:
             Created checkpoint
@@ -122,6 +124,7 @@ class StateRecoveryManager:
             state_snapshot=state_snapshot,
             timestamp=datetime.now(),
             operation=operation,
+            metadata=metadata,
         )
 
         # Add to in-memory list

@@ -11,6 +11,23 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from virtual_agora.agents.llm_agent import LLMAgent
 from virtual_agora.utils.logging import get_logger
 
+
+# Define message utility function to avoid circular imports
+def get_message_attribute(msg, attr_name, default=None):
+    """Get attribute from message in a standardized way.
+    Args:
+        msg: Message object (BaseMessage or dict)
+        attr_name: Name of attribute to get
+        default: Default value if attribute not found
+    Returns:
+        Attribute value or default
+    """
+    if hasattr(msg, "content"):  # LangChain BaseMessage
+        return getattr(msg, "additional_kwargs", {}).get(attr_name, default)
+    else:  # Virtual Agora dict format
+        return msg.get(attr_name, default)
+
+
 logger = get_logger(__name__)
 
 
@@ -83,11 +100,26 @@ class SummarizerAgent(LLMAgent):
             Compressed summary text
         """
         # Extract message content - filter out empty/whitespace-only content
-        content_list = [
-            f"- {msg.get('speaker_id', 'Unknown')}: {msg.get('content', '')}"
-            for msg in messages
-            if msg.get("content") and msg.get("content").strip()
-        ]
+        # Handle both BaseMessage objects and dict formats
+        content_list = []
+        for msg in messages:
+            try:
+                # Get content using appropriate method based on message type
+                if hasattr(msg, "content"):  # BaseMessage object
+                    content = msg.content if msg.content is not None else ""
+                    speaker_id = get_message_attribute(msg, "speaker_id", "Unknown")
+                else:  # Dict format
+                    content = msg.get("content", "") if msg else ""
+                    speaker_id = msg.get("speaker_id", "Unknown") if msg else "Unknown"
+
+                # Only include non-empty content
+                if content and str(content).strip():
+                    content_list.append(f"- {speaker_id}: {content}")
+
+            except Exception as e:
+                logger.warning(f"Failed to extract content from message: {e}")
+                # Continue processing other messages
+                continue
 
         # Handle empty messages case
         if not content_list:
@@ -245,11 +277,26 @@ class SummarizerAgent(LLMAgent):
             List of key insights
         """
         # Extract message content - filter out empty/whitespace-only content
-        content_list = [
-            msg.get("content", "")
-            for msg in messages
-            if msg.get("content") and msg.get("content").strip()
-        ]
+        # Handle both BaseMessage objects and dict formats
+        content_list = []
+        for msg in messages:
+            try:
+                # Get content using appropriate method based on message type
+                if hasattr(msg, "content"):  # BaseMessage object
+                    content = msg.content if msg.content is not None else ""
+                else:  # Dict format
+                    content = msg.get("content", "") if msg else ""
+
+                # Only include non-empty content
+                if content and str(content).strip():
+                    content_list.append(content)
+
+            except Exception as e:
+                logger.warning(
+                    f"Failed to extract content from message in key insights: {e}"
+                )
+                # Continue processing other messages
+                continue
         combined_text = "\n\n".join(content_list)
 
         previous_context = ""

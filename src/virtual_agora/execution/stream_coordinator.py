@@ -54,8 +54,9 @@ class StreamCoordinator:
         self.process_interrupt = interrupt_processor
         self._active_streams = 0
         self._stream_stack = []
+        self._stream_health = StreamHealth()
 
-        logger.info("StreamCoordinator initialized")
+        logger.info("StreamCoordinator initialized with health monitoring")
 
     def coordinate_stream_execution(
         self, config_dict: Dict[str, Any]
@@ -74,6 +75,7 @@ class StreamCoordinator:
         """
         logger.info("Starting coordinated stream execution")
         self._active_streams += 1
+        self._stream_health.record_stream_start()
 
         try:
             # Start the main stream
@@ -101,13 +103,24 @@ class StreamCoordinator:
                 stream_completed = False
                 resume_from_checkpoint = False
 
+                update_count = 0
+                last_update_keys = None
+
                 for update in stream_iter:
-                    logger.debug(
-                        f"Stream update received: {list(update.keys()) if isinstance(update, dict) else type(update)}"
+                    update_count += 1
+                    update_keys = (
+                        list(update.keys())
+                        if isinstance(update, dict)
+                        else [str(type(update))]
                     )
+                    last_update_keys = update_keys
+
+                    logger.debug(f"Stream update {update_count}: {update_keys}")
 
                     # Handle interrupts without breaking the main stream
                     if "__interrupt__" in update:
+                        logger.info(f"Processing interrupt in update {update_count}")
+                        self._stream_health.record_interrupt()
                         result = self._handle_interrupt_coordinated(
                             update["__interrupt__"], config_dict
                         )
@@ -132,32 +145,63 @@ class StreamCoordinator:
 
                         # Check for natural completion
                         if "__end__" in update:
-                            logger.info(f"Stream {stream_id} completed naturally")
+                            logger.info(
+                                f"Stream {stream_id} completed naturally with __end__ marker (update {update_count})"
+                            )
                             stream_completed = True
                             break
 
+                # Enhanced logging for stream termination analysis
+                logger.info(f"Stream loop exited after {update_count} updates")
+                logger.info(f"Last update keys: {last_update_keys}")
+                logger.info(
+                    f"Stream completed: {stream_completed}, Resume from checkpoint: {resume_from_checkpoint}"
+                )
+
                 # If stream completed naturally, exit the main loop
                 if stream_completed:
+                    logger.info("Exiting main stream loop - natural completion")
+                    self._stream_health.record_stream_completion()
                     break
 
                 # If we reach here without setting resume_from_checkpoint,
                 # it means the stream ended without __end__ (which shouldn't happen)
                 if not resume_from_checkpoint:
                     logger.warning(
-                        "Stream ended without __end__ marker and without interrupt"
+                        f"Stream ended without __end__ marker and without interrupt after {update_count} updates"
                     )
-                    break
+                    logger.warning(f"Last update contained keys: {last_update_keys}")
+
+                    # Check if the stream actually completed successfully but without __end__
+                    if update_count > 0:
+                        logger.info(
+                            "Stream had updates but ended without __end__ - treating as successful completion"
+                        )
+                        stream_completed = True
+                        break
+                    else:
+                        logger.warning(
+                            "Stream ended immediately without any updates - possible configuration issue"
+                        )
+                        break
 
             logger.debug(f"Stream {stream_id} coordination completed")
 
         except Exception as e:
             logger.error(f"Error in stream coordination: {e}", exc_info=True)
+            self._stream_health.record_error()
             raise
 
         finally:
             if self._stream_stack and self._stream_stack[-1] == stream_id:
                 self._stream_stack.pop()
             self._active_streams = max(0, self._active_streams - 1)
+
+            # Log health report on stream completion
+            health_report = self._stream_health.get_health_report()
+            logger.info(
+                f"Stream coordination cleanup completed. Health: {health_report}"
+            )
             logger.debug(f"Stream coordination cleanup completed")
 
     def _handle_interrupt_coordinated(
@@ -356,6 +400,14 @@ class StreamCoordinator:
             True if streams are active, False otherwise
         """
         return self._active_streams > 0
+
+    def get_health_report(self) -> Dict[str, Any]:
+        """Get the current stream health report.
+
+        Returns:
+            Dict containing health metrics and status
+        """
+        return self._stream_health.get_health_report()
 
 
 class StreamHealth:

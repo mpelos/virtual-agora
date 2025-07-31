@@ -44,10 +44,58 @@ def safe_list_append(current_list: Optional[List[Any]], new_item: Any) -> List[A
 
     # VALIDATION: Warn about lists being passed (may be intentional in some cases)
     if isinstance(new_item, list):
-        logger.warning(f"LIST PASSED as new_item: {new_item}")
-        logger.warning(
-            f"Verify this is intentional - reducers typically expect individual items"
-        )
+        # Check if this might be an intentional list case (like turn_order_history)
+        is_intentional = False
+
+        # turn_order_history expects List[str] items (agent IDs)
+        if (
+            len(new_item) > 0
+            and all(isinstance(item, str) for item in new_item)
+            and len(new_item) <= 10
+        ):  # Reasonable number of agents
+            is_intentional = True
+            logger.debug(
+                f"LIST PASSED as new_item (likely turn_order_history): {new_item}"
+            )
+
+        # votes field - handle vote batches properly
+        elif len(new_item) > 0 and all(
+            isinstance(item, dict) and "voter_id" in item for item in new_item
+        ):
+            # Check if this is a reasonable batch size from agenda voting
+            if len(new_item) <= 10:  # Reasonable number of agents
+                logger.info(
+                    f"VOTE BATCH PASSED as expected: {len(new_item)} votes from agenda voting"
+                )
+                logger.info(f"Processing batch from collect_agenda_votes_node")
+                # Handle vote batch by extending the list instead of appending as single item
+                if current_list is None:
+                    result = new_item.copy()
+                    logger.info(
+                        f"Vote batch processed - created new list: {len(result)} votes"
+                    )
+                    return result
+                else:
+                    result = current_list + new_item
+                    logger.info(
+                        f"Vote batch processed - extended list: {len(result)} total votes"
+                    )
+                    return result
+            else:
+                logger.error(
+                    f"VOTES LIST PASSED incorrectly as new_item: {len(new_item)} votes"
+                )
+                logger.error(
+                    f"Batch size too large - should be handled by adding votes individually"
+                )
+                logger.error(
+                    f"First vote sample: {new_item[0] if new_item else 'none'}"
+                )
+        else:
+            logger.warning(f"LIST PASSED as new_item: {new_item}")
+            logger.warning(
+                f"Verify this is intentional - reducers typically expect individual items"
+            )
 
     if current_list is None:
         result = [new_item]

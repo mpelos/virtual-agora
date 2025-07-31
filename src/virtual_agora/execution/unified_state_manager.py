@@ -181,8 +181,8 @@ class UnifiedStateManager:
                 old_values[key] = old_value
 
                 # Handle special field types
-                if key in ["topic_queue", "completed_topics", "messages"]:
-                    # Ensure lists are properly handled
+                if key in ["topic_queue", "messages"]:
+                    # These fields expect lists directly
                     if isinstance(value, list):
                         setattr(self.flow_state, key, value.copy())
                     elif value is None:
@@ -192,15 +192,41 @@ class UnifiedStateManager:
                             f"Expected list for {key}, got {type(value)}: {value}"
                         )
                         continue
+                elif key == "completed_topics":
+                    # completed_topics uses safe_list_append reducer
+                    # String values are individual items to append, lists are final state
+                    if isinstance(value, list):
+                        setattr(self.flow_state, key, value.copy())
+                    elif value is None:
+                        setattr(self.flow_state, key, [])
+                    elif isinstance(value, str):
+                        # This is a single topic to append - handle via reducer pattern
+                        current_list = getattr(self.flow_state, key, [])
+                        if value not in current_list:
+                            new_list = current_list + [value]
+                            setattr(self.flow_state, key, new_list)
+                            logger.debug(
+                                f"Appended '{value}' to completed_topics: {new_list}"
+                            )
+                        else:
+                            logger.debug(
+                                f"Topic '{value}' already in completed_topics, skipping"
+                            )
+                    else:
+                        logger.warning(
+                            f"Expected list or string for completed_topics, got {type(value)}: {value}"
+                        )
+                        continue
                 else:
                     setattr(self.flow_state, key, value)
 
                 updated_fields.append(key)
 
                 # Log significant changes
-                if key == "completed_topics" and old_value != value:
+                if key == "completed_topics":
+                    current_list = getattr(self.flow_state, key, [])
                     old_count = len(old_value) if isinstance(old_value, list) else 0
-                    new_count = len(value) if isinstance(value, list) else 0
+                    new_count = len(current_list)
                     if new_count > old_count:
                         logger.info(f"Topic completed! Total: {new_count}")
                         self.statistics.topics_discussed = new_count

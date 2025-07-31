@@ -666,14 +666,74 @@ class StateManager:
         logger.debug(f"Updates to apply: {updates}")
         logger.info(f"Pre-update critical fields: {pre_update_snapshot}")
 
-        # Known NotRequired fields that may not exist yet
-        known_optional_fields = {
+        # All valid VirtualAgoraState schema fields (both required and NotRequired)
+        # This includes fields that use reducers and may not be initialized yet
+        valid_schema_fields = {
+            # Session metadata
+            "session_id",
+            "start_time",
+            "config_hash",
+            # UI state management
+            "ui_state",
+            # Phase management
+            "current_phase",
+            "phase_history",
+            "phase_start_time",
+            # Round management and orchestration
+            "current_round",
+            "round_history",
+            "turn_order_history",
+            "rounds_per_topic",
+            # Human-in-the-Loop controls
+            "hitl_state",
+            # Flow control parameters
+            "flow_control",
+            # Topic management
             "main_topic",
+            "active_topic",
+            "topic_queue",
+            "proposed_topics",
+            "proposed_agenda",
+            "topics_info",
+            "completed_topics",
+            "agenda",
+            # Agent management
+            "agents",
+            "moderator_id",
+            "current_speaker_id",
+            "speaking_order",
+            "next_speaker_index",
+            # Discussion history
+            "messages",
+            "last_message_id",
+            # Voting system
+            "active_vote",
+            "vote_history",
+            "votes",
+            # Topic conclusion voting
+            "conclusion_vote",
+            "topic_conclusion_votes",
+            # Consensus tracking
+            "consensus_proposals",
+            "consensus_reached",
+            # Generated content
+            "phase_summaries",
+            "topic_summaries",
+            "consensus_summaries",
+            "final_report",
+            # Report Writer Mode state
             "report_structure",
             "report_sections",
             "report_generation_status",
+            # Iterative Report Writing State (v1.3)
+            "report_structures",
+            "session_report_structures",
+            "current_report_section",
+            "completed_report_sections",
+            # Agenda modification state
             "pending_agenda_modifications",
             "agenda_modification_votes",
+            # Epic 5: Agenda Management System state
             "agenda_state_id",
             "agenda_version",
             "proposal_collection_status",
@@ -684,20 +744,42 @@ class StateManager:
             "topic_transition_history",
             "agenda_analytics_data",
             "edge_cases_encountered",
-            "minority_voters",
-            "minority_considerations",
+            # Runtime statistics
+            "total_messages",
+            "messages_by_phase",
+            "messages_by_agent",
+            "messages_by_topic",
+            "vote_participation_rate",
+            # Tool execution tracking
+            "tool_calls",
+            "active_tool_calls",
+            "tool_metrics",
+            "tools_enabled_agents",
+            # Context window management
             "context_compressions_count",
             "last_compression_time",
+            # Cycle detection and intervention
             "cycle_interventions_count",
             "last_intervention_time",
             "last_intervention_reason",
             "moderator_decision",
+            # Specialized agent tracking (v1.3)
             "specialized_agents",
+            "agent_invocations",
+            # Enhanced context flow (v1.3)
+            "round_summaries",
+            "agent_contexts",
+            # Periodic HITL stops (v1.3)
             "periodic_stop_counter",
-            "user_forced_conclusion",
-            "agents_vote_end_session",
-            "user_approves_continuation",
-            "user_requested_modification",
+            "user_stop_history",
+            # Error tracking
+            "last_error",
+            "error_count",
+            "warnings",
+        }
+
+        # Additional fields that may be set by nodes but aren't in core schema
+        additional_node_fields = {
             # v1.3 specific fields returned by nodes
             "agenda_approved",
             "agenda_rejected",
@@ -705,7 +787,10 @@ class StateManager:
             "error",
             "report_error",
             "user_periodic_decision",
-            # Note: last_error and error_count are already in VirtualAgoraState schema
+            "user_forced_conclusion",
+            "agents_vote_end_session",
+            "user_approves_continuation",
+            "user_requested_modification",
         }
 
         # Track which fields were actually updated
@@ -713,7 +798,7 @@ class StateManager:
         rejected_updates = {}
 
         for key, value in updates.items():
-            if key in self._state or key in known_optional_fields:
+            if key in valid_schema_fields or key in additional_node_fields:
                 old_value = self._state.get(key)
                 self._state[key] = value
                 applied_updates[key] = {"old": old_value, "new": value}
@@ -727,6 +812,13 @@ class StateManager:
             else:
                 rejected_updates[key] = value
                 logger.warning(f"Attempting to set unknown state field: {key}")
+                logger.warning(
+                    f"  Field '{key}' is not defined in VirtualAgoraState schema"
+                )
+                logger.warning(f"  Value attempted: {value}")
+                logger.warning(
+                    f"  Consider adding field to schema if this is intentional"
+                )
 
         # LOG: Post-update state snapshot for critical fields
         post_update_snapshot = {}

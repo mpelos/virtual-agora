@@ -276,35 +276,60 @@ class LangGraphUIIntegration:
         if to_phase in dashboard_phases:
             self.dashboard.set_phase(dashboard_phases[to_phase])
 
-    def _on_message_added(self, message: Dict[str, Any]) -> None:
-        """Handle new message UI updates."""
-        speaker_id = message.get("speaker_id")
-        speaker_role = message.get("speaker_role")
-        content = message.get("content", "")
-        timestamp = message.get("timestamp")
-        topic = message.get("topic")
-        round_number = (
-            self._last_known_state.get("current_round")
-            if self._last_known_state
-            else None
-        )
+    def _on_message_added(self, message) -> None:
+        """Handle new message UI updates - supports both AIMessage and dict formats."""
+        try:
+            # Handle AIMessage objects (from LangChain/LangGraph)
+            if hasattr(message, "content") and not isinstance(message, dict):
+                logger.debug(f"Processing AIMessage: {type(message)}")
+                speaker_id = getattr(message, "name", getattr(message, "id", "unknown"))
+                speaker_role = "participant"  # Default for AIMessage objects
+                content = getattr(message, "content", "")
+                timestamp = datetime.now()  # AIMessage doesn't typically have timestamp
+                topic = None  # Extract from context if available
 
-        # Determine provider type
-        if self._last_known_state and speaker_id in self._last_known_state.get(
-            "agents", {}
-        ):
-            agent_info = self._last_known_state["agents"][speaker_id]
-            provider = ProviderType(agent_info["provider"])
-        else:
-            provider = ProviderType.MODERATOR
+            # Handle dict format (expected Message TypedDict)
+            elif isinstance(message, dict):
+                logger.debug("Processing dict message format")
+                speaker_id = message.get("speaker_id")
+                speaker_role = message.get("speaker_role")
+                content = message.get("content", "")
+                timestamp = message.get("timestamp")
+                topic = message.get("topic")
 
-        if speaker_role == "moderator":
-            add_moderator_message(content, round_number, topic)
-        else:
-            add_agent_message(speaker_id, provider, content, round_number, topic)
+            else:
+                logger.warning(f"Unknown message format: {type(message)} - {message}")
+                return
 
-        # Update dashboard
-        self.dashboard_manager.agent_completed_response(speaker_id)
+            round_number = (
+                self._last_known_state.get("current_round")
+                if self._last_known_state
+                else None
+            )
+
+            # Determine provider type
+            if self._last_known_state and speaker_id in self._last_known_state.get(
+                "agents", {}
+            ):
+                agent_info = self._last_known_state["agents"][speaker_id]
+                provider = ProviderType(agent_info["provider"])
+            else:
+                provider = ProviderType.MODERATOR
+
+            if speaker_role == "moderator":
+                add_moderator_message(content, round_number, topic)
+            else:
+                add_agent_message(speaker_id, provider, content, round_number, topic)
+
+            # Update dashboard
+            self.dashboard_manager.agent_completed_response(speaker_id)
+
+        except Exception as e:
+            logger.error(f"Error in UI callback for message_added: {e}")
+            logger.error(
+                f"Message details - Type: {type(message)}, Content: {str(message)[:100]}..."
+            )
+            # Don't re-raise to prevent UI from breaking completely
 
     def _on_round_started(self, round_data: Dict[str, Any]) -> None:
         """Handle round start UI updates."""
