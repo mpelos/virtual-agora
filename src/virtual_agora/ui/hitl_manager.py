@@ -35,9 +35,9 @@ logger = get_logger(__name__)
 class EnhancedHITLManager:
     """Manages all HITL interactions for v1.3."""
 
-    def __init__(self, console: Console):
+    def __init__(self, console: Console, checkpoint_interval: int = 3):
         self.console = console
-        self.state_tracker = HITLStateTracker()
+        self.state_tracker = HITLStateTracker(checkpoint_interval)
         self.handlers = self._register_handlers()
         self.auto_approve_conditions = {}
 
@@ -106,9 +106,9 @@ class EnhancedHITLManager:
         self.console.print()
 
     def _handle_periodic_stop(self, interaction: HITLInteraction) -> HITLResponse:
-        """Handle 5-round periodic stop check.
+        """Handle periodic stop check.
 
-        New in v1.3 - gives user periodic control.
+        New in v1.3 - gives user periodic control at configurable intervals.
         """
         round_num = interaction.context.get("current_round", 0)
         topic = interaction.context.get("active_topic", "Unknown")
@@ -120,7 +120,7 @@ class EnhancedHITLManager:
         checkpoint_panel = Panel(
             f"[bold yellow]Round {round_num} Checkpoint[/bold yellow]\n\n"
             f"Current topic: [cyan]{topic}[/cyan]\n"
-            f"You've reached a 5-round checkpoint.\n\n"
+            f"You've reached a {self.state_tracker.checkpoint_interval}-round checkpoint.\n\n"
             f"{interaction.prompt_message}",
             title="🛑 Periodic Stop",
             border_style="yellow",

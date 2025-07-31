@@ -52,14 +52,21 @@ class VirtualAgoraV13Flow:
     - More complex phase transitions
     """
 
-    def __init__(self, config: VirtualAgoraConfig, enable_monitoring: bool = True):
+    def __init__(
+        self,
+        config: VirtualAgoraConfig,
+        enable_monitoring: bool = True,
+        checkpoint_interval: int = 3,
+    ):
         """Initialize the v1.3 flow with configuration.
 
         Args:
             config: Virtual Agora configuration
             enable_monitoring: Whether to enable flow monitoring and debugging
+            checkpoint_interval: Number of rounds between periodic user checkpoints
         """
         self.config = config
+        self.checkpoint_interval = checkpoint_interval
         self.state_manager = StateManager(config)
         self.graph: Optional[StateGraph] = None
         self.compiled_graph: Optional[Any] = None
@@ -81,9 +88,12 @@ class VirtualAgoraV13Flow:
 
         # Initialize flow components with specialized agents
         self.nodes = V13FlowNodes(
-            self.specialized_agents, self.discussing_agents, self.state_manager
+            self.specialized_agents,
+            self.discussing_agents,
+            self.state_manager,
+            self.checkpoint_interval,
         )
-        self.conditions = V13FlowConditions()
+        self.conditions = V13FlowConditions(self.checkpoint_interval)
 
     def _initialize_agents(self) -> None:
         """Initialize all specialized agents and discussing agents."""
@@ -555,6 +565,7 @@ class VirtualAgoraV13Flow:
             "agents": {},  # Will be populated by agent_instantiation_node
             # "vote_history": [], # Remove - uses safe_list_append reducer
             "periodic_stop_counter": 0,
+            "checkpoint_interval": self.checkpoint_interval,
             "user_forced_conclusion": False,
             "agents_vote_end_session": False,
             "user_approves_continuation": True,

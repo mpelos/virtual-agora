@@ -29,7 +29,7 @@ The node-centric architecture enables enhanced capabilities while maintaining th
 - **Enhanced Human-in-the-Loop Control:** Multiple HITL gates including:
   - Initial theme approval
   - Agenda approval and editing
-  - Periodic discussion stops (every 5 rounds)
+  - Periodic discussion stops (every 3 rounds by default, configurable)
   - Topic continuation permission
   - Session continuation approval
 - **Rotating Turn-Based Discussion:** Fair participation through systematic agent rotation each round.
@@ -197,7 +197,7 @@ The application is a state machine where the graph dictates the flow from one no
 3.  **Round Summarization Node:** After all agents have spoken in a round, this node invokes the **Summarizer Agent**. It is given all comments from the round and creates a single, agent-agnostic "compacted text" summary. This summary is appended to the state for future rounds.
 4.  **Conditional Branch: End-of-Topic Poll:** A conditional node checks if the round number is 3 or greater. If so, it directs the flow to the poll. If not, it loops back to the **Discussion Round Node**.
 5.  **End-of-Topic Poll Node:** This polling node asks the **Discussing Agents**: "Should we conclude the discussion on '\[Current Agenda Item]'? Please respond with 'Yes' or 'No' and a short justification."
-6.  **Conditional Branch: User Stop Point:** A conditional node checks if `current_round % 5 == 0`.
+6.  **Conditional Branch: User Stop Point:** A conditional node checks if `current_round % checkpoint_interval == 0`.
     - If `True`, the flow is directed to the **HITL - Periodic User Stop Node**.
     - If `False`, the flow proceeds to tally the agent poll results.
 7.  **HITL - Periodic User Stop Node:** The system pauses and asks the **User** if they wish to end the current agenda item discussion.
@@ -208,7 +208,7 @@ The application is a state machine where the graph dictates the flow from one no
 ##### **Phase 3: Agenda Item Conclusion & Reporting**
 
 1.  **Final Considerations Node:** This node prompts agents for their final thoughts.
-    - **Logic:** If the conclusion was triggered by a standard agent vote, it prompts only the agents who voted "No". If the conclusion was forced by the user at a 5-round checkpoint, it prompts **all** agents.
+    - **Logic:** If the conclusion was triggered by a standard agent vote, it prompts only the agents who voted "No". If the conclusion was forced by the user at a periodic checkpoint, it prompts **all** agents.
 2.  **Topic Report Generation Node:** This node invokes the **Report Writer Agent** iteratively:
     - **First Call:** Agent analyzes all compacted round summaries and "Final Considerations" to create a detailed report structure (JSON outline)
     - **Subsequent Calls:** Agent writes one section at a time based on the outline until the complete topic report is generated
@@ -275,7 +275,7 @@ graph TD
         L --> M{Conditional: Round >= 3?<br/>Check if polling should start};
         M -->|"No (Round 1-2)"| K;
         M -->|"Yes"| N[End-of-Topic Poll Node<br/>Discussing Agents vote to conclude];
-        N --> O{Conditional: Round % 5 == 0?<br/>Check for user stop point};
+        N --> O{Conditional: Round % checkpoint_interval == 0?<br/>Check for user stop point};
         O -->|"Yes"| P{HITL: Periodic User Stop<br/>User can force topic end};
         O -->|"No"| Q{Conditional: Tally Votes<br/>Majority + 1 to conclude?};
         P --> Q;
@@ -344,7 +344,7 @@ graph TD
 1. **Initialization Phase:** System setup and user theme collection
 2. **Agenda Setting:** Democratic proposal and voting with Moderator Agent synthesis
 3. **Discussion Loop:** Rotating agent participation with Summarizer Agent compression
-4. **Enhanced Control:** Periodic user stops (every 5 rounds) + agent polling (round 3+)
+4. **Enhanced Control:** Periodic user stops (configurable interval, default 3) + agent polling (round 3+)
 5. **Topic Conclusion:** Specialized Report Writer Agent iterative synthesis with contextual final considerations, followed by Summarizer Agent topic conclusion summary
 6. **Continuation Logic:** Agent polling for session end + user approval for agenda modification
 7. **Final Reporting:** Report Writer Agent iteratively analyzes all topics for comprehensive synthesis

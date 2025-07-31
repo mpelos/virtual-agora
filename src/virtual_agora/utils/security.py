@@ -196,9 +196,9 @@ def create_provider_help_message(provider: str) -> str:
             "3. Copy the key and add it to your .env file as ANTHROPIC_API_KEY=<your-key>"
         ),
         "Grok": (
-            "Grok API access is currently limited.\n"
-            "Check the official Grok documentation for availability.\n"
-            "Once you have a key, add it to your .env file as GROK_API_KEY=<your-key>"
+            "xAI API access is currently limited.\n"
+            "Check the official xAI documentation for availability at https://x.ai/api.\n"
+            "Once you have a key, add it to your .env file as XAI_API_KEY=<your-key>"
         ),
     }
 

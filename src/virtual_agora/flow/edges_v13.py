@@ -17,14 +17,19 @@ class V13FlowConditions:
     """Container for all v1.3 conditional edge logic.
 
     The v1.3 architecture includes enhanced conditions:
-    - Periodic 5-round user stops
+    - Periodic user stops (configurable interval)
     - Dual polling system (agent votes + user override)
     - Agent session end voting
     - More complex phase transitions
     """
 
-    def __init__(self):
-        """Initialize flow conditions with managers."""
+    def __init__(self, checkpoint_interval: int = 3):
+        """Initialize flow conditions with managers.
+
+        Args:
+            checkpoint_interval: Number of rounds between periodic user checkpoints
+        """
+        self.checkpoint_interval = checkpoint_interval
         self.context_manager = ContextWindowManager()
         self.cycle_manager = CyclePreventionManager()
 
@@ -86,9 +91,9 @@ class V13FlowConditions:
     def check_periodic_stop(
         self, state: VirtualAgoraState
     ) -> Literal["periodic_stop", "check_votes"]:
-        """Check if it's time for 5-round user stop.
+        """Check if it's time for periodic user stop.
 
-        New in v1.3 - gives user periodic control.
+        New in v1.3 - gives user periodic control at configurable intervals.
 
         Args:
             state: Current state
@@ -98,10 +103,10 @@ class V13FlowConditions:
         """
         current_round = state.get("current_round", 0)
 
-        # Check if this is a 5-round interval
-        if current_round % 5 == 0 and current_round > 0:
+        # Check if this is a checkpoint interval
+        if current_round % self.checkpoint_interval == 0 and current_round > 0:
             logger.debug(
-                f"Round {current_round} is multiple of 5, triggering periodic user stop"
+                f"Round {current_round} is multiple of {self.checkpoint_interval}, triggering periodic user stop"
             )
             return "periodic_stop"
         else:

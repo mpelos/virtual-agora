@@ -73,8 +73,8 @@ class EnvironmentConfig(BaseSettings):
     anthropic_api_key: Optional[str] = Field(
         None, alias="ANTHROPIC_API_KEY", description="Anthropic API key"
     )
-    grok_api_key: Optional[str] = Field(
-        None, alias="GROK_API_KEY", description="Grok API key"
+    xai_api_key: Optional[str] = Field(
+        None, alias="XAI_API_KEY", description="xAI API key"
     )
 
     # Application settings
@@ -133,8 +133,8 @@ class EnvironmentConfig(BaseSettings):
                 else None
             ),
             "Grok": (
-                APIKeyConfig(key=self.grok_api_key, provider="Grok")
-                if self.grok_api_key
+                APIKeyConfig(key=self.xai_api_key, provider="Grok")
+                if self.xai_api_key
                 else None
             ),
         }
@@ -152,7 +152,7 @@ class EnvironmentConfig(BaseSettings):
             "Google": self.google_api_key,
             "OpenAI": self.openai_api_key,
             "Anthropic": self.anthropic_api_key,
-            "Grok": self.grok_api_key,
+            "Grok": self.xai_api_key,
         }
         return provider_map.get(provider)
 
@@ -177,7 +177,7 @@ class EnvironmentConfig(BaseSettings):
                 "Google": "GOOGLE_API_KEY",
                 "OpenAI": "OPENAI_API_KEY",
                 "Anthropic": "ANTHROPIC_API_KEY",
-                "Grok": "GROK_API_KEY",
+                "Grok": "XAI_API_KEY",
             }
 
             missing_vars = [
@@ -207,7 +207,7 @@ class EnvironmentConfig(BaseSettings):
             "google_api_key",
             "openai_api_key",
             "anthropic_api_key",
-            "grok_api_key",
+            "xai_api_key",
         ]:
             if config.get(key):
                 value = config[key]

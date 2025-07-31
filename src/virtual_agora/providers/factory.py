@@ -274,7 +274,7 @@ class ProviderFactory:
             ProviderType.GOOGLE: "google_genai",
             ProviderType.OPENAI: "openai",
             ProviderType.ANTHROPIC: "anthropic",
-            ProviderType.GROK: "openai",  # Grok uses OpenAI-compatible API
+            ProviderType.GROK: "xai",  # Grok uses xAI provider
         }
 
         provider_str = provider_mapping.get(config.provider)
@@ -289,18 +289,45 @@ class ProviderFactory:
 
         # Build kwargs for init_chat_model
         init_kwargs = {
-            "temperature": config.temperature,
             "timeout": float(config.timeout),
         }
 
-        # Add streaming parameter based on provider compatibility
-        if config.provider == ProviderType.GOOGLE:
-            # Google Gemini uses 'disable_streaming' instead of 'streaming'
-            if not config.streaming:
+        # Handle OpenAI reasoning models (o1 and o3 series) special requirements
+        if config.provider == ProviderType.OPENAI and config.model:
+            model_lower = config.model.lower()
+            is_o1_model = any(x in model_lower for x in ["o1-preview", "o1-mini"])
+            is_o3_model = any(x in model_lower for x in ["o3", "o3-mini"])
+
+            if is_o1_model:
+                # o1 models: temperature is fixed at 1
+                init_kwargs["temperature"] = 1.0
                 init_kwargs["disable_streaming"] = True
+                if config.temperature != 1.0:
+                    logger.warning(
+                        f"Model {config.model} only supports temperature=1. "
+                        f"Overriding temperature from {config.temperature} to 1.0"
+                    )
+            elif is_o3_model:
+                # o3 models: don't support temperature parameter at all
+                init_kwargs["disable_streaming"] = True
+                logger.info(
+                    f"Model {config.model} does not support temperature parameter. "
+                    "Temperature will be omitted from the request."
+                )
+            else:
+                # Regular OpenAI models
+                init_kwargs["temperature"] = config.temperature
+                init_kwargs["streaming"] = config.streaming
         else:
-            # Other providers use standard 'streaming' parameter
-            init_kwargs["streaming"] = config.streaming
+            # Non-OpenAI providers
+            init_kwargs["temperature"] = config.temperature
+            if config.provider == ProviderType.GOOGLE:
+                # Google Gemini uses 'disable_streaming' instead of 'streaming'
+                if not config.streaming:
+                    init_kwargs["disable_streaming"] = True
+            else:
+                # Other providers use standard 'streaming' parameter
+                init_kwargs["streaming"] = config.streaming
 
         # Add max_tokens if specified
         if config.max_tokens:
@@ -338,14 +365,26 @@ class ProviderFactory:
 
         elif config.provider == ProviderType.OPENAI:
             # OpenAI specific parameters
-            if hasattr(config, "presence_penalty"):
-                init_kwargs["presence_penalty"] = config.presence_penalty
-            if hasattr(config, "frequency_penalty"):
-                init_kwargs["frequency_penalty"] = config.frequency_penalty
-            if hasattr(config, "top_p") and config.top_p is not None:
-                init_kwargs["top_p"] = config.top_p
-            if hasattr(config, "seed") and config.seed is not None:
-                init_kwargs["seed"] = config.seed
+            model_lower = config.model.lower() if config.model else ""
+            is_o1_model = any(x in model_lower for x in ["o1-preview", "o1-mini"])
+            is_o3_model = any(x in model_lower for x in ["o3", "o3-mini"])
+
+            if not is_o1_model and not is_o3_model:
+                # Only add these parameters for non-reasoning models
+                if hasattr(config, "presence_penalty"):
+                    init_kwargs["presence_penalty"] = config.presence_penalty
+                if hasattr(config, "frequency_penalty"):
+                    init_kwargs["frequency_penalty"] = config.frequency_penalty
+                if hasattr(config, "top_p") and config.top_p is not None:
+                    init_kwargs["top_p"] = config.top_p
+                if hasattr(config, "seed") and config.seed is not None:
+                    init_kwargs["seed"] = config.seed
+            elif is_o1_model:
+                # o1 models have fixed values for these parameters
+                init_kwargs["presence_penalty"] = 0.0
+                init_kwargs["frequency_penalty"] = 0.0
+                # top_p is fixed at 1 for o1 models
+                init_kwargs["top_p"] = 1.0
 
         elif config.provider == ProviderType.ANTHROPIC:
             # Anthropic Claude specific parameters
@@ -353,11 +392,6 @@ class ProviderFactory:
                 init_kwargs["top_p"] = config.top_p
             if hasattr(config, "top_k") and config.top_k is not None:
                 init_kwargs["top_k"] = config.top_k
-
-        elif config.provider == ProviderType.GROK:
-            # Grok specific configuration (OpenAI-compatible)
-            base_url = config.extra_kwargs.get("base_url", "https://api.x.ai/v1")
-            init_kwargs["base_url"] = base_url
 
         logger.debug(
             f"Added provider-specific parameters for {config.provider}: {list(init_kwargs.keys())}"
@@ -476,12 +510,40 @@ class ProviderFactory:
         kwargs = {
             "model": config.model,
             "api_key": config.api_key,
-            "temperature": config.temperature,
-            "streaming": config.streaming,
             "timeout": config.timeout,
-            "presence_penalty": config.presence_penalty,
-            "frequency_penalty": config.frequency_penalty,
         }
+
+        # Handle OpenAI reasoning models (o1 and o3 series) special requirements
+        model_lower = config.model.lower()
+        is_o1_model = any(x in model_lower for x in ["o1-preview", "o1-mini"])
+        is_o3_model = any(x in model_lower for x in ["o3", "o3-mini"])
+
+        if is_o1_model:
+            # o1 models: temperature is fixed at 1, no streaming support
+            kwargs["temperature"] = 1.0
+            kwargs["disable_streaming"] = True
+            # o1 models don't support presence/frequency penalties either
+            kwargs["presence_penalty"] = 0.0
+            kwargs["frequency_penalty"] = 0.0
+            if config.temperature != 1.0:
+                logger.warning(
+                    f"Model {config.model} only supports temperature=1. "
+                    f"Overriding temperature from {config.temperature} to 1.0"
+                )
+        elif is_o3_model:
+            # o3 models: don't support temperature parameter at all
+            kwargs["disable_streaming"] = True
+            # Don't include temperature, presence_penalty, or frequency_penalty
+            logger.info(
+                f"Model {config.model} does not support temperature, presence_penalty, "
+                "or frequency_penalty parameters. These will be omitted from the request."
+            )
+        else:
+            # Regular OpenAI models
+            kwargs["temperature"] = config.temperature
+            kwargs["streaming"] = config.streaming
+            kwargs["presence_penalty"] = config.presence_penalty
+            kwargs["frequency_penalty"] = config.frequency_penalty
 
         # Add optional parameters
         if config.max_tokens:

@@ -26,7 +26,7 @@ class EnvironmentManager:
         "GOOGLE_API_KEY": "Google Gemini",
         "OPENAI_API_KEY": "OpenAI",
         "ANTHROPIC_API_KEY": "Anthropic",
-        "GROK_API_KEY": "Grok",
+        "XAI_API_KEY": "Grok",
     }
 
     # Optional environment variables
@@ -136,7 +136,7 @@ class EnvironmentManager:
             "Google": "GOOGLE_API_KEY",
             "OpenAI": "OPENAI_API_KEY",
             "Anthropic": "ANTHROPIC_API_KEY",
-            "Grok": "GROK_API_KEY",
+            "Grok": "XAI_API_KEY",
         }
 
         env_var = env_var_map.get(provider)
@@ -179,7 +179,7 @@ class EnvironmentManager:
                     "Google": "GOOGLE_API_KEY",
                     "OpenAI": "OPENAI_API_KEY",
                     "Anthropic": "ANTHROPIC_API_KEY",
-                    "Grok": "GROK_API_KEY",
+                    "Grok": "XAI_API_KEY",
                 }
                 if provider in env_var_map:
                     self._missing_keys.add(env_var_map[provider])

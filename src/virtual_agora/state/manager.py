@@ -688,6 +688,7 @@ class StateManager:
             "hitl_state",
             # Flow control parameters
             "flow_control",
+            "checkpoint_interval",
             # Topic management
             "main_topic",
             "active_topic",

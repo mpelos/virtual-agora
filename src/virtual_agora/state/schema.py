@@ -290,6 +290,9 @@ class VirtualAgoraState(TypedDict):
     # Epic 6: Flow control parameters
     flow_control: Annotated[FlowControl, merge_flow_control]
 
+    # Checkpoint interval for periodic user stops
+    checkpoint_interval: int  # Number of rounds between periodic user checkpoints
+
     # Topic management
     main_topic: NotRequired[str]  # Primary discussion topic for the session
     active_topic: Optional[str]

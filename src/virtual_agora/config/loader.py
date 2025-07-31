@@ -164,7 +164,7 @@ class ConfigLoader:
             "Google": "GOOGLE_API_KEY",
             "OpenAI": "OPENAI_API_KEY",
             "Anthropic": "ANTHROPIC_API_KEY",
-            "Grok": "GROK_API_KEY",
+            "Grok": "XAI_API_KEY",
         }
 
         results = {}

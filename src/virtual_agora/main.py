@@ -331,12 +331,13 @@ def handle_periodic_stop_interrupt(interrupt_payload: Dict[str, Any]) -> Dict[st
     """
     current_round = interrupt_payload.get("current_round", 0)
     current_topic = interrupt_payload.get("current_topic", "Unknown")
+    checkpoint_interval = interrupt_payload.get("checkpoint_interval", 3)
 
     try:
         console.clear()
         console.print(
             Panel(
-                f"[bold yellow]5-Round Checkpoint (Round {current_round})[/bold yellow]",
+                f"[bold yellow]{checkpoint_interval}-Round Checkpoint (Round {current_round})[/bold yellow]",
                 subtitle=f"Currently discussing: {current_topic}",
                 border_style="yellow",
             )
@@ -532,6 +533,13 @@ def parse_arguments() -> argparse.Namespace:
         help="Hide atmospheric UI messages during execution for debugging",
     )
 
+    parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=3,
+        help="Number of rounds between periodic user checkpoints (default: 3, min: 1, max: 20)",
+    )
+
     return parser.parse_args()
 
 
@@ -575,6 +583,13 @@ async def run_application(args: argparse.Namespace) -> int:
         log_level = args.debug if args.debug else "WARNING"
         setup_logging(level=log_level)
         logger.info(f"Starting Virtual Agora v{__version__}")
+
+        # Validate checkpoint interval
+        if args.checkpoint_interval < 1 or args.checkpoint_interval > 20:
+            raise ConfigurationError(
+                f"Checkpoint interval must be between 1 and 20, got: {args.checkpoint_interval}"
+            )
+        logger.info(f"Using checkpoint interval: {args.checkpoint_interval} rounds")
 
         # Initialize display manager with hide_messages setting
         initialize_display_manager(hide_messages=args.hide_messages)
@@ -730,7 +745,11 @@ async def run_application(args: argparse.Namespace) -> int:
 
             # Initialize VirtualAgoraFlow v1.3
             console.print("[cyan]Initializing discussion flow v1.3...[/cyan]")
-            flow = VirtualAgoraV13Flow(config, enable_monitoring=True)
+            flow = VirtualAgoraV13Flow(
+                config,
+                enable_monitoring=True,
+                checkpoint_interval=args.checkpoint_interval,
+            )
             flow.compile()
             logger.info("VirtualAgoraV13Flow initialized and compiled")
 

@@ -18,8 +18,6 @@ console = get_console().rich_console  # Use singleton console
 logger = get_logger(__name__)
 
 
-
-
 class InterruptHandler:
     """Simple interrupt handling system.
 
@@ -75,7 +73,6 @@ class InterruptHandler:
         console.clear()
 
     # All menu-related methods removed - interrupt now exits immediately
-
 
 
 # Global interrupt handler instance

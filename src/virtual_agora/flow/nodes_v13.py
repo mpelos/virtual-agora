@@ -365,6 +365,7 @@ class V13FlowNodes:
         specialized_agents: Dict[str, LLMAgent],
         discussing_agents: List[LLMAgent],
         state_manager: StateManager,
+        checkpoint_interval: int = 3,
     ):
         """Initialize with specialized agents and state manager.
 
@@ -372,10 +373,12 @@ class V13FlowNodes:
             specialized_agents: Dictionary of specialized agents (moderator, summarizer, etc.)
             discussing_agents: List of discussing agent instances
             state_manager: State manager instance
+            checkpoint_interval: Number of rounds between periodic user checkpoints
         """
         self.specialized_agents = specialized_agents
         self.discussing_agents = discussing_agents
         self.state_manager = state_manager
+        self.checkpoint_interval = checkpoint_interval
         self.context_manager = ContextWindowManager()
         self.cycle_manager = CyclePreventionManager()
 
@@ -1846,9 +1849,9 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
         return updates
 
     def periodic_user_stop_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
-        """HITL node for 5-round periodic stops.
+        """HITL node for periodic stops.
 
-        New in v1.3 - gives user periodic control every 5 rounds.
+        New in v1.3 - gives user periodic control at configurable intervals.
         Uses LangGraph interrupt mechanism to pause execution.
         """
         logger.info("=== PERIODIC_USER_STOP NODE START ===")
@@ -1882,7 +1885,7 @@ Please provide your thoughts on '{current_topic}'. Provide a substantive contrib
             "current_round": current_round,
             "current_topic": current_topic,
             "message": (
-                f"You've reached a 5-round checkpoint (Round {current_round}).\n"
+                f"You've reached a {state.get('checkpoint_interval', 3)}-round checkpoint (Round {current_round}).\n"
                 f"Currently discussing: {current_topic}\n\n"
                 "What would you like to do?"
             ),

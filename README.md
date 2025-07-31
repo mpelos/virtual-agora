@@ -120,7 +120,7 @@ virtual-agora --dry-run
 
 - **Theme Approval**: You set the overall discussion direction
 - **Agenda Review**: Approve, edit, or reject the proposed discussion plan
-- **Periodic Stops**: Every 5 rounds, you can intervene or redirect
+- **Periodic Stops**: Every 3 rounds by default (configurable), you can intervene or redirect
 - **Topic Transitions**: Control when to move between agenda items
 - **Session Management**: End discussions or continue to new topics at any time
 

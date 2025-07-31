@@ -355,8 +355,8 @@ class ProviderRegistry:
         grok = ProviderInfo(
             provider_type=ProviderType.GROK,
             display_name="Grok",
-            api_key_env_var="GROK_API_KEY",
-            base_url="https://api.x.ai/v1",  # OpenAI-compatible endpoint
+            api_key_env_var="XAI_API_KEY",
+            base_url="https://api.x.ai/v1",  # xAI endpoint
             default_timeout=60,
         )
         grok.add_model(

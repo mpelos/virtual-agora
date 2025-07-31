@@ -122,7 +122,7 @@ gemini-2.5-pro-1: "Stakeholder perspectives and impacts"
 - **Rotating turns**: Round 1 [C→A→D→B], Round 2 [A→D→B→C] - no one dominates
 - **Rich context**: Agents receive your theme, current topic, discussion history, and live comments
 - **Democratic polling**: Starting round 3, agents vote whether to conclude (majority + 1 rule)
-- **Regular checkpoints**: Every 5 rounds, you can intervene or redirect
+- **Regular checkpoints**: Every 3 rounds by default (configurable), you can intervene or redirect
 - **Minority protection**: Dissenting voices get final considerations when topics conclude
 
 
@@ -135,7 +135,7 @@ gemini-2.5-pro-1: "Stakeholder perspectives and impacts"
 
 📝 Round Summary: [Key points, agreements, new insights, open questions]
 
-⏸️ CHECKPOINT - Round 5
+⏸️ CHECKPOINT - Round 3
 ❓ Do you wish to end this topic? [y/n/s]
 ```
 

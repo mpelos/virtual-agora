@@ -601,7 +601,8 @@ class EnhancedDashboard:
         # Add round counter if in discussion phase
         if state.get("current_phase") == 2:
             round_num = state.get("current_round", 0)
-            is_checkpoint = round_num > 0 and round_num % 5 == 0
+            checkpoint_interval = state.get("checkpoint_interval", 3)
+            is_checkpoint = round_num > 0 and round_num % checkpoint_interval == 0
             checkpoint_text = " [yellow](Checkpoint)[/yellow]" if is_checkpoint else ""
             status_lines.append(
                 f"\n[bold]Current Round:[/bold] {round_num}{checkpoint_text}"

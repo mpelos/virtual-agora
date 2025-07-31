@@ -138,7 +138,8 @@ class HITLResponse:
 class HITLStateTracker:
     """Tracks HITL interaction history and state."""
 
-    def __init__(self):
+    def __init__(self, checkpoint_interval: int = 3):
+        self.checkpoint_interval = checkpoint_interval
         self.interactions: List[HITLInteraction] = []
         self.current_interaction: Optional[HITLInteraction] = None
         self.periodic_stop_counter = 0
@@ -167,7 +168,7 @@ class HITLStateTracker:
 
     def should_trigger_periodic_stop(self, current_round: int) -> bool:
         """Check if periodic stop should be triggered."""
-        if current_round > 0 and current_round % 5 == 0:
+        if current_round > 0 and current_round % self.checkpoint_interval == 0:
             if current_round > self.last_periodic_stop_round:
                 return True
         return False
