@@ -1623,7 +1623,7 @@ class ModeratorAgent(LLMAgent):
                 f"you have the opportunity to share any final considerations, concerns, or important "
                 f"points that should be noted before we proceed. This ensures all perspectives are "
                 f"properly represented in our final summary.\n\n"
-                f"Please provide your final thoughts on this topic in 2-4 sentences."
+                f"Please share your final thoughts on this topic. Take the time you need to express your complete perspective."
             )
 
             # This would normally call the specific agent - for now return a placeholder

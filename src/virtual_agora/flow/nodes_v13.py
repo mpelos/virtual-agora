@@ -1399,7 +1399,7 @@ Instructions:
 - Actively work to identify consensus, highlight key decisions, and propose concrete next steps
 - Maintain respectful but firm discourse as befits a democratic assembly focused on reaching decisions
 
-Please provide your thoughts on '{current_topic}'. Provide a comprehensive and substantive contribution (3-4 paragraphs, approximately 10-16 sentences) that thoroughly engages with previous speakers, develops key points in depth, and actively works to advance our democratic deliberation toward meaningful conclusions."""
+Please provide your thoughts on '{current_topic}'. Provide a thorough and collaborative contribution that engages deeply with previous speakers, develops key points comprehensively, and works together with other agents to advance our democratic deliberation toward meaningful conclusions. Take whatever time and space you need to fully express your analysis and contribute to our collective understanding."""
 
             context += assembly_context
 

@@ -348,7 +348,7 @@ class FlowNodes:
             Your turn: {i + 1}/{len(speaking_order)}
             
             Please provide your thoughts on this topic. Build upon the previous discussion.
-            Keep your response comprehensive and substantive (8-12 sentences, 2-3 paragraphs). Work to advance the discussion toward meaningful conclusions.
+            Take the time needed to fully develop your thoughts and collaborate with other agents to drive toward meaningful conclusions. Work together to reach the best possible understanding and resolution of this topic.
             """
 
             # Call the agent with proper message format

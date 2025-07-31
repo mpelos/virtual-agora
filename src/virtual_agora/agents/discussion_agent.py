@@ -570,7 +570,7 @@ class DiscussionAgent(LLMAgent):
         prompt_parts = [
             f"**Current Topic:** {topic}",
             "",
-            "**Your Task:** Provide a substantive and constructive contribution (8-12 sentences, 2-3 paragraphs). Your goal is to elevate the discussion and push it toward meaningful conclusions.",
+            "**Your Task:** Provide a thorough and collaborative contribution. Your goal is to work together with other agents to elevate the discussion and push it toward meaningful conclusions. Take whatever space you need to fully develop your thoughts and engage with your fellow participants.",
         ]
 
         if context_messages:
@@ -679,7 +679,7 @@ class DiscussionAgent(LLMAgent):
             [
                 "",
                 "**Your Objective:**",
-                "In a comprehensive statement (8-12 sentences, 2-3 paragraphs), please articulate:",
+                "In a thorough and thoughtful statement, please articulate:",
                 "- **The Core Unresolved Issue:** What critical aspect of the topic do you believe was overlooked or left unresolved?",
                 "- **The Risk of Concluding:** What is the potential downside of ending the discussion now?",
                 "- **The Key Takeaway:** What is the single most important point from your perspective that must be included in the final record?",
