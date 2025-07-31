@@ -36,6 +36,7 @@ from langgraph.types import StreamWriter
 from langgraph.prebuilt import ToolNode
 
 from virtual_agora.utils.logging import get_logger
+from virtual_agora.utils.document_context import load_context_documents
 from virtual_agora.state.schema import (
     AgentInfo,
     Message,
@@ -333,8 +334,14 @@ class LLMAgent:
                     # Use AIMessage for all agent messages
                     messages.append(AIMessage(content=msg["content"]))
 
-        # Add current prompt
-        messages.append(HumanMessage(content=prompt))
+        # Load document context and inject before current prompt
+        document_context = load_context_documents()
+        enhanced_prompt = prompt
+        if document_context:
+            enhanced_prompt = f"{document_context}\n{prompt}"
+
+        # Add current prompt (with document context if available)
+        messages.append(HumanMessage(content=enhanced_prompt))
 
         return messages
 
