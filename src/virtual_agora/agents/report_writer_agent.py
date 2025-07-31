@@ -9,6 +9,7 @@ import json
 import re
 from typing import List, Dict, Any, Optional, Tuple
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, ValidationError
 
 from virtual_agora.agents.llm_agent import LLMAgent
@@ -113,6 +114,10 @@ You must ensure no key points are missed while organizing complex information in
                 [f"- {consideration}" for consideration in final_considerations]
             )
 
+        # Use JsonOutputParser to get proper format instructions
+        parser = JsonOutputParser(pydantic_object=ReportStructure)
+        format_instructions = parser.get_format_instructions()
+
         prompt = f"""**PHASE 1: STRUCTURE CREATION**
 
 **Report Type:** Topic Report
@@ -122,9 +127,13 @@ You must ensure no key points are missed while organizing complex information in
 **Source Material:**
 {summaries_text}{considerations_text}
 
-Analyze this source material and create a detailed structure for a comprehensive topic report. Output a JSON object with "sections" containing an array of objects, each with "title" and "description" fields.
+Analyze this source material and create a detailed structure for a comprehensive topic report.
 
-Example format:
+{format_instructions}
+
+Your JSON should contain a "sections" array with objects having "title" and "description" fields.
+
+Example:
 {{
   "sections": [
     {{"title": "Executive Summary", "description": "Brief overview of the topic and key findings"}},
@@ -160,6 +169,10 @@ Ensure the structure covers: topic overview, discussion narrative, consensus poi
 
         excerpts_text = "\n\n".join(report_excerpts)
 
+        # Use JsonOutputParser to get proper format instructions
+        parser = JsonOutputParser(pydantic_object=ReportStructure)
+        format_instructions = parser.get_format_instructions()
+
         prompt = f"""**PHASE 1: STRUCTURE CREATION**
 
 **Report Type:** Session Report
@@ -171,9 +184,13 @@ Ensure the structure covers: topic overview, discussion narrative, consensus poi
 **Topic Report Excerpts:**
 {excerpts_text}
 
-Analyze these topic reports and create a detailed structure for a comprehensive final session report. Output a JSON object with "sections" containing an array of objects, each with "title" and "description" fields.
+Analyze these topic reports and create a detailed structure for a comprehensive final session report.
 
-Example format:
+{format_instructions}
+
+Your JSON should contain a "sections" array with objects having "title" and "description" fields.
+
+Example:
 {{
   "sections": [
     {{"title": "Executive Summary", "description": "High-level overview of the entire session"}},
@@ -191,23 +208,42 @@ Ensure the structure covers: executive summary, overarching themes, connections 
         return sections, response
 
     def _parse_structure_response(self, response: str) -> List[Dict[str, str]]:
-        """Parse and validate JSON structure response."""
+        """Parse and validate JSON structure response using LangChain JsonOutputParser."""
         try:
-            # Clean up response to ensure it's valid JSON
-            response = response.strip()
-            json_match = re.search(
-                r'\{\s*"sections"\s*:\s*\[.*?\]\s*\}', response, re.DOTALL
-            )
-            if not json_match:
-                raise ValueError("Could not find valid structure JSON in response")
+            # Check for empty response first
+            if not response or response.strip() == "":
+                logger.warning("Empty response received from LLM")
+                return self._get_default_structure()
 
-            response = json_match.group()
-            data = json.loads(response)
-            validated_data = ReportStructure(**data)
-            return validated_data.sections
+            logger.debug(f"Parsing structure response: {response[:200]}...")
 
-        except (json.JSONDecodeError, ValidationError) as e:
+            # Use LangChain's JsonOutputParser with our Pydantic model
+            parser = JsonOutputParser(pydantic_object=ReportStructure)
+
+            # The JsonOutputParser can handle various formats including markdown-wrapped JSON
+            try:
+                parsed_data = parser.parse(response)
+                return parsed_data.sections
+            except Exception as parse_error:
+                logger.warning(
+                    f"JsonOutputParser failed: {parse_error}, trying direct JSON parsing"
+                )
+
+                # Fallback: try to extract JSON manually and use the parser
+                json_match = re.search(
+                    r'\{\s*"sections"\s*:\s*\[.*?\]\s*\}', response, re.DOTALL
+                )
+                if json_match:
+                    json_str = json_match.group()
+                    data = json.loads(json_str)
+                    validated_data = ReportStructure(**data)
+                    return validated_data.sections
+                else:
+                    raise ValueError("Could not find valid structure JSON in response")
+
+        except (json.JSONDecodeError, ValidationError, ValueError) as e:
             logger.error(f"Failed to parse report structure: {e}")
+            logger.error(f"Raw response was: {response}")
             # Fallback to default structures
             return self._get_default_structure()
 
