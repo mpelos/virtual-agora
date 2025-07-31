@@ -118,7 +118,8 @@ gemini-2.5-pro-1: "Stakeholder perspectives and impacts"
 
 **The Rules**: Every voice heard, minority views protected, human control preserved.
 
-- **Rotating turns**: Round 1 [A→B→C→D], Round 2 [B→C→D→A] - no one dominates
+- **Randomized starting order**: Initial agent order is randomized at the start of each agenda item for fairness
+- **Rotating turns**: Round 1 [C→A→D→B], Round 2 [A→D→B→C] - no one dominates
 - **Rich context**: Agents receive your theme, current topic, discussion history, and live comments
 - **Democratic polling**: Starting round 3, agents vote whether to conclude (majority + 1 rule)
 - **Regular checkpoints**: Every 5 rounds, you can intervene or redirect

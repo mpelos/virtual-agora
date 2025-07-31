@@ -7,6 +7,7 @@ where nodes orchestrate specialized agents as tools.
 import uuid
 import os
 import re
+import random
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from langgraph.types import interrupt, Command
@@ -436,6 +437,8 @@ class V13FlowNodes:
 
         # Initialize speaking order
         speaking_order = [agent.agent_id for agent in self.discussing_agents]
+        # Randomize initial order to ensure fairness and eliminate positional bias
+        random.shuffle(speaking_order)
 
         updates = {
             "specialized_agents": specialized_agent_ids,
@@ -1280,6 +1283,8 @@ Provide your refined topic proposals, incorporating insights from the collaborat
         if not speaking_order:
             # Initialize speaking order if not set
             speaking_order = [agent.agent_id for agent in self.discussing_agents]
+            # Randomize initial order to ensure fairness and eliminate positional bias
+            random.shuffle(speaking_order)
             logger.debug(f"Initialized speaking order: {speaking_order}")
         else:
             speaking_order = speaking_order.copy()
