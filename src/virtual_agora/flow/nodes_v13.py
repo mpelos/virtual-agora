@@ -41,6 +41,7 @@ from virtual_agora.ui.human_in_the_loop import (
     get_agenda_approval,
     get_continuation_approval,
     get_agenda_modifications,
+    get_user_turn_participation,
     display_session_status,
 )
 from virtual_agora.ui.preferences import get_user_preferences
@@ -3027,6 +3028,107 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
                 "report_error": str(e),
             }
 
+        return updates
+
+    def user_turn_participation_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
+        """HITL node for user participation at turn start.
+
+        New feature allowing users to participate in discussions from turn 2 onwards.
+        Users can: continue discussion, participate, or finalize topic.
+        Shows previous round summary for context.
+        """
+        logger.info("=== USER_TURN_PARTICIPATION NODE START ===")
+
+        current_round = state.get("current_round", 0)
+        current_topic = state.get("active_topic", "Unknown Topic")
+
+        # Get the most recent round summary for display
+        previous_round_summary = None
+        round_summaries = state.get("round_summaries", [])
+
+        if round_summaries and current_round > 1:
+            # Find the most recent summary for the current topic
+            for summary in reversed(round_summaries):
+                if isinstance(summary, dict) and summary.get("topic") == current_topic:
+                    previous_round_summary = summary.get(
+                        "summary", "No summary available"
+                    )
+                    break
+
+        logger.info(
+            f"User participation for round {current_round}, topic: {current_topic}"
+        )
+        logger.info(f"Previous summary available: {previous_round_summary is not None}")
+
+        # Prepare interrupt payload
+        interrupt_payload = {
+            "type": "user_turn_participation",
+            "current_round": current_round,
+            "current_topic": current_topic,
+            "previous_summary": previous_round_summary,
+            "message": (
+                f"Turn {current_round} - Your participation is requested.\n"
+                f"Topic: {current_topic}\n\n"
+                "What would you like to do?"
+            ),
+            "options": ["continue", "participate", "finalize"],
+        }
+
+        logger.info(f"Interrupting for user turn participation: {interrupt_payload}")
+
+        # Use LangGraph interrupt to pause and get user input
+        user_input = interrupt(interrupt_payload)
+
+        logger.info(f"User turn participation input received: {user_input}")
+
+        # Process user input
+        if user_input is None:
+            # Fallback to continue
+            logger.warning("No user input received, defaulting to continue")
+            return {
+                "user_turn_decision": "continue",
+                "user_participation_message": None,
+            }
+
+        action = user_input.get("action", "continue")
+        user_message = user_input.get("user_message")
+
+        logger.info(f"User turn decision: {action}")
+
+        updates = {
+            "user_turn_decision": action,
+            "user_participation_message": user_message,
+        }
+
+        # If user chose to participate, add their message to the discussion
+        if action == "participate" and user_message:
+            from langchain_core.messages import HumanMessage
+
+            # Create user message with proper metadata
+            user_msg = HumanMessage(
+                content=user_message,
+                additional_kwargs={
+                    "speaker_id": "user",
+                    "speaker_role": "user",
+                    "round": current_round,
+                    "topic": current_topic,
+                    "timestamp": datetime.now().isoformat(),
+                    "participation_type": "user_turn_participation",
+                },
+            )
+
+            # Add to messages (uses add_messages reducer)
+            updates["messages"] = [user_msg]
+            logger.info(f"Added user participation message to round {current_round}")
+
+        # Set flags for routing decisions
+        if action == "finalize":
+            updates["user_forced_conclusion"] = True
+            updates["user_finalize_reason"] = (
+                "User chose to finalize during turn participation"
+            )
+
+        logger.info(f"User turn participation updates: {updates}")
         return updates
 
     def multi_file_output_node(self, state: VirtualAgoraState) -> Dict[str, Any]:

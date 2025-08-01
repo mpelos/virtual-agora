@@ -742,3 +742,129 @@ def display_agent_response(
     except ImportError:
         # If modules not available, continue without assembly dashboard updates
         pass
+
+
+def display_round_summary(
+    round_number: int,
+    topic: str,
+    summary: str,
+    show_header: bool = True,
+    compact: bool = False,
+) -> None:
+    """Display a round summary with rich formatting.
+
+    Args:
+        round_number: The round number
+        topic: The topic being discussed
+        summary: The summary content
+        show_header: Whether to show the header panel
+        compact: Whether to use compact display
+    """
+    console = get_console().rich_console
+
+    if show_header:
+        # Display header
+        header_text = f"[bold green]Round {round_number} Summary[/bold green]"
+        if not compact:
+            console.print()
+            console.print(
+                Panel(
+                    header_text,
+                    subtitle=f"Topic: {topic}" if topic else None,
+                    border_style="green",
+                    expand=False,
+                )
+            )
+
+    # Format summary content
+    if compact:
+        # Compact version - just show key points
+        summary_panel = Panel(
+            summary,
+            title=f"[green]Round {round_number}[/green]",
+            border_style="green",
+            padding=(0, 1),
+        )
+    else:
+        # Full version with formatting
+        # Try to extract key points if the summary is structured
+        formatted_summary = summary
+
+        # Check if summary has bullet points or key insights
+        if "•" in summary or "-" in summary or "Key points:" in summary.lower():
+            # Already formatted, use as-is
+            pass
+        else:
+            # Add some basic formatting if it's plain text
+            if len(summary) > 200:
+                # For longer summaries, add some structure
+                sentences = summary.split(". ")
+                if len(sentences) > 3:
+                    formatted_summary = "**Key Points:**\n"
+                    for i, sentence in enumerate(sentences[:3], 1):
+                        if sentence.strip():
+                            formatted_summary += f"• {sentence.strip()}.\n"
+                    if len(sentences) > 3:
+                        formatted_summary += (
+                            f"\n**Additional Context:** {'. '.join(sentences[3:])}"
+                        )
+                else:
+                    formatted_summary = summary
+
+        summary_panel = Panel(
+            formatted_summary,
+            title=f"[bold green]Round {round_number} Summary[/bold green]",
+            subtitle=f"Topic: {topic}" if topic else None,
+            border_style="green",
+            padding=(1, 2),
+        )
+
+    console.print(summary_panel)
+    if not compact:
+        console.print()
+
+
+def display_previous_round_summary(
+    current_round: int,
+    current_topic: str,
+    previous_summary: Optional[str] = None,
+) -> None:
+    """Display the previous round summary for user context.
+
+    This is specifically designed for the user participation flow to show
+    what happened in the previous discussion round.
+
+    Args:
+        current_round: Current round number
+        current_topic: Current topic being discussed
+        previous_summary: Summary of the previous round
+    """
+    console = get_console().rich_console
+
+    if not previous_summary or current_round <= 1:
+        # No previous summary to show
+        return
+
+    console.print()
+    console.print(
+        Rule(
+            f"[dim]Previous Discussion (Round {current_round - 1})[/dim]",
+            style="dim",
+        )
+    )
+
+    # Display the summary in a more contextual format
+    display_round_summary(
+        round_number=current_round - 1,
+        topic=current_topic,
+        summary=previous_summary,
+        show_header=False,
+        compact=True,
+    )
+
+    console.print(
+        Rule(
+            f"[dim]Current Turn (Round {current_round})[/dim]",
+            style="dim",
+        )
+    )

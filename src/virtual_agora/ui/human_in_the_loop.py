@@ -902,6 +902,156 @@ def validate_input(
     return True, None
 
 
+def get_user_turn_participation(
+    current_round: int,
+    current_topic: str,
+    previous_round_summary: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get user participation choice at the start of each turn.
+
+    Implements the new user participation feature allowing users to:
+    - Continue the discussion with agents
+    - Participate by adding their own message
+    - Finalize the current topic
+
+    Args:
+        current_round: The current discussion round number
+        current_topic: The topic being discussed
+        previous_round_summary: Summary of the previous round (if available)
+
+    Returns:
+        Dict containing user choice and optional message
+    """
+    console.clear()
+
+    # Display header
+    console.print(
+        Panel(
+            f"[bold cyan]Turn {current_round} - User Participation[/bold cyan]",
+            subtitle=f"Topic: {current_topic}",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
+
+    # Display previous round summary if available
+    if previous_round_summary and current_round > 1:
+        from virtual_agora.ui.discussion_display import display_previous_round_summary
+
+        display_previous_round_summary(
+            current_round, current_topic, previous_round_summary
+        )
+
+    # Show options
+    console.print()
+    options_text = """
+    [bold]Your Options:[/bold]
+    [green]c[/green] - [green]Continue[/green] the discussion (let agents proceed)
+    [blue]p[/blue] - [blue]Participate[/blue] in the discussion (add your message)
+    [red]f[/red] - [red]Finalize[/red] this topic (move to conclusion)
+    """
+    console.print(Panel(options_text, box=box.ROUNDED))
+
+    while True:
+        try:
+            action = Prompt.ask(
+                "Select your action",
+                choices=["c", "p", "f"],
+                default="c",
+                console=console,
+            ).lower()
+
+            if action == "c":
+                # Continue discussion
+                record_input("user_turn_participation", "continue")
+                console.print("[green]✓ Continuing discussion with agents[/green]")
+                return {
+                    "action": "continue",
+                    "user_message": None,
+                }
+
+            elif action == "p":
+                # User wants to participate
+                console.print()
+                console.print(
+                    "[bold]Enter your message to add to the discussion:[/bold]"
+                )
+                console.print(
+                    "[dim](Press Enter twice to finish multi-line input)[/dim]"
+                )
+
+                lines = []
+                while True:
+                    line = Prompt.ask(
+                        "", default="", show_default=False, console=console
+                    )
+                    if not line and lines:  # Empty line after content
+                        break
+                    if line:
+                        lines.append(line)
+
+                user_message = " ".join(lines).strip()
+
+                if not user_message:
+                    console.print(
+                        "[red]Message cannot be empty. Please try again.[/red]"
+                    )
+                    continue
+
+                # Validate message
+                is_valid, error_msg = validate_input(
+                    user_message, min_length=10, max_length=2000
+                )
+                if not is_valid:
+                    console.print(f"[red]{error_msg}[/red]")
+                    continue
+
+                # Confirm message
+                console.print()
+                console.print(
+                    Panel(
+                        user_message,
+                        title="[bold]Your Message[/bold]",
+                        border_style="blue",
+                        padding=(1, 2),
+                    )
+                )
+
+                if Confirm.ask("Add this message?", default=True, console=console):
+                    record_input(
+                        "user_turn_participation",
+                        "participate",
+                        {"message": user_message},
+                    )
+                    console.print("[blue]✓ Message added to discussion[/blue]")
+                    return {
+                        "action": "participate",
+                        "user_message": user_message,
+                    }
+                else:
+                    console.print("[yellow]Let's try again...[/yellow]")
+                    continue
+
+            else:  # finalize
+                if Confirm.ask(
+                    "Are you sure you want to finalize this topic?",
+                    default=False,
+                    console=console,
+                ):
+                    record_input("user_turn_participation", "finalize")
+                    console.print("[red]✓ Finalizing topic[/red]")
+                    return {
+                        "action": "finalize",
+                        "user_message": None,
+                    }
+                else:
+                    console.print("[yellow]Let's try again...[/yellow]")
+                    continue
+
+        except KeyboardInterrupt:
+            handle_interrupt("user_turn_participation")
+
+
 def get_input_with_timeout(
     prompt: str, timeout: int = INPUT_TIMEOUT, default: Optional[str] = None
 ) -> Optional[str]:

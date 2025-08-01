@@ -530,3 +530,47 @@ class V13FlowConditions:
             return True
 
         return False
+
+    def should_show_user_participation(
+        self, state: VirtualAgoraState
+    ) -> Literal["user_participation", "continue_flow"]:
+        """Determine if user participation should be shown.
+
+        User participation is shown from round 2 onwards, before the discussion
+        continues with agents.
+
+        Args:
+            state: Current state
+
+        Returns:
+            Next node: "user_participation" if should show, "continue_flow" otherwise
+        """
+        current_round = state.get("current_round", 0)
+
+        # Only show user participation from round 2 onwards
+        if current_round >= 2:
+            logger.debug(f"Round {current_round} >= 2, showing user participation")
+            return "user_participation"
+        else:
+            logger.debug(f"Round {current_round} < 2, skipping user participation")
+            return "continue_flow"
+
+    def evaluate_user_turn_decision(
+        self, state: VirtualAgoraState
+    ) -> Literal["continue_discussion", "conclude_topic"]:
+        """Evaluate user's turn participation decision.
+
+        Args:
+            state: Current state
+
+        Returns:
+            Next node based on user decision
+        """
+        user_decision = state.get("user_turn_decision", "continue")
+
+        if user_decision == "finalize":
+            logger.info("User chose to finalize topic during turn participation")
+            return "conclude_topic"
+        else:
+            logger.info(f"User chose '{user_decision}', continuing discussion")
+            return "continue_discussion"

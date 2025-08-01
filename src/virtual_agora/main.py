@@ -207,6 +207,8 @@ def process_interrupt_recursive(
             user_response = handle_periodic_stop_interrupt(interrupt_payload)
         elif interrupt_type == "topic_continuation":
             user_response = handle_continuation_interrupt(interrupt_payload)
+        elif interrupt_type == "user_turn_participation":
+            user_response = handle_user_turn_participation_interrupt(interrupt_payload)
         else:
             logger.warning(
                 f"Unknown interrupt type at managed depth {current_depth}: {interrupt_type}"
@@ -487,6 +489,45 @@ def handle_continuation_interrupt(interrupt_payload: Dict[str, Any]) -> Dict[str
                 "awaiting_approval": False,
                 "approval_type": "topic_continuation",
             },
+        }
+
+
+def handle_user_turn_participation_interrupt(
+    interrupt_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Handle user turn participation interrupt from LangGraph.
+
+    Args:
+        interrupt_payload: Interrupt data containing round and topic info
+
+    Returns:
+        State updates matching LangGraph schema
+    """
+    current_round = interrupt_payload.get("current_round", 0)
+    current_topic = interrupt_payload.get("current_topic", "Unknown")
+    previous_summary = interrupt_payload.get("previous_summary")
+
+    try:
+        # Use the new HITL function for user turn participation
+        user_response = get_user_turn_participation(
+            current_round, current_topic, previous_summary
+        )
+
+        # Map the UI response to state updates
+        action = user_response.get("action", "continue")
+        user_message = user_response.get("user_message")
+
+        return {
+            "action": action,
+            "user_message": user_message,
+        }
+
+    except Exception as e:
+        logger.error(f"Error in user turn participation interrupt: {e}")
+        # Fallback to continue
+        return {
+            "action": "continue",
+            "user_message": None,
         }
 
 

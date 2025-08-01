@@ -198,6 +198,9 @@ class VirtualAgoraV13Flow:
         graph.add_node("announce_item", self.nodes.announce_item_node)
         graph.add_node("discussion_round", self.nodes.discussion_round_node)
         graph.add_node("round_summarization", self.nodes.round_summarization_node)
+        graph.add_node(
+            "user_turn_participation", self.nodes.user_turn_participation_node
+        )
         graph.add_node("end_topic_poll", self.nodes.end_topic_poll_node)
         graph.add_node("periodic_user_stop", self.nodes.periodic_user_stop_node)
 
@@ -259,13 +262,23 @@ class VirtualAgoraV13Flow:
         graph.add_edge("announce_item", "discussion_round")
         graph.add_edge("discussion_round", "round_summarization")
 
-        # Conditional: Check if we should start polling (round >= 2)
+        # Conditional: Check if user participation should be shown (round >= 2)
         graph.add_conditional_edges(
             "round_summarization",
-            self.conditions.check_round_threshold,
+            self.conditions.should_show_user_participation,
             {
-                "continue_discussion": "discussion_round",
-                "start_polling": "end_topic_poll",
+                "user_participation": "user_turn_participation",
+                "continue_flow": "end_topic_poll",  # Skip user participation for round 1
+            },
+        )
+
+        # Handle user turn decision
+        graph.add_conditional_edges(
+            "user_turn_participation",
+            self.conditions.evaluate_user_turn_decision,
+            {
+                "continue_discussion": "end_topic_poll",
+                "conclude_topic": "final_considerations",
             },
         )
 
