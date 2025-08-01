@@ -156,6 +156,7 @@ class AgentFactory:
             provider_config = {
                 "provider": self.config.report_writer.provider.value,
                 "model": self.config.report_writer.model,
+                "timeout": 300,  # Extended timeout for complex report generation (5 minutes)
             }
 
             # Create LLM instance
