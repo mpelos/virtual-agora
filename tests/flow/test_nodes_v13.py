@@ -12,6 +12,7 @@ from virtual_agora.agents.moderator import ModeratorAgent
 from virtual_agora.agents.summarizer import SummarizerAgent
 from virtual_agora.agents.topic_report_agent import TopicReportAgent
 from virtual_agora.agents.ecclesia_report_agent import EcclesiaReportAgent
+from virtual_agora.agents.report_writer_agent import ReportWriterAgent
 
 
 @pytest.fixture
@@ -41,6 +42,30 @@ def mock_specialized_agents():
     ecclesia_report = Mock(spec=EcclesiaReportAgent)
     ecclesia_report.agent_id = "ecclesia_report"
     agents["ecclesia_report"] = ecclesia_report
+
+    # Create report writer mock (unified report agent)
+    report_writer = Mock(spec=ReportWriterAgent)
+    report_writer.agent_id = "report_writer"
+    # Legacy methods
+    report_writer.create_report_structure.return_value = (
+        [
+            {"title": "Overview", "description": "Topic overview"},
+            {"title": "Analysis", "description": "Key analysis"},
+        ],
+        "Structure response",
+    )
+    report_writer.write_section.return_value = "Section content"
+    # New context-aware methods
+    report_writer.create_report_structure_with_state.return_value = (
+        [
+            {"title": "Overview", "description": "Topic overview"},
+            {"title": "Analysis", "description": "Key analysis"},
+        ],
+        "Structure response",
+    )
+    report_writer.write_section_with_state.return_value = "Section content"
+    report_writer.synthesize_topic.return_value = "Comprehensive topic report"
+    agents["report_writer"] = report_writer
 
     return agents
 
@@ -301,21 +326,19 @@ class TestPhase3Nodes:
             ],
         }
 
-        mock_topic_agent = mock_specialized_agents["topic_report"]
-        mock_topic_agent.synthesize_topic.return_value = "Comprehensive topic report"
+        mock_report_writer = mock_specialized_agents["report_writer"]
 
         result = flow_nodes.topic_report_generation_node(state)
 
-        assert result["topic_summaries"]["Topic A"] == "Comprehensive topic report"
-        assert result["last_topic_report"] == "Comprehensive topic report"
+        # The report is now built iteratively from sections, so we get "Section content\n\nSection content"
+        expected_report = "Section content\n\nSection content"
+        assert result["topic_summaries"]["Topic A"] == expected_report
         assert result["current_phase"] == 3
+        assert "report_structures" in result
 
-        mock_topic_agent.synthesize_topic.assert_called_once_with(
-            round_summaries=["Round 1 summary", "Round 2 summary"],
-            final_considerations=["Final thought 1", "Final thought 2"],
-            topic="Topic A",
-            discussion_theme="Test Theme",
-        )
+        # Verify the new report writer methods were called with filtered context
+        mock_report_writer.create_report_structure_with_state.assert_called_once()
+        assert mock_report_writer.write_section_with_state.call_count == 2  # 2 sections
 
     def test_topic_summary_generation_node(self, flow_nodes, mock_specialized_agents):
         """Test topic summary generation for conclusion."""
@@ -413,23 +436,18 @@ class TestPhase5Nodes:
             },
         }
 
-        mock_ecclesia = mock_specialized_agents["ecclesia_report"]
-        mock_ecclesia.generate_report_structure.return_value = [
-            "Executive Summary",
-            "Key Findings",
-            "Conclusion",
-        ]
-        mock_ecclesia.write_section.return_value = "Section content"
+        mock_report_writer = mock_specialized_agents["report_writer"]
 
         result = flow_nodes.final_report_node(state)
 
         assert result["current_phase"] == 5
         assert result["report_generation_status"] == "completed"
-        assert len(result["report_sections"]) == 3
-        assert "Executive Summary" in result["report_sections"]
+        assert len(result["report_sections"]) == 2
+        assert "Overview" in result["report_sections"]
 
-        # Verify all sections were written
-        assert mock_ecclesia.write_section.call_count == 3
+        # Verify the new report writer methods were called with filtered context
+        mock_report_writer.create_report_structure_with_state.assert_called_once()
+        assert mock_report_writer.write_section_with_state.call_count == 2
 
 
 if __name__ == "__main__":

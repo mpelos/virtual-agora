@@ -2131,8 +2131,10 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
             except ImportError:
                 console.print("\n[cyan]📝 Generating topic report...[/cyan]")
 
-            sections, structure_response = report_writer_agent.create_report_structure(
-                source_material, "topic"
+            sections, structure_response = (
+                report_writer_agent.create_report_structure_with_state(
+                    state, "topic", current_topic
+                )
             )
 
             # Calculate total steps for consistent progress tracking
@@ -2160,8 +2162,8 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
                     f"Writing topic report section {i+1}/{len(sections)}: {section['title']}"
                 )
 
-                section_content = report_writer_agent.write_section(
-                    section, source_material, "topic", previous_sections
+                section_content = report_writer_agent.write_section_with_state(
+                    state, section, "topic", current_topic, previous_sections
                 )
                 report_parts.append(section_content)
                 previous_sections.append(section_content)
@@ -2919,8 +2921,8 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
             except ImportError:
                 console.print("\n[cyan]📊 Generating final session report...[/cyan]")
 
-            sections, structure_response = report_writer_agent.create_report_structure(
-                source_material, "session"
+            sections, structure_response = (
+                report_writer_agent.create_report_structure_with_state(state, "session")
             )
 
             # Calculate total steps for consistent progress tracking
@@ -2949,11 +2951,8 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
                     f"Writing session report section {i+1}/{len(sections)}: {section['title']}"
                 )
 
-                section_content = report_writer_agent.write_section(
-                    section=section,
-                    source_material=source_material,
-                    report_type="session",
-                    previous_sections=previous_sections_list,
+                section_content = report_writer_agent.write_section_with_state(
+                    state, section, "session", None, previous_sections_list
                 )
 
                 report_content[section["title"]] = section_content

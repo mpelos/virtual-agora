@@ -13,6 +13,9 @@ from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, ValidationError
 
 from virtual_agora.agents.llm_agent import LLMAgent
+from virtual_agora.context.agent_mixin import ContextAwareMixin
+from virtual_agora.context.builders import ReportWriterContextBuilder
+from virtual_agora.state.schema import VirtualAgoraState
 from virtual_agora.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,7 +27,7 @@ class ReportStructure(BaseModel):
     sections: List[Dict[str, str]]
 
 
-class ReportWriterAgent(LLMAgent):
+class ReportWriterAgent(ContextAwareMixin, LLMAgent):
     """Specialized agent for long-form report generation through iterative process.
 
     This agent consolidates the functionality of TopicReportAgent and EcclesiaReportAgent,
@@ -34,6 +37,9 @@ class ReportWriterAgent(LLMAgent):
 
     Due to LLM output token limitations, this approach ensures comprehensive reports
     while maintaining quality and avoiding truncation.
+
+    Uses ReportWriterContextBuilder to ensure ONLY filtered discussion data is received,
+    not context directory files or other extraneous information.
     """
 
     PROMPT_VERSION = "1.3"
@@ -48,8 +54,13 @@ class ReportWriterAgent(LLMAgent):
         # Use specialized prompt from v1.3 spec
         system_prompt = self._get_report_writer_prompt()
 
+        # Initialize with ReportWriterContextBuilder for proper context isolation
         super().__init__(
-            agent_id=agent_id, llm=llm, system_prompt=system_prompt, **kwargs
+            context_builder=ReportWriterContextBuilder(),
+            agent_id=agent_id,
+            llm=llm,
+            system_prompt=system_prompt,
+            **kwargs,
         )
 
     def _get_report_writer_prompt(self) -> str:
@@ -70,12 +81,35 @@ For **Session Reports**: Structure should include executive summary, overarching
 
 You must ensure no key points are missed while organizing complex information into readable, concise sections. Write as a professional analyst creating reports for stakeholders who need to understand the outcomes and implications."""
 
+    def create_report_structure_with_state(
+        self,
+        state: VirtualAgoraState,
+        report_type: str = "topic",
+        topic: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, str]], str]:
+        """Create detailed structure for a report using the new context system (Phase 1).
+
+        Args:
+            state: Application state for context building
+            report_type: Type of report ("topic" or "session")
+            topic: Topic for topic reports (optional)
+
+        Returns:
+            Tuple of (sections list, raw response)
+        """
+        if report_type == "topic":
+            return self._create_topic_structure_with_state(state, topic)
+        elif report_type == "session":
+            return self._create_session_structure_with_state(state)
+        else:
+            raise ValueError(f"Unknown report type: {report_type}")
+
     def create_report_structure(
         self,
         source_material: Dict[str, Any],
         report_type: str = "topic",
     ) -> Tuple[List[Dict[str, str]], str]:
-        """Create detailed structure for a report (Phase 1).
+        """Create detailed structure for a report (Phase 1) - Legacy method.
 
         Args:
             source_material: Dictionary containing source material
@@ -83,6 +117,9 @@ You must ensure no key points are missed while organizing complex information in
 
         Returns:
             Tuple of (sections list, raw response)
+
+        Note:
+            This is the legacy method. Use create_report_structure_with_state for proper context isolation.
         """
         if report_type == "topic":
             return self._create_topic_structure(source_material)
@@ -276,6 +313,191 @@ Ensure the structure covers: executive summary, overarching themes, connections 
             },
             {"title": "Conclusions", "description": "Final thoughts and implications"},
         ]
+
+    def _create_topic_structure_with_state(
+        self, state: VirtualAgoraState, topic: Optional[str] = None
+    ) -> Tuple[List[Dict[str, str]], str]:
+        """Create structure for topic report using context system."""
+
+        prompt = """**PHASE 1: STRUCTURE CREATION**
+
+**Report Type:** Topic Report
+
+Analyze the provided context and create a detailed structure for a comprehensive topic report.
+
+Create 3-6 logical sections that organize the discussion content effectively. Each section must have:
+- A clear, specific title that accurately reflects the content
+- A comprehensive description explaining the section's purpose, key points to cover, and its role in the overall narrative
+
+The structure should ensure complete coverage of:
+- Topic overview and context
+- Evolution of the discussion 
+- Major arguments and perspectives presented
+- Areas of consensus and agreement
+- Points of disagreement or debate
+- Key insights and discoveries
+- Implications and future considerations
+
+Use JsonOutputParser format with a "sections" array containing objects with "title" and "description" fields.
+
+Example:
+{
+  "sections": [
+    {"title": "Executive Summary", "description": "Brief overview of the topic and key findings"},
+    {"title": "Discussion Evolution", "description": "How the conversation developed over time"},
+    {"title": "Key Arguments", "description": "Major arguments and perspectives presented"}
+  ]
+}
+
+Make the structure logical, comprehensive, and suitable for stakeholder review."""
+
+        # Use the new context-aware message formatting
+        messages = self.format_messages_with_context(
+            state=state, prompt=prompt, report_type="topic", topic=topic
+        )
+
+        # Generate response using the formatted messages
+        response = self.llm.invoke(messages).content
+        sections = self._parse_structure_response(response)
+
+        logger.info(
+            f"Created topic report structure with {len(sections)} sections using context system"
+        )
+        return sections, response
+
+    def _create_session_structure_with_state(
+        self, state: VirtualAgoraState
+    ) -> Tuple[List[Dict[str, str]], str]:
+        """Create structure for session report using context system."""
+
+        prompt = """**PHASE 1: STRUCTURE CREATION**
+
+**Report Type:** Session Report
+
+Analyze the provided topic reports and create a detailed structure for a comprehensive final session report.
+
+Create 4-6 logical sections that synthesize insights across all topics discussed. Each section must have:
+- A clear, specific title that reflects the synthesized content
+- A comprehensive description explaining how this section will connect insights across topics
+
+The structure should ensure complete coverage of:
+- Executive summary of key outcomes
+- Overarching themes that emerged across multiple topics  
+- Connections and relationships between different agenda items
+- Collective insights that only become apparent when viewing all topics together
+- Areas of uncertainty or questions that require further exploration
+- Assessment of overall session value and impact
+- Implications for future discussions or decisions
+
+Use JsonOutputParser format with a "sections" array containing objects with "title" and "description" fields.
+
+Example:
+{
+  "sections": [
+    {"title": "Executive Summary", "description": "High-level overview of the entire session"},
+    {"title": "Cross-Topic Themes", "description": "Overarching patterns across all discussions"},
+    {"title": "Synthesis", "description": "Integration of insights from all topics"}
+  ]
+}
+
+Make the structure comprehensive and suitable for stakeholders who need to understand the collective outcomes of the entire session."""
+
+        # Use the new context-aware message formatting
+        messages = self.format_messages_with_context(
+            state=state, prompt=prompt, report_type="session"
+        )
+
+        # Generate response using the formatted messages
+        response = self.llm.invoke(messages).content
+        sections = self._parse_structure_response(response)
+
+        logger.info(
+            f"Created session report structure with {len(sections)} sections using context system"
+        )
+        return sections, response
+
+    def write_section_with_state(
+        self,
+        state: VirtualAgoraState,
+        section: Dict[str, str],
+        report_type: str = "topic",
+        topic: Optional[str] = None,
+        previous_sections: Optional[List[str]] = None,
+    ) -> str:
+        """Write content for a specific report section using context system (Phase 2).
+
+        Args:
+            state: Application state for context building
+            section: Section dict with title and description
+            report_type: Type of report ("topic" or "session")
+            topic: Topic for topic reports (optional)
+            previous_sections: Previously written sections for context
+
+        Returns:
+            Section content in Markdown format
+        """
+
+        # Build the section writing prompt
+        section_title = section.get("title", "Unknown Section")
+        section_description = section.get("description", "No description provided")
+
+        # Context from previous sections
+        prev_context = ""
+        if previous_sections:
+            prev_context = "\n\n**Previous Sections (for context):**\n" + "\n".join(
+                [f"- {prev[:100]}..." for prev in previous_sections[-2:]]
+            )
+
+        prompt = f"""**PHASE 2: ITERATIVE WRITING**
+
+**Report Type:** {report_type.title()} Report
+**Section to Write:** {section_title}
+**Section Description:** {section_description}
+
+{prev_context}
+
+Write comprehensive, standalone content for the section "{section_title}". This section should be:
+- Complete and readable on its own
+- Objective and analytical in tone
+- Well-organized with clear subsections if needed
+- Thorough enough for full understanding
+
+Use Markdown formatting and ensure no key points from the context are missed."""
+
+        # Use the new context-aware message formatting
+        messages = self.format_messages_with_context(
+            state=state, prompt=prompt, report_type=report_type, topic=topic
+        )
+
+        # Generate response using the formatted messages
+        content = self.llm.invoke(messages).content
+
+        # Handle empty responses with a meaningful fallback
+        if (
+            not content
+            or not content.strip()
+            or "[Agent" in content
+            and "empty response" in content
+        ):
+            logger.warning(
+                f"Empty or fallback response for section '{section_title}', providing default content"
+            )
+            content = f"""# {section_title}
+
+*[This section could not be generated due to an LLM response issue. Please regenerate the report or check the system logs for details.]*
+
+**Section Purpose**: {section_description}
+
+**Report Type**: {report_type.title()} Report
+
+**Available Context**: Context provided via new context isolation system.
+"""
+
+        logger.info(
+            f"Generated {report_type} section '{section_title}' ({len(content)} chars) using context system"
+        )
+
+        return content
 
     def write_section(
         self,
