@@ -35,6 +35,49 @@ class V13FlowConditions:
 
     # ===== Phase 1 Conditions =====
 
+    def theme_routing_decision(
+        self, state: VirtualAgoraState
+    ) -> Literal["agent_agenda", "user_agenda", "discussion"]:
+        """Determine routing after theme is set based on user preference.
+
+        Args:
+            state: Current state
+
+        Returns:
+            Next phase: "agent_agenda" for agent-driven topics,
+                       "user_agenda" for user-defined topics,
+                       "discussion" if user topics already set
+        """
+        logger.debug("=== FLOW DEBUG: Evaluating theme_routing_decision ===")
+        logger.debug(f"State keys: {list(state.keys())}")
+
+        user_defines_topics = state.get("user_defines_topics", False)
+        user_defined_agenda = state.get("user_defined_agenda", False)
+
+        logger.debug(f"user_defines_topics: {user_defines_topics}")
+        logger.debug(f"user_defined_agenda: {user_defined_agenda}")
+
+        if user_defined_agenda:
+            # User topics already set, go directly to discussion
+            logger.info("User-defined agenda ready, starting discussion")
+            logger.debug("=== FLOW DEBUG: Routing to 'discussion' -> announce_item ===")
+            return "discussion"
+        elif user_defines_topics:
+            # This shouldn't happen as get_theme_node handles user topic creation
+            # but keeping for safety
+            logger.info("User chose to define topics (fallback path)")
+            logger.debug(
+                "=== FLOW DEBUG: Routing to 'user_agenda' -> user_topic_definition ==="
+            )
+            return "user_agenda"
+        else:
+            # Agent-driven topic creation
+            logger.info("Agent-driven topic creation")
+            logger.debug(
+                "=== FLOW DEBUG: Routing to 'agent_agenda' -> agenda_proposal ==="
+            )
+            return "agent_agenda"
+
     def should_start_discussion(
         self, state: VirtualAgoraState
     ) -> Literal["discussion", "agenda_setting"]:

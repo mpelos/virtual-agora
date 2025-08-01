@@ -125,7 +125,7 @@ class TurnManager:
 class ResponseTimeoutManager:
     """Manages timeouts for agent responses."""
 
-    def __init__(self, default_timeout: float = 30.0):
+    def __init__(self, default_timeout: float = 300.0):
         """Initialize timeout manager.
 
         Args:
@@ -382,7 +382,7 @@ class AgentCoordinator:
                 for agent_id in self.agent_ids
             }
 
-            for future in concurrent.futures.as_completed(future_to_agent, timeout=60):
+            for future in concurrent.futures.as_completed(future_to_agent, timeout=300):
                 agent_id, topics = future.result()
                 if topics:
                     proposals[agent_id] = topics
@@ -449,7 +449,7 @@ class AgentCoordinator:
                 for agent_id in self.agent_ids
             }
 
-            for future in concurrent.futures.as_completed(future_to_agent, timeout=180):
+            for future in concurrent.futures.as_completed(future_to_agent, timeout=300):
                 agent_id, vote_response = future.result()
                 votes[agent_id] = vote_response
 
@@ -563,7 +563,7 @@ class AgentCoordinator:
                 for agent_id in self.agent_ids
             }
 
-            for future in concurrent.futures.as_completed(future_to_agent, timeout=120):
+            for future in concurrent.futures.as_completed(future_to_agent, timeout=300):
                 agent_id, (vote_result, reasoning) = future.result()
                 votes[agent_id] = {
                     "vote": "Yes" if vote_result else "No",
@@ -663,7 +663,7 @@ class AgentCoordinator:
                 for agent_id in minority_voters
             }
 
-            for future in concurrent.futures.as_completed(future_to_agent, timeout=90):
+            for future in concurrent.futures.as_completed(future_to_agent, timeout=300):
                 agent_id, consideration = future.result()
                 if consideration:
                     considerations[agent_id] = consideration

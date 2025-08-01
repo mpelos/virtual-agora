@@ -295,6 +295,12 @@ class VirtualAgoraState(TypedDict):
 
     # Topic management
     main_topic: NotRequired[str]  # Primary discussion topic for the session
+    user_defines_topics: NotRequired[
+        bool
+    ]  # Whether user chose to define topics manually
+    user_defined_agenda: NotRequired[
+        bool
+    ]  # Whether agenda was set by user (not agents)
     active_topic: Optional[str]
     topic_queue: List[str]  # Topics to be discussed
     proposed_topics: List[str]  # All proposed topics (Phase 1)

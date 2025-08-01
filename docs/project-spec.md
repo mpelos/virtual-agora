@@ -170,9 +170,11 @@ The application is a state machine where the graph dictates the flow from one no
 1.  **Start Node:** The application is executed.
 2.  **Config & Keys Node:** Loads API keys from `.env` and agent/model configuration from `config.yml`.
 3.  **Agent Instantiation Node:** Creates instances of all required agents (Discussing, Moderator, Summarizer, Report Writer) based on the configuration.
-4.  **HITL - Get Theme Node:** Prompts the **User** for the high-level discussion theme. This theme is saved to the graph's state and becomes the foundational context.
+4.  **HITL - Get Theme Node:** Prompts the **User** for the high-level discussion theme and asks whether they want to define topics themselves or let agents create them. If the user chooses to define topics manually, this node calls the topic definition interface and sets up the agenda directly, bypassing the agent proposal phase. This theme and preference are saved to the graph's state.
 
-##### **Phase 1: Agenda Setting**
+##### **Phase 1: Agenda Setting** *(Conditional - Only for Agent-Driven Topics)*
+
+**Note:** This entire phase is bypassed if the user chose to define topics manually in Phase 0.
 
 1.  **Agenda Proposal Node:** This node prompts each **Discussing Agent** to propose 3-5 strategic topics that serve as a compass to guide discussion toward the best possible conclusion. Agents are instructed to think strategically about what needs to be discussed and in what order to build comprehensive understanding.
 2.  **Topic Refinement Node:** This node presents all initial proposals to each **Discussing Agent** and prompts them to collaboratively refine their topics. Agents review all proposals with a strategic lens, considering synthesis opportunities, gap analysis, flow optimization, and collaboration possibilities. This enables agents to merge similar topics, fill critical gaps, ensure logical progression, and maintain focus on creating an optimal pathway to comprehensive conclusions.
@@ -254,22 +256,23 @@ graph TD
     subgraph Phase0 ["Phase 0: Initialization"]
         A(Start) --> B[Config & Keys Node<br/>Load .env and config.yml];
         B --> C[Agent Instantiation Node<br/>Create all specialized agents];
-        C --> D{HITL: Get Theme Node<br/>User provides discussion theme};
+        C --> D{HITL: Get Theme Node<br/>User provides theme + topic preference};
     end
 
-    %% Phase 1: Agenda Setting
-    subgraph Phase1 ["Phase 1: Agenda Setting"]
-        D --> E[Agenda Proposal Node<br/>Discussing Agents propose items];
+    %% Phase 1: Agenda Setting (Conditional)
+    subgraph Phase1 ["Phase 1: Agenda Setting (Agent-Driven Only)"]
+        E[Agenda Proposal Node<br/>Discussing Agents propose items];
         E --> E1[Topic Refinement Node<br/>Agents review & refine topics];
         E1 --> F[Collate Proposals Node<br/>Moderator Agent deduplicates];
         F --> G[Agenda Voting Node<br/>Discussing Agents vote on order];
         G --> H[Synthesize Agenda Node<br/>Moderator Agent creates JSON agenda];
         H --> I{HITL: Agenda Approval Node<br/>User approves/edits agenda};
     end
-
+    
     %% Phase 2: Discussion Loop
     subgraph Phase2 ["Phase 2: Discussion Loop (Per Item)"]
-        I --> J[Announce Item Node<br/>Display current agenda item];
+        J[Announce Item Node<br/>Display current agenda item];
+        I --> J;
         J --> K[Discussion Round Node<br/>Agents discuss in rotation];
         K --> L[Round Summarization Node<br/>Summarizer Agent compacts round];
         L --> M{Conditional: Round >= 3?<br/>Check if polling should start};
@@ -310,6 +313,10 @@ graph TD
         BB --> CC(End);
     end
 
+    %% Conditional routing after theme selection
+    D -->|"Agent-driven topics"| E;
+    D -->|"User-defined topics"| J;
+
     %% Apply Styles
     class A,CC startEnd;
     class B,C,E,E1,F,G,H,J,K,L,R,S,S1,Y,AA,BB process;
@@ -335,19 +342,22 @@ graph TD
 - **Agent Tool Invocation:** Agents are called by nodes, not autonomous
 - **Specialized Agent Roles:** Five distinct agent types for specific tasks
 - **Enhanced User Control:** Multiple HITL gates including periodic stops
+- **Flexible Topic Creation:** User choice between agent-driven or manual topic definition
+- **Conditional Flow Routing:** Intelligent routing based on user preferences
 - **Dual Polling System:** Agent consensus + user override capabilities
 - **Sophisticated Context Flow:** Dynamic context assembly for each agent call
 - **Multi-Level Reporting:** Round summaries → Topic reports → Final report
 
 ##### Node-Centric Flow Explanation
 
-1. **Initialization Phase:** System setup and user theme collection
-2. **Agenda Setting:** Democratic proposal and voting with Moderator Agent synthesis
-3. **Discussion Loop:** Rotating agent participation with Summarizer Agent compression
-4. **Enhanced Control:** Periodic user stops (configurable interval, default 3) + agent polling (round 3+)
-5. **Topic Conclusion:** Specialized Report Writer Agent iterative synthesis with contextual final considerations, followed by Summarizer Agent topic conclusion summary
-6. **Continuation Logic:** Agent polling for session end + user approval for agenda modification
-7. **Final Reporting:** Report Writer Agent iteratively analyzes all topics for comprehensive synthesis
+1. **Initialization Phase:** System setup, user theme collection, and topic definition method selection
+2. **Conditional Routing:** Agent-driven agenda setting OR direct jump to discussion with user-defined topics
+3. **Agenda Setting (if agent-driven):** Democratic proposal and voting with Moderator Agent synthesis
+4. **Discussion Loop:** Rotating agent participation with Summarizer Agent compression
+5. **Enhanced Control:** Periodic user stops (configurable interval, default 3) + agent polling (round 3+)
+6. **Topic Conclusion:** Specialized Report Writer Agent iterative synthesis with contextual final considerations, followed by Summarizer Agent topic conclusion summary
+7. **Continuation Logic:** Agent polling for session end + user approval for agenda modification
+8. **Final Reporting:** Report Writer Agent iteratively analyzes all topics for comprehensive synthesis
 
 This flow demonstrates how the node-centric architecture maintains process control while leveraging specialized agent capabilities for complex reasoning tasks.
 

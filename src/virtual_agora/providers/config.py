@@ -42,7 +42,7 @@ class ProviderConfig(BaseModel):
         default=None, gt=0, description="Maximum tokens to generate"
     )
 
-    timeout: int = Field(default=30, gt=0, description="Request timeout in seconds")
+    timeout: int = Field(default=300, gt=0, description="Request timeout in seconds")
 
     streaming: bool = Field(default=False, description="Enable streaming responses")
 

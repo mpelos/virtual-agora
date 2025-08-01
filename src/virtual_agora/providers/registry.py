@@ -84,7 +84,7 @@ class ProviderRegistry:
             display_name="Google Gemini",
             api_key_env_var="GOOGLE_API_KEY",
             supports_batch=True,
-            default_timeout=120,
+            default_timeout=300,
         )
         google.add_model(
             ModelInfo(
@@ -157,7 +157,7 @@ class ProviderRegistry:
             display_name="OpenAI",
             api_key_env_var="OPENAI_API_KEY",
             supports_batch=True,
-            default_timeout=60,
+            default_timeout=300,
             requires_org_id=True,  # Optional but supported
         )
         openai.add_model(
@@ -277,7 +277,7 @@ class ProviderRegistry:
             provider_type=ProviderType.ANTHROPIC,
             display_name="Anthropic",
             api_key_env_var="ANTHROPIC_API_KEY",
-            default_timeout=60,
+            default_timeout=300,
         )
         anthropic.add_model(
             ModelInfo(
@@ -357,7 +357,7 @@ class ProviderRegistry:
             display_name="Grok",
             api_key_env_var="XAI_API_KEY",
             base_url="https://api.x.ai/v1",  # xAI endpoint
-            default_timeout=60,
+            default_timeout=300,
         )
         grok.add_model(
             ModelInfo(

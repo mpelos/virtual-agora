@@ -834,10 +834,16 @@ async def run_application(args: argparse.Namespace) -> int:
             # Welcome header is now shown by UI integration initialization
 
             # Get initial topic from user (uses enhanced UI internally)
-            topic = get_initial_topic()
+            topic_data = get_initial_topic()
+            topic = topic_data["topic"]
+            user_defines_topics = topic_data["user_defines_topics"]
 
             # Create session with the topic
-            session_id = flow.create_session(session_id=session_id, main_topic=topic)
+            session_id = flow.create_session(
+                session_id=session_id,
+                main_topic=topic,
+                user_defines_topics=user_defines_topics,
+            )
             logger.info(f"Created discussion session: {session_id}")
 
             # Update UI with topic

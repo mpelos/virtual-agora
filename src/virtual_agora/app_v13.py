@@ -368,12 +368,18 @@ class VirtualAgoraApplicationV13:
 
             # Get topic if not provided
             if not topic:
-                topic = get_initial_topic()
+                topic_data = get_initial_topic()
+                topic = topic_data["topic"]
+                user_defines_topics = topic_data["user_defines_topics"]
+            else:
+                user_defines_topics = False  # Default when topic provided externally
 
             # Create session
             self.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             session_id = self.flow.create_session(
-                session_id=self.session_id, main_topic=topic
+                session_id=self.session_id,
+                main_topic=topic,
+                user_defines_topics=user_defines_topics,
             )
 
             logger.info(f"Created v1.3 session: {session_id}")

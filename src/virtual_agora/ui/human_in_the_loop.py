@@ -111,7 +111,7 @@ def record_input(input_type: str, value: Any, metadata: Optional[Dict] = None) -
     logger.debug(f"Recorded input: {input_type}")
 
 
-def get_initial_topic() -> str:
+def get_initial_topic() -> Dict[str, Any]:
     """Gets the initial discussion topic from the user.
 
     Implements Story 7.1: Initial Topic Input Interface with:
@@ -119,6 +119,10 @@ def get_initial_topic() -> str:
     - Multi-line topic support
     - Validation and confirmation
     - Topic templates for guidance
+    - User choice for topic definition method
+
+    Returns:
+        Dict containing 'topic' and 'user_defines_topics' keys
     """
     console.clear()
 
@@ -244,7 +248,40 @@ def get_initial_topic() -> str:
             if Confirm.ask("Confirm this topic?", default=True, console=console):
                 record_input("initial_topic", topic)
                 logger.info(f"Topic confirmed: {topic[:50]}...")
-                return topic
+
+                # Ask user how they want to define discussion topics
+                console.print()
+                console.print("[bold cyan]Topic Definition Method[/bold cyan]")
+                console.print(
+                    "How would you like to define the specific topics for discussion?"
+                )
+                console.print()
+                console.print("Options:")
+                console.print(
+                    "  [green]1. Let AI agents create and propose topics[/green] (default)"
+                )
+                console.print("  [blue]2. Define topics yourself[/blue]")
+                console.print()
+
+                choice = Prompt.ask(
+                    "Select option",
+                    choices=["1", "2"],
+                    default="1",
+                    console=console,
+                ).strip()
+
+                user_defines_topics = choice == "2"
+
+                if user_defines_topics:
+                    console.print(
+                        "[blue]You'll define the topics after confirmation.[/blue]"
+                    )
+                else:
+                    console.print(
+                        "[green]AI agents will collaboratively create the discussion topics.[/green]"
+                    )
+
+                return {"topic": topic, "user_defines_topics": user_defines_topics}
             else:
                 console.print("[yellow]Let's try again...[/yellow]")
                 attempts += 1
@@ -253,6 +290,87 @@ def get_initial_topic() -> str:
             handle_interrupt("topic_input")
 
     raise ValueError("Maximum retry attempts exceeded for topic input")
+
+
+def get_user_defined_topics(main_topic: str) -> List[str]:
+    """Allow user to manually define discussion topics.
+
+    Uses the existing agenda editing interface to let users create
+    their own discussion topics from scratch.
+
+    Args:
+        main_topic: The main discussion theme for context
+
+    Returns:
+        List of user-defined topics
+    """
+    console.clear()
+
+    # Show context
+    console.print(
+        Panel(
+            f"[bold]Main Discussion Topic:[/bold]\n{main_topic}",
+            title="[bold cyan]Define Discussion Topics[/bold cyan]",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
+
+    console.print(
+        "\n[bold]Instructions:[/bold]\n"
+        "Create specific discussion topics that will explore different aspects of your main theme.\n"
+        "You'll start with an empty list - add topics one by one using the editing interface.\n"
+    )
+
+    # Show examples based on the main topic
+    console.print("[bold]Example topics might include:[/bold]")
+    console.print("• Foundational concepts and definitions")
+    console.print("• Current challenges and problems")
+    console.print("• Potential solutions and approaches")
+    console.print("• Implementation considerations")
+    console.print("• Future implications and outcomes")
+
+    if not Confirm.ask(
+        "\nReady to start defining topics?", default=True, console=console
+    ):
+        console.print(
+            "[yellow]Using empty topic list - you can add topics in the editor.[/yellow]"
+        )
+
+    # Start with empty agenda and use the existing edit interface
+    user_topics = []
+
+    # Use the existing edit_agenda function which provides full editing capabilities
+    console.print("\n[cyan]Opening topic editor...[/cyan]")
+    user_topics = edit_agenda(user_topics)
+
+    # Validate that user created at least one topic
+    if not user_topics:
+        console.print(
+            "[yellow]No topics were defined. Adding a default topic...[/yellow]"
+        )
+        user_topics = [f"General discussion on: {main_topic}"]
+
+    # Show final topics
+    console.print()
+    console.print(
+        Panel(
+            "\n".join(f"{i}. {topic}" for i, topic in enumerate(user_topics, 1)),
+            title="[bold green]Your Discussion Topics[/bold green]",
+            border_style="green",
+            padding=(1, 2),
+        )
+    )
+
+    if Confirm.ask("Confirm these topics?", default=True, console=console):
+        record_input(
+            "user_defined_topics", {"main_topic": main_topic, "topics": user_topics}
+        )
+        logger.info(f"User defined {len(user_topics)} topics for: {main_topic[:50]}...")
+        return user_topics
+    else:
+        console.print("[yellow]Let's edit them again...[/yellow]")
+        return get_user_defined_topics(main_topic)  # Recursive retry
 
 
 def get_agenda_approval(agenda: List[str]) -> List[str]:

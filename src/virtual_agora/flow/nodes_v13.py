@@ -466,15 +466,42 @@ class V13FlowNodes:
         # Check if theme already provided
         if state.get("main_topic"):
             logger.info(f"Theme already set: {state['main_topic']}")
-            return {
-                "phase_history": {
-                    "from_phase": -1,
-                    "to_phase": 0,
-                    "timestamp": datetime.now(),
-                    "reason": "Theme provided at session creation",
-                    "triggered_by": "user",
+
+            # Check if user wants to define topics themselves
+            user_defines_topics = state.get("user_defines_topics", False)
+
+            if user_defines_topics:
+                logger.info("User chose to define topics manually")
+                from virtual_agora.ui.human_in_the_loop import get_user_defined_topics
+
+                # Get user-defined topics
+                user_topics = get_user_defined_topics(state["main_topic"])
+
+                # Set up the agenda directly, bypassing agent proposal phase
+                return {
+                    "final_agenda": user_topics,
+                    "topic_queue": user_topics.copy(),
+                    "agenda_approved": True,
+                    "user_defined_agenda": True,
+                    "phase_history": {
+                        "from_phase": -1,
+                        "to_phase": 1,  # Skip directly to discussion phase
+                        "timestamp": datetime.now(),
+                        "reason": "User-defined topics provided",
+                        "triggered_by": "user",
+                    },
                 }
-            }
+            else:
+                logger.info("User chose agent-driven topic creation")
+                return {
+                    "phase_history": {
+                        "from_phase": -1,
+                        "to_phase": 0,
+                        "timestamp": datetime.now(),
+                        "reason": "Theme provided at session creation",
+                        "triggered_by": "user",
+                    }
+                }
 
         # If no theme is set, this indicates an error in the flow
         # The application should provide the theme during session creation

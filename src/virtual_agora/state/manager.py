@@ -138,6 +138,8 @@ class StateManager:
                 "max_iterations_per_phase": 5,
             },
             # Topic management
+            user_defines_topics=False,  # Default to agent-driven topics
+            user_defined_agenda=False,  # Default to agent-created agenda
             active_topic=None,
             topic_queue=[],
             proposed_topics=[],
@@ -691,6 +693,8 @@ class StateManager:
             "checkpoint_interval",
             # Topic management
             "main_topic",
+            "user_defines_topics",
+            "user_defined_agenda",
             "active_topic",
             "topic_queue",
             "proposed_topics",

@@ -226,7 +226,17 @@ class VirtualAgoraV13Flow:
         graph.add_edge(START, "config_and_keys")
         graph.add_edge("config_and_keys", "agent_instantiation")
         graph.add_edge("agent_instantiation", "get_theme")
-        graph.add_edge("get_theme", "agenda_proposal")
+
+        # Conditional: Route based on user topic preference
+        graph.add_conditional_edges(
+            "get_theme",
+            self.conditions.theme_routing_decision,
+            {
+                "agent_agenda": "agenda_proposal",  # Traditional agent-driven flow
+                "user_agenda": "agenda_proposal",  # Fallback (shouldn't be used)
+                "discussion": "announce_item",  # Skip directly to discussion
+            },
+        )
 
         # Phase 1: Agenda Setting Flow
         graph.add_edge("agenda_proposal", "topic_refinement")
@@ -521,13 +531,17 @@ class VirtualAgoraV13Flow:
         return self.compiled_graph
 
     def create_session(
-        self, session_id: Optional[str] = None, main_topic: Optional[str] = None
+        self,
+        session_id: Optional[str] = None,
+        main_topic: Optional[str] = None,
+        user_defines_topics: bool = False,
     ) -> str:
         """Create a new discussion session.
 
         Args:
             session_id: Optional session ID
             main_topic: Main discussion topic provided by user
+            user_defines_topics: Whether user will define topics manually
 
         Returns:
             Session ID
@@ -575,6 +589,9 @@ class VirtualAgoraV13Flow:
         # If main topic provided, store it for agenda setting
         if main_topic:
             v13_updates["main_topic"] = main_topic
+
+        # Store user's topic definition preference
+        v13_updates["user_defines_topics"] = user_defines_topics
 
         self.state_manager.update_state(v13_updates)
 
