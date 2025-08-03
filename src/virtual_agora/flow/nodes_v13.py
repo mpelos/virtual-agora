@@ -24,6 +24,9 @@ from virtual_agora.state.schema import (
     RoundSummary,
 )
 from virtual_agora.state.manager import StateManager
+from virtual_agora.flow.round_manager import RoundManager
+from virtual_agora.flow.message_coordinator import MessageCoordinator
+from virtual_agora.flow.state_manager import FlowStateManager
 from virtual_agora.agents.llm_agent import LLMAgent
 from virtual_agora.agents.moderator import ModeratorAgent
 from virtual_agora.agents.summarizer import SummarizerAgent
@@ -382,6 +385,11 @@ class V13FlowNodes:
         self.checkpoint_interval = checkpoint_interval
         self.context_manager = ContextWindowManager()
         self.cycle_manager = CyclePreventionManager()
+        self.round_manager = RoundManager()
+        self.message_coordinator = MessageCoordinator(self.round_manager)
+        self.flow_state_manager = FlowStateManager(
+            self.round_manager, self.message_coordinator
+        )
 
     # ===== Phase 0: Initialization Nodes =====
 
@@ -1277,23 +1285,35 @@ Provide your refined topic proposals, incorporating insights from the collaborat
         """
         logger.debug("=== FLOW DEBUG: Entering discussion_round_node ===")
         logger.debug(f"State keys available: {list(state.keys())}")
-        logger.info(f"current_round: {state.get('current_round', 0)}")
+        logger.info(f"current_round: {self.round_manager.get_current_round(state)}")
         logger.info(f"active_topic: {state.get('active_topic')}")
         logger.info(f"speaking_order: {state.get('speaking_order')}")
         logger.info("Node: discussion_round - Executing discussion round")
 
-        # Ensure we have an active topic
-        current_topic = state.get("active_topic")
-        if not current_topic:
-            logger.error("No active topic set for discussion round")
+        # Use FlowStateManager to prepare round state
+        try:
+            round_state = self.flow_state_manager.prepare_round_state(state)
+            current_round = round_state.round_number
+            current_topic = round_state.current_topic
+            speaking_order = round_state.speaking_order
+            theme = round_state.theme
+        except ValueError as e:
+            logger.error(f"Failed to prepare round state: {e}")
             return {
-                "last_error": "No active topic for discussion",
+                "last_error": str(e),
                 "error_count": state.get("error_count", 0) + 1,
             }
-        current_round = state.get("current_round", 0) + 1
-        theme = state.get("main_topic", "Unknown Topic")
-        moderator = self.specialized_agents.get("moderator")
 
+        # Initialize speaking order if empty (this should be done by the calling code)
+        if not speaking_order:
+            speaking_order = [agent.agent_id for agent in self.discussing_agents]
+            # Randomize initial order to ensure fairness and eliminate positional bias
+            random.shuffle(speaking_order)
+            logger.debug(f"Initialized speaking order: {speaking_order}")
+            # Update the round state with the initialized speaking order
+            round_state = round_state._replace(speaking_order=speaking_order)
+
+        moderator = self.specialized_agents.get("moderator")
         if not moderator:
             logger.error("No moderator agent available")
             return {
@@ -1309,20 +1329,6 @@ Provide your refined topic proposals, incorporating insights from the collaborat
             if isinstance(s, dict) and s.get("topic") == current_topic
         ]
 
-        # Rotate speaking order
-        speaking_order = state.get("speaking_order", [])
-        if not speaking_order:
-            # Initialize speaking order if not set
-            speaking_order = [agent.agent_id for agent in self.discussing_agents]
-            # Randomize initial order to ensure fairness and eliminate positional bias
-            random.shuffle(speaking_order)
-            logger.debug(f"Initialized speaking order: {speaking_order}")
-        else:
-            speaking_order = speaking_order.copy()
-        if current_round > 1:
-            # Rotate: [A,B,C] -> [B,C,A]
-            speaking_order = speaking_order[1:] + [speaking_order[0]]
-
         # Show round announcement with atmospheric effects if enabled
         try:
             from virtual_agora.ui.display_modes import should_show_atmospheric_elements
@@ -1335,8 +1341,6 @@ Provide your refined topic proposals, incorporating insights from the collaborat
 
         # Execute the round
         round_messages = []
-        round_id = str(uuid.uuid4())
-        round_start = datetime.now()
 
         for i, agent_id in enumerate(speaking_order):
             # Find the agent
@@ -1357,60 +1361,60 @@ Provide your refined topic proposals, incorporating insights from the collaborat
                     f"Context validation passed for agent {agent_id}. Completeness: 100%"
                 )
 
-            # Build context for agent
-            context = f"""
-            Theme: {theme}
-            Current Topic: {current_topic}
-            Round: {current_round}
-            Your turn: {i + 1}/{len(speaking_order)}
-            """
-
-            # Add previous topic conclusions first (from previously discussed topics)
-            previous_topic_summaries = state.get("topic_summaries", {})
-            topic_conclusions = []
-            for key, summary in previous_topic_summaries.items():
-                if key.endswith("_conclusion") and not key.startswith(current_topic):
-                    # Extract topic name by removing "_conclusion" suffix
-                    topic_name = key.replace("_conclusion", "")
-                    topic_conclusions.append(f"{topic_name}: {summary}")
-
-            if topic_conclusions:
-                context += "\n\nPreviously Concluded Topics:\n"
-                for conclusion in topic_conclusions:
-                    context += f"- {conclusion}\n"
-
-            # Add previous round summaries
-            if topic_summaries:
-                context += "\n\nPrevious Round Summaries:\n"
-                # Last 3 summaries
-                for j, summary in enumerate(topic_summaries[-3:]):
-                    # Fix: Use 'summary_text' field as defined in RoundSummary schema
-                    summary_text = (
-                        summary.get("summary_text", "")
-                        if isinstance(summary, dict)
-                        else getattr(summary, "summary_text", "")
+            # Build context using MessageCoordinator for centralized message assembly
+            try:
+                # Use MessageCoordinator to assemble agent context
+                context_text, context_messages = (
+                    self.message_coordinator.assemble_agent_context(
+                        agent_id=agent_id,
+                        round_num=current_round,
+                        state=state,
+                        agent_position=i,
+                        speaking_order=speaking_order,
+                        topic=current_topic,
+                        system_prompt=(
+                            agent.system_prompt
+                            if hasattr(agent, "system_prompt")
+                            else ""
+                        ),
                     )
-                    round_num = (
-                        summary.get("round_number", j + 1)
-                        if isinstance(summary, dict)
-                        else getattr(summary, "round_number", j + 1)
-                    )
-                    context += f"Round {round_num}: {summary_text}\n"
+                )
 
-            # Build context messages from current round for natural conversation flow
-            context_messages = []
-            if round_messages:
-                for msg in round_messages:
-                    # Use standardized message extraction
-                    speaker_id, content, _ = extract_message_info(msg)
-                    # Convert colleague messages to HumanMessage format for assembly-style conversation
-                    colleague_message = HumanMessage(
-                        content=f"[{speaker_id}]: {content}", name=speaker_id
-                    )
-                    context_messages.append(colleague_message)
+                # Build assembly-style prompt with coordinated context
+                assembly_context = f"""
+You are participating in a democratic assembly discussing the topic: '{current_topic}'
 
-            # Enhanced assembly-style prompt emphasizing democratic deliberation
-            assembly_context = f"""
+Assembly Context:
+{context_text}
+
+Other assembly members and the Round Moderator have shared their perspectives before you. Listen to their viewpoints, then provide your own contribution to this democratic deliberation.
+
+Instructions:
+- Be strong in your convictions and opinions, even if others disagree
+- Your goal is collaborative discussion toward shared understanding and actionable conclusions
+- Build upon, challenge, or expand on previous speakers' points, always driving toward resolution
+- Pay special attention to guidance from the Round Moderator, who may provide direction or clarification
+- Actively work to identify consensus, highlight key decisions, and propose concrete next steps
+- Maintain respectful but firm discourse as befits a democratic assembly focused on reaching decisions
+
+Please provide your thoughts on '{current_topic}'. Provide a thorough and collaborative contribution that engages deeply with previous speakers, develops key points comprehensively, and works together with other agents to advance our democratic deliberation toward meaningful conclusions. Take whatever time and space you need to fully express your analysis and contribute to our collective understanding."""
+
+                context = assembly_context
+
+                # Log context assembly success
+                logger.info(
+                    f"Built coordinated context for {agent_id}: "
+                    f"{len(context_messages)} context messages, "
+                    f"{len(context_text)} chars"
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to build coordinated context for {agent_id}: {e}")
+                logger.error("Falling back to basic context assembly")
+
+                # Fallback to minimal context assembly
+                context_messages = []
+                context = f"""
 You are participating in a democratic assembly discussing the topic: '{current_topic}'
 
 Assembly Context:
@@ -1418,21 +1422,13 @@ Assembly Context:
 - Round: {current_round}
 - Your speaking position: {i + 1}/{len(speaking_order)}
 
-Other assembly members have shared their perspectives before you. Listen to their viewpoints, then provide your own contribution to this democratic deliberation.
-
-Instructions:
-- Be strong in your convictions and opinions, even if others disagree
-- Your goal is collaborative discussion toward shared understanding and actionable conclusions
-- Build upon, challenge, or expand on previous speakers' points, always driving toward resolution
-- Actively work to identify consensus, highlight key decisions, and propose concrete next steps
-- Maintain respectful but firm discourse as befits a democratic assembly focused on reaching decisions
-
-Please provide your thoughts on '{current_topic}'. Provide a thorough and collaborative contribution that engages deeply with previous speakers, develops key points comprehensively, and works together with other agents to advance our democratic deliberation toward meaningful conclusions. Take whatever time and space you need to fully express your analysis and contribute to our collective understanding."""
-
-            context += assembly_context
+Please provide your thoughts on '{current_topic}'. Provide a thorough and collaborative contribution.
+"""
 
             try:
-                # Get agent response with retry logic, passing colleague messages as conversation context
+                # Always use retry_agent_call to ensure proper conversational context
+                # The enhanced context builders can be used internally by the agent
+                logger.debug(f"Using retry_agent_call with context for {agent_id}")
                 response_dict = retry_agent_call(
                     agent, state, context, context_messages
                 )
@@ -1512,15 +1508,37 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
                     display_agent_response(
                         agent_id=agent_id,
                         provider=provider_type,
-                        content=f"⚠️ Off-topic response: {response_content[:200]}{'...' if len(response_content) > 200 else ''}",
+                        content=f"⚠️ Off-topic response: {response_content[:500]}{'...' if len(response_content) > 500 else ''}",
                         round_number=current_round,
                         topic=current_topic,
                         timestamp=datetime.now(),
                     )
 
                     # Handle irrelevant response
-                    warning = moderator.issue_relevance_warning(agent_id)
+                    # First track the violation to create the violation record
+                    moderator.track_relevance_violation(
+                        agent_id, response_content, relevance_check
+                    )
+                    # Then issue the warning
+                    warning = moderator.issue_relevance_warning(
+                        agent_id, relevance_check
+                    )
                     logger.warning(f"Agent {agent_id} provided irrelevant response")
+
+                    # Add off-topic message to round messages for summary purposes
+                    off_topic_message = Message(
+                        id=str(uuid.uuid4()),
+                        speaker_id=agent_id,
+                        speaker_role="participant",
+                        content=f"[OFF-TOPIC] {response_content}",
+                        timestamp=datetime.now().isoformat(),
+                        phase=2,
+                        round=current_round,
+                        topic=current_topic,
+                        turn_order=i + 1,
+                        relevance_score=relevance_check.get("relevance_score", 0.0),
+                    )
+                    round_messages.append(off_topic_message)
 
                     # Add warning message
                     warning_message = create_langchain_message(
@@ -1564,48 +1582,10 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
                 )
                 round_messages.append(error_message)
 
-        # Create round info
-        round_info = {
-            "round_id": round_id,
-            "round_number": current_round,
-            "topic": current_topic,
-            "start_time": round_start,
-            "end_time": datetime.now(),
-            "participants": [
-                (
-                    getattr(msg, "additional_kwargs", {}).get("speaker_id", "unknown")
-                    if hasattr(msg, "content")
-                    else msg.get("speaker_id", "unknown")
-                )
-                for msg in round_messages
-                if (
-                    getattr(msg, "additional_kwargs", {}).get(
-                        "speaker_role", "participant"
-                    )
-                    if hasattr(msg, "content")
-                    else msg.get("speaker_role", "participant")
-                )
-                == "participant"
-            ],
-            "message_count": len(round_messages),
-            "summary": None,  # Will be filled by summarization node
-        }
-
-        updates = {
-            "current_round": current_round,
-            "speaking_order": speaking_order,
-            # Uses add_messages reducer (expects list)
-            "messages": round_messages,
-            # Uses list.append reducer (expects single item)
-            "round_history": round_info,
-            # Uses list.append reducer (expects single item)
-            "turn_order_history": speaking_order,
-            "rounds_per_topic": {
-                **state.get("rounds_per_topic", {}),
-                current_topic: state.get("rounds_per_topic", {}).get(current_topic, 0)
-                + 1,
-            },
-        }
+        # Use FlowStateManager to finalize round state
+        updates = self.flow_state_manager.finalize_round(
+            state=state, round_state=round_state, round_messages=round_messages
+        )
 
         logger.info(
             f"Completed round {current_round} with {len(round_messages)} messages"
@@ -1642,25 +1622,34 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
             )
 
         # Get messages from current round using standardized attribute access
+        # Include both participant and user messages
         round_messages = [
             msg
             for msg in all_messages
             if (
                 get_message_attribute(msg, "round") == current_round
                 and get_message_attribute(msg, "topic") == current_topic
-                and get_message_attribute(msg, "speaker_role") == "participant"
-            )  # Only participant messages
+                and get_message_attribute(msg, "speaker_role")
+                in ["participant", "user"]
+            )  # Include participant and user messages
         ]
 
         logger.info(f"DEBUG: Found {len(round_messages)} messages matching criteria")
 
         if not round_messages:
-            logger.warning(f"No messages found for round {current_round}")
-            logger.warning(
-                f"Expected: round={current_round} (type: {type(current_round)}), topic='{current_topic}'"
-            )
-            # Return minimal state update
-            return {"current_round": current_round}
+            # Round 0 is initialization and typically has no messages to summarize
+            if current_round == 0:
+                logger.debug(
+                    f"Skipping summarization for round {current_round} (initialization round)"
+                )
+                return {"current_round": current_round}
+            else:
+                logger.warning(f"No messages found for round {current_round}")
+                logger.warning(
+                    f"Expected: round={current_round} (type: {type(current_round)}), topic='{current_topic}'"
+                )
+                # Return minimal state update
+                return {"current_round": current_round}
 
         try:
             # Invoke summarizer as a tool
@@ -1704,6 +1693,77 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
             }
 
         return updates
+
+    def round_threshold_check_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
+        """Check if round threshold is met for topic conclusion polling.
+
+        This node simply passes through the state - the actual logic is in the
+        conditional edge (check_round_threshold) that determines routing.
+        """
+        logger.info(
+            "Node: round_threshold_check - Checking if voting should be enabled"
+        )
+
+        current_round = state.get("current_round", 0)
+        current_topic = state.get("active_topic", "unknown")
+
+        logger.info(f"Round {current_round} threshold check for topic: {current_topic}")
+
+        # Return minimal state update to satisfy LangGraph requirements
+        # LangGraph requires every node to update at least one state field
+        return {
+            "current_round": current_round,  # Pass through current round to satisfy LangGraph
+        }
+
+    def user_topic_conclusion_confirmation_node(
+        self, state: VirtualAgoraState
+    ) -> Dict[str, Any]:
+        """Ask user to confirm topic conclusion after agent vote.
+
+        Allows user to override agent decision and continue discussion if desired.
+        """
+        logger.info(
+            "Node: user_topic_conclusion_confirmation - Getting user confirmation for topic conclusion"
+        )
+
+        current_topic = state.get("active_topic", "unknown")
+        current_round = state.get("current_round", 0)
+        conclusion_vote = state.get("conclusion_vote", {})
+
+        # Get vote results for display
+        vote_passed = conclusion_vote.get("passed", False)
+        yes_votes = conclusion_vote.get("yes_votes", 0)
+        total_votes = conclusion_vote.get("total_votes", 0)
+
+        logger.info(
+            f"Asking user to confirm topic conclusion for '{current_topic}' (vote: {yes_votes}/{total_votes})"
+        )
+
+        try:
+            from virtual_agora.ui.human_in_the_loop import (
+                get_topic_conclusion_confirmation,
+            )
+
+            confirmation_result = get_topic_conclusion_confirmation(
+                current_topic=current_topic,
+                current_round=current_round,
+                vote_results={
+                    "passed": vote_passed,
+                    "yes_votes": yes_votes,
+                    "total_votes": total_votes,
+                },
+            )
+
+            return {
+                "user_topic_conclusion_decision": confirmation_result,
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting user topic conclusion confirmation: {e}")
+            # Default to confirming the agent vote
+            return {
+                "user_topic_conclusion_decision": "confirm",
+            }
 
     def end_topic_poll_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
         """Poll agents on topic conclusion.
@@ -3031,11 +3091,11 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
         return updates
 
     def user_turn_participation_node(self, state: VirtualAgoraState) -> Dict[str, Any]:
-        """HITL node for user participation at turn start.
+        """HITL node for Round Moderator between rounds.
 
-        New feature allowing users to participate in discussions from turn 2 onwards.
-        Users can: continue discussion, participate, or finalize topic.
-        Shows previous round summary for context.
+        Round Moderator feature allowing users to guide discussion flow from round 1 onwards.
+        Users can: participate (guide next round), continue (let agents proceed), or end topic.
+        Shows previous round summary for strategic context.
         """
         logger.info("=== USER_TURN_PARTICIPATION NODE START ===")
 
@@ -3102,24 +3162,21 @@ Please provide your thoughts on '{current_topic}'. Provide a thorough and collab
 
         # If user chose to participate, add their message to the discussion
         if action == "participate" and user_message:
-            from langchain_core.messages import HumanMessage
-
-            # Create user message with proper metadata
-            user_msg = HumanMessage(
-                content=user_message,
-                additional_kwargs={
-                    "speaker_id": "user",
-                    "speaker_role": "user",
-                    "round": current_round,
-                    "topic": current_topic,
-                    "timestamp": datetime.now().isoformat(),
-                    "participation_type": "user_turn_participation",
-                },
+            # Use FlowStateManager to apply user participation with coordinated state management
+            user_message_updates = self.flow_state_manager.apply_user_participation(
+                user_input=user_message,
+                state=state,
+                current_round=current_round,
+                topic=current_topic,
+                participation_type="user_turn_participation",
+                use_next_round=True,  # Store for next round as user participation happens before discussion
             )
 
-            # Add to messages (uses add_messages reducer)
-            updates["messages"] = [user_msg]
-            logger.info(f"Added user participation message to round {current_round}")
+            # Merge message updates
+            updates.update(user_message_updates)
+            logger.info(
+                f"Added Round Moderator guidance message for upcoming round {current_round + 1}"
+            )
 
         # Set flags for routing decisions
         if action == "finalize":

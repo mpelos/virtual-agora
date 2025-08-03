@@ -907,12 +907,12 @@ def get_user_turn_participation(
     current_topic: str,
     previous_round_summary: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Get user participation choice at the start of each turn.
+    """Get Round Moderator decision between rounds.
 
-    Implements the new user participation feature allowing users to:
-    - Continue the discussion with agents
-    - Participate by adding their own message
-    - Finalize the current topic
+    Implements the Round Moderator feature allowing users to guide discussion flow:
+    - 🗣️ Participate: Add thoughts/questions to guide the next round
+    - ➡️ Continue: Let agents proceed with their current trajectory
+    - 🏁 End Topic: Move to conclusion and voting
 
     Args:
         current_round: The current discussion round number
@@ -920,16 +920,16 @@ def get_user_turn_participation(
         previous_round_summary: Summary of the previous round (if available)
 
     Returns:
-        Dict containing user choice and optional message
+        Dict containing moderator decision and optional guidance message
     """
     console.clear()
 
-    # Display header
+    # Display header with Round Moderator terminology
     console.print(
         Panel(
-            f"[bold cyan]Turn {current_round} - User Participation[/bold cyan]",
+            f"[bold yellow]Round {current_round} - Round Moderator[/bold yellow]",
             subtitle=f"Topic: {current_topic}",
-            border_style="cyan",
+            border_style="yellow",
             padding=(1, 2),
         )
     )
@@ -942,39 +942,47 @@ def get_user_turn_participation(
             current_round, current_topic, previous_round_summary
         )
 
-    # Show options
+    # Show Round Moderator options
     console.print()
     options_text = """
-    [bold]Your Options:[/bold]
-    [green]c[/green] - [green]Continue[/green] the discussion (let agents proceed)
-    [blue]p[/blue] - [blue]Participate[/blue] in the discussion (add your message)
-    [red]f[/red] - [red]Finalize[/red] this topic (move to conclusion)
+    [bold]Your Three Options Each Round:[/bold]
+    [blue]🗣️  p[/blue] - [blue]🗣️ Participate[/blue]: Add your thoughts/questions to guide the next round
+    [green]➡️  c[/green] - [green]➡️ Continue[/green]: Let agents proceed with their current trajectory
+    [red]🏁 f[/red] - [red]🏁 End Topic[/red]: Move to conclusion and voting
     """
-    console.print(Panel(options_text, box=box.ROUNDED))
+    console.print(
+        Panel(
+            options_text,
+            title="[bold yellow]Round Moderator Options[/bold yellow]",
+            box=box.ROUNDED,
+        )
+    )
 
     while True:
         try:
             action = Prompt.ask(
-                "Select your action",
+                "Choose your next steps",
                 choices=["c", "p", "f"],
                 default="c",
                 console=console,
             ).lower()
 
             if action == "c":
-                # Continue discussion
+                # Continue discussion - Round Moderator lets agents proceed
                 record_input("user_turn_participation", "continue")
-                console.print("[green]✓ Continuing discussion with agents[/green]")
+                console.print(
+                    "[green]➡️ Letting agents proceed with their current trajectory[/green]"
+                )
                 return {
                     "action": "continue",
                     "user_message": None,
                 }
 
             elif action == "p":
-                # User wants to participate
+                # Round Moderator wants to participate
                 console.print()
                 console.print(
-                    "[bold]Enter your message to add to the discussion:[/bold]"
+                    "[bold blue]🗣️ Enter your message to guide the next round:[/bold blue]"
                 )
                 console.print(
                     "[dim](Press Enter twice to finish multi-line input)[/dim]"
@@ -1023,7 +1031,9 @@ def get_user_turn_participation(
                         "participate",
                         {"message": user_message},
                     )
-                    console.print("[blue]✓ Message added to discussion[/blue]")
+                    console.print(
+                        "[blue]🗣️ Your guidance added to guide the next round[/blue]"
+                    )
                     return {
                         "action": "participate",
                         "user_message": user_message,
@@ -1034,12 +1044,12 @@ def get_user_turn_participation(
 
             else:  # finalize
                 if Confirm.ask(
-                    "Are you sure you want to finalize this topic?",
+                    "Are you sure you want to end this topic and move to conclusion?",
                     default=False,
                     console=console,
                 ):
                     record_input("user_turn_participation", "finalize")
-                    console.print("[red]✓ Finalizing topic[/red]")
+                    console.print("[red]🏁 Moving to topic conclusion and voting[/red]")
                     return {
                         "action": "finalize",
                         "user_message": None,
@@ -1050,6 +1060,106 @@ def get_user_turn_participation(
 
         except KeyboardInterrupt:
             handle_interrupt("user_turn_participation")
+
+
+def get_topic_conclusion_confirmation(
+    current_topic: str, current_round: int, vote_results: Dict[str, Any]
+) -> str:
+    """Get user confirmation for topic conclusion after agent vote.
+
+    Args:
+        current_topic: The topic being discussed
+        current_round: The current round number
+        vote_results: Dictionary with vote results including passed, yes_votes, total_votes
+
+    Returns:
+        "confirm" to proceed with conclusion, "continue" to override and continue discussion
+    """
+    console.clear()
+
+    # Display vote results
+    vote_passed = vote_results.get("passed", False)
+    yes_votes = vote_results.get("yes_votes", 0)
+    total_votes = vote_results.get("total_votes", 0)
+
+    vote_status = "PASSED" if vote_passed else "FAILED"
+    vote_color = "green" if vote_passed else "red"
+
+    console.print(
+        Panel(
+            f"[bold {vote_color}]Agent Vote: {vote_status}[/bold {vote_color}]\n\n"
+            f"Topic: {current_topic}\n"
+            f"Round: {current_round}\n"
+            f"Vote Result: {yes_votes}/{total_votes} agents voted to conclude",
+            title="[bold blue]Topic Conclusion Vote Results[/bold blue]",
+            border_style="blue",
+            padding=(1, 2),
+        )
+    )
+
+    # Show options
+    if vote_passed:
+        console.print(
+            "\n[bold green]The agents have voted to conclude this topic.[/bold green]"
+        )
+        console.print("As the moderator, you can:")
+        console.print(
+            "• [green]Confirm[/green] the decision and move to topic conclusion"
+        )
+        console.print(
+            "• [yellow]Override[/yellow] the agents and continue the discussion"
+        )
+    else:
+        console.print(
+            "\n[bold red]The agents have voted to continue the discussion.[/bold red]"
+        )
+        console.print("As the moderator, you can:")
+        console.print("• [green]Confirm[/green] the decision and continue discussion")
+        console.print(
+            "• [yellow]Override[/yellow] the agents and force topic conclusion"
+        )
+
+    console.print()
+
+    while True:
+        try:
+            if vote_passed:
+                action = Prompt.ask(
+                    "Confirm topic conclusion?",
+                    choices=["y", "n"],
+                    default="y",
+                    console=console,
+                ).lower()
+
+                if action == "y":
+                    record_input("topic_conclusion_confirmation", "confirm")
+                    console.print("[green]✓ Topic conclusion confirmed[/green]")
+                    return "confirm"
+                else:
+                    record_input("topic_conclusion_confirmation", "continue")
+                    console.print(
+                        "[yellow]⚡ Overriding agents - continuing discussion[/yellow]"
+                    )
+                    return "continue"
+            else:
+                action = Prompt.ask(
+                    "Force topic conclusion despite agent vote?",
+                    choices=["y", "n"],
+                    default="n",
+                    console=console,
+                ).lower()
+
+                if action == "y":
+                    record_input("topic_conclusion_confirmation", "force_conclude")
+                    console.print("[yellow]⚡ Forcing topic conclusion[/yellow]")
+                    return "confirm"
+                else:
+                    record_input("topic_conclusion_confirmation", "continue")
+                    console.print("[green]✓ Continuing discussion as voted[/green]")
+                    return "continue"
+
+        except KeyboardInterrupt:
+            handle_interrupt("topic_conclusion_confirmation")
 
 
 def get_input_with_timeout(

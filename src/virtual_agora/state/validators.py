@@ -310,9 +310,17 @@ class StateValidator:
         # Check agent message counts
         agent_msg_counts: Dict[str, int] = {}
         for msg in state["messages"]:
-            agent_msg_counts[msg["speaker_id"]] = (
-                agent_msg_counts.get(msg["speaker_id"], 0) + 1
-            )
+            # Safely extract speaker_id from both AIMessage objects and dict formats
+            if hasattr(
+                msg, "content"
+            ):  # LangChain BaseMessage (AIMessage, HumanMessage, etc.)
+                speaker_id = getattr(msg, "additional_kwargs", {}).get(
+                    "speaker_id", "unknown"
+                )
+            else:  # Virtual Agora dict format
+                speaker_id = msg.get("speaker_id", "unknown")
+
+            agent_msg_counts[speaker_id] = agent_msg_counts.get(speaker_id, 0) + 1
 
         for agent_id, count in agent_msg_counts.items():
             if agent_id in state["agents"]:

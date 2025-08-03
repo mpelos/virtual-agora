@@ -114,6 +114,7 @@ class LLMAgent:
         self.tools = list(tools) if tools else []
         self._tool_bound_llm = None
         self._tool_node = None
+        self._current_state = None  # Store current state for context-aware operations
 
         # Extract model info from LLM
         self.model = getattr(llm, "model_name", "unknown")
@@ -335,7 +336,11 @@ class LLMAgent:
                     messages.append(AIMessage(content=msg["content"]))
 
         # Load document context and inject before current prompt
-        document_context = load_context_documents()
+        # Only load context if it's relevant to complex topics (skip for simple discussion topics)
+        document_context = ""
+        if self._should_load_context(self._current_state):
+            document_context = load_context_documents()
+
         enhanced_prompt = prompt
         if document_context:
             enhanced_prompt = f"{document_context}\n{prompt}"
@@ -344,6 +349,97 @@ class LLMAgent:
         messages.append(HumanMessage(content=enhanced_prompt))
 
         return messages
+
+    def format_messages_with_context_builder(
+        self, state: VirtualAgoraState, prompt: str, **context_kwargs
+    ) -> List[BaseMessage]:
+        """Format messages using centralized context builders.
+
+        This method attempts to use the new context builder architecture for
+        enhanced context assembly. Falls back to traditional format_messages
+        if context builders are not available or if there's an error.
+
+        Args:
+            state: Application state
+            prompt: The current prompt/question
+            **context_kwargs: Additional context parameters
+
+        Returns:
+            List of formatted messages
+        """
+        try:
+            from virtual_agora.context.builders import get_context_builder
+
+            # Determine which context builder to use based on context
+            agent_type = context_kwargs.get("context_type", "discussion")
+
+            # Special handling for discussion rounds
+            if "current_round" in context_kwargs and "agent_position" in context_kwargs:
+                agent_type = "discussion_round"
+
+            # Get the appropriate context builder
+            context_builder = get_context_builder(agent_type)
+
+            # Build context data
+            context_data = context_builder.build_context(
+                state=state,
+                system_prompt=self.system_prompt,
+                agent_id=self.agent_id,
+                **context_kwargs,
+            )
+
+            # Check if we have pre-formatted context messages (from DiscussionRoundContextBuilder)
+            if (
+                hasattr(context_data, "formatted_context_messages")
+                and context_data.formatted_context_messages
+            ):
+                logger.debug(
+                    f"Using pre-formatted context messages for {self.agent_id}"
+                )
+
+                # Use the ContextAwareMixin method if available, otherwise format manually
+                if hasattr(self, "format_messages_with_prebuilt_context"):
+                    return self.format_messages_with_prebuilt_context(
+                        prompt=prompt,
+                        formatted_context_messages=context_data.formatted_context_messages,
+                        include_system=True,
+                    )
+                else:
+                    # Manual formatting for agents without ContextAwareMixin
+                    messages = []
+                    if self.system_prompt:
+                        messages.append(SystemMessage(content=self.system_prompt))
+                    messages.extend(context_data.formatted_context_messages)
+                    messages.append(HumanMessage(content=prompt))
+                    return messages
+
+            # Fallback to ContextAwareMixin if available
+            elif hasattr(self, "format_messages_with_context"):
+                logger.debug(f"Using ContextAwareMixin for {self.agent_id}")
+                return self.format_messages_with_context(
+                    state=state, prompt=prompt, **context_kwargs
+                )
+
+            # Final fallback to basic context assembly
+            else:
+                logger.debug(f"Using basic context assembly for {self.agent_id}")
+                # Extract legacy context messages if available
+                context_messages = context_kwargs.get("context_messages", [])
+                return self.format_messages(
+                    prompt=prompt,
+                    context_messages=context_messages,
+                    include_system=True,
+                )
+
+        except Exception as e:
+            logger.warning(f"Context builder failed for {self.agent_id}: {e}")
+            logger.debug("Falling back to traditional context assembly")
+
+            # Fallback to traditional format_messages
+            context_messages = context_kwargs.get("context_messages", [])
+            return self.format_messages(
+                prompt=prompt, context_messages=context_messages, include_system=True
+            )
 
     def generate_response(
         self,
@@ -696,6 +792,94 @@ class LLMAgent:
             logger.error(f"Agent {self.agent_id} failed to async stream response: {e}")
             raise
 
+    def _should_load_context(
+        self,
+        state: Optional[Union[VirtualAgoraState, MessagesState, Dict[str, Any]]] = None,
+    ) -> bool:
+        """Determine if context documents should be loaded based on topic complexity.
+
+        This method checks if the current topic requires context documents or if it's
+        a simple general discussion that doesn't need project-specific context.
+
+        Args:
+            state: Current state containing topic information
+
+        Returns:
+            True if context should be loaded, False otherwise
+        """
+        if not state:
+            return False
+
+        # Extract topic information from state
+        current_topic = None
+        if isinstance(state, dict):
+            current_topic = state.get("active_topic") or state.get("main_topic")
+        else:
+            current_topic = getattr(state, "active_topic", None) or getattr(
+                state, "main_topic", None
+            )
+
+        if not current_topic:
+            return False
+
+        # Convert topic to lowercase for case-insensitive matching
+        topic_lower = current_topic.lower()
+
+        # List of simple/general topics that don't need project context
+        simple_topics = [
+            "earth",
+            "flat",
+            "sphere",
+            "science",
+            "physics",
+            "hello",
+            "world",
+            "test",
+            "demo",
+            "example",
+            "simple",
+            "basic",
+            "general",
+            "weather",
+            "sports",
+            "philosophy",
+        ]
+
+        # Check if topic contains any simple topic keywords
+        for simple_topic in simple_topics:
+            if simple_topic in topic_lower:
+                logger.debug(
+                    f"Topic '{current_topic}' matched simple topic '{simple_topic}', skipping context loading"
+                )
+                return False
+
+        # List of project-specific topics that DO need context
+        project_topics = [
+            "zenrole",
+            "architecture",
+            "data model",
+            "mvp",
+            "system design",
+            "technical",
+            "development",
+            "api",
+            "database",
+        ]
+
+        # Check if topic contains project-specific keywords
+        for project_topic in project_topics:
+            if project_topic in topic_lower:
+                logger.debug(
+                    f"Topic '{current_topic}' matched project topic '{project_topic}', loading context"
+                )
+                return True
+
+        # Default: don't load context for unknown topics to prevent contamination
+        logger.debug(
+            f"Topic '{current_topic}' is unknown, defaulting to no context loading"
+        )
+        return False
+
     def create_message(self, content: str, topic: Optional[str] = None) -> Message:
         """Create a Message object for state tracking.
 
@@ -742,6 +926,9 @@ class LLMAgent:
         Returns:
             State updates dictionary
         """
+        # Store current state for context-aware operations
+        self._current_state = state
+
         # Handle different state types
         if isinstance(state, dict):
             # Check for VirtualAgoraState first (it also has messages)
@@ -1110,6 +1297,9 @@ class LLMAgent:
 
         # Use context_messages from kwargs (colleague messages) or filter from state as fallback
         context_messages = kwargs.get("context_messages", [])
+        logger.debug(
+            f"Agent {self.agent_id} received {len(context_messages)} context messages"
+        )
 
         # If no context_messages provided via kwargs, fall back to state-based filtering
         if not context_messages:
@@ -1144,21 +1334,35 @@ class LLMAgent:
             formatted_context_messages = []
             for msg in context_messages:
                 if isinstance(msg, HumanMessage):
+                    # Extract metadata from additional_kwargs if available
+                    metadata = getattr(msg, "additional_kwargs", {})
                     formatted_context_messages.append(
                         {
                             "id": str(uuid.uuid4()),
-                            "speaker_id": getattr(msg, "name", "unknown"),
-                            "speaker_role": "user",  # Colleague messages come as HumanMessage
+                            "speaker_id": metadata.get(
+                                "speaker_id", getattr(msg, "name", "unknown")
+                            ),
+                            "speaker_role": metadata.get("speaker_role", "user"),
                             "content": msg.content,
-                            "timestamp": datetime.now(),
-                            "phase": phase,
-                            "topic": topic,
+                            "timestamp": metadata.get(
+                                "timestamp", datetime.now().isoformat()
+                            ),
+                            "phase": metadata.get("phase", phase),
+                            "topic": metadata.get("topic", topic),
                         }
                     )
                 else:
                     # Keep existing format if already a dict
                     formatted_context_messages.append(msg)
             context_messages = formatted_context_messages
+
+        logger.debug(
+            f"Agent {self.agent_id} final context: {len(context_messages)} messages after formatting"
+        )
+        if context_messages:
+            logger.debug(
+                f"Agent {self.agent_id} context sample: {context_messages[0]['content'][:100] if isinstance(context_messages[0], dict) else str(context_messages[0])[:100]}..."
+            )
 
         # Generate response
         response = self.generate_response(
@@ -1232,6 +1436,9 @@ class LLMAgent:
 
         # Use context_messages from kwargs (colleague messages) or filter from state as fallback
         context_messages = kwargs.get("context_messages", [])
+        logger.debug(
+            f"Agent {self.agent_id} received {len(context_messages)} context messages"
+        )
 
         # If no context_messages provided via kwargs, fall back to state-based filtering
         if not context_messages:
@@ -1266,21 +1473,35 @@ class LLMAgent:
             formatted_context_messages = []
             for msg in context_messages:
                 if isinstance(msg, HumanMessage):
+                    # Extract metadata from additional_kwargs if available
+                    metadata = getattr(msg, "additional_kwargs", {})
                     formatted_context_messages.append(
                         {
                             "id": str(uuid.uuid4()),
-                            "speaker_id": getattr(msg, "name", "unknown"),
-                            "speaker_role": "user",  # Colleague messages come as HumanMessage
+                            "speaker_id": metadata.get(
+                                "speaker_id", getattr(msg, "name", "unknown")
+                            ),
+                            "speaker_role": metadata.get("speaker_role", "user"),
                             "content": msg.content,
-                            "timestamp": datetime.now(),
-                            "phase": phase,
-                            "topic": topic,
+                            "timestamp": metadata.get(
+                                "timestamp", datetime.now().isoformat()
+                            ),
+                            "phase": metadata.get("phase", phase),
+                            "topic": metadata.get("topic", topic),
                         }
                     )
                 else:
                     # Keep existing format if already a dict
                     formatted_context_messages.append(msg)
             context_messages = formatted_context_messages
+
+        logger.debug(
+            f"Agent {self.agent_id} final context (async): {len(context_messages)} messages after formatting"
+        )
+        if context_messages:
+            logger.debug(
+                f"Agent {self.agent_id} context sample (async): {context_messages[0]['content'][:100] if isinstance(context_messages[0], dict) else str(context_messages[0])[:100]}..."
+            )
 
         response = await self.generate_response_async(prompt, context_messages[-10:])
 

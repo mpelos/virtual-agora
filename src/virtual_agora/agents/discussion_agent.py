@@ -14,6 +14,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 from virtual_agora.agents.llm_agent import LLMAgent
+from virtual_agora.context.agent_mixin import ContextAwareMixin
 from virtual_agora.state.schema import Message, Vote, VirtualAgoraState
 from virtual_agora.utils.logging import get_logger
 
@@ -36,7 +37,7 @@ class VoteType(Enum):
     AGENDA_MODIFICATION = "agenda_modification"
 
 
-class DiscussionAgent(LLMAgent):
+class DiscussionAgent(ContextAwareMixin, LLMAgent):
     """Discussion agent that participates in structured debates.
 
     This class extends LLMAgent with functionality specific to Virtual Agora

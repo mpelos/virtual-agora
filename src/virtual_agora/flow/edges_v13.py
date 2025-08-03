@@ -8,6 +8,7 @@ from typing import Literal
 from virtual_agora.state.schema import VirtualAgoraState
 from virtual_agora.flow.context_window import ContextWindowManager
 from virtual_agora.flow.cycle_detection import CyclePreventionManager
+from virtual_agora.flow.round_manager import RoundManager
 from virtual_agora.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -32,6 +33,7 @@ class V13FlowConditions:
         self.checkpoint_interval = checkpoint_interval
         self.context_manager = ContextWindowManager()
         self.cycle_manager = CyclePreventionManager()
+        self.round_manager = RoundManager()
 
     # ===== Phase 1 Conditions =====
 
@@ -110,7 +112,7 @@ class V13FlowConditions:
     def check_round_threshold(
         self, state: VirtualAgoraState
     ) -> Literal["start_polling", "continue_discussion"]:
-        """Determine if polling should start (round >= 2).
+        """Determine if polling should start (round >= 3).
 
         Args:
             state: Current state
@@ -118,16 +120,16 @@ class V13FlowConditions:
         Returns:
             Next node based on round number
         """
-        current_round = state.get("current_round", 0)
+        current_round = self.round_manager.get_current_round(state)
 
-        if current_round >= 2:
+        if current_round >= 3:
             logger.debug(
-                f"Round {current_round} >= 2, enabling topic conclusion polling"
+                f"Round {current_round} >= 3, enabling topic conclusion polling"
             )
             return "start_polling"
         else:
             logger.debug(
-                f"Round {current_round} < 2, continuing discussion without poll"
+                f"Round {current_round} < 3, continuing discussion without poll"
             )
             return "continue_discussion"
 
@@ -144,7 +146,7 @@ class V13FlowConditions:
         Returns:
             Next node based on round number
         """
-        current_round = state.get("current_round", 0)
+        current_round = self.round_manager.get_current_round(state)
 
         # Check if this is a checkpoint interval
         if current_round % self.checkpoint_interval == 0 and current_round > 0:
@@ -534,10 +536,10 @@ class V13FlowConditions:
     def should_show_user_participation(
         self, state: VirtualAgoraState
     ) -> Literal["user_participation", "continue_flow"]:
-        """Determine if user participation should be shown.
+        """Determine if Round Moderator should be shown.
 
-        User participation is shown from round 2 onwards, before the discussion
-        continues with agents.
+        Round Moderator is shown from round 1 onwards (after first round completes),
+        allowing users to guide discussion flow between rounds.
 
         Args:
             state: Current state
@@ -545,32 +547,56 @@ class V13FlowConditions:
         Returns:
             Next node: "user_participation" if should show, "continue_flow" otherwise
         """
-        current_round = state.get("current_round", 0)
+        current_round = self.round_manager.get_current_round(state)
 
-        # Only show user participation from round 2 onwards
-        if current_round >= 2:
-            logger.debug(f"Round {current_round} >= 2, showing user participation")
+        # Only show Round Moderator from round 1 onwards (after first round completes)
+        if current_round >= 1:
+            logger.debug(f"Round {current_round} >= 1, showing Round Moderator")
             return "user_participation"
         else:
-            logger.debug(f"Round {current_round} < 2, skipping user participation")
+            logger.debug(f"Round {current_round} < 1, skipping Round Moderator")
             return "continue_flow"
 
     def evaluate_user_turn_decision(
         self, state: VirtualAgoraState
     ) -> Literal["continue_discussion", "conclude_topic"]:
-        """Evaluate user's turn participation decision.
+        """Evaluate Round Moderator's decision.
 
         Args:
             state: Current state
 
         Returns:
-            Next node based on user decision
+            Next node based on Round Moderator decision
         """
         user_decision = state.get("user_turn_decision", "continue")
 
         if user_decision == "finalize":
-            logger.info("User chose to finalize topic during turn participation")
+            logger.info("Round Moderator chose to end topic and move to conclusion")
             return "conclude_topic"
         else:
-            logger.info(f"User chose '{user_decision}', continuing discussion")
+            logger.info(
+                f"Round Moderator chose '{user_decision}', continuing discussion"
+            )
+            return "continue_discussion"
+
+    def evaluate_user_topic_conclusion_confirmation(
+        self, state: VirtualAgoraState
+    ) -> Literal["confirm_conclusion", "continue_discussion"]:
+        """Evaluate user's confirmation of topic conclusion after agent vote.
+
+        Args:
+            state: Current state
+
+        Returns:
+            Next node based on user confirmation
+        """
+        user_decision = state.get("user_topic_conclusion_decision", "confirm")
+
+        if user_decision == "confirm":
+            logger.info(
+                "User confirmed topic conclusion - proceeding to final considerations"
+            )
+            return "confirm_conclusion"
+        else:
+            logger.info("User overrode agent vote - continuing discussion")
             return "continue_discussion"

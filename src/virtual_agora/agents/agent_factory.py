@@ -13,12 +13,36 @@ from virtual_agora.agents.discussion_agent import DiscussionAgent
 from virtual_agora.agents.moderator import ModeratorAgent
 from virtual_agora.agents.summarizer import SummarizerAgent
 from virtual_agora.agents.report_writer_agent import ReportWriterAgent
-from virtual_agora.config.models import Config, AgentConfig, ModeratorConfig
+from virtual_agora.config.models import Config, AgentConfig, ModeratorConfig, Provider
 from virtual_agora.providers.factory import ProviderFactory
 from virtual_agora.utils.logging import get_logger
 from virtual_agora.utils.exceptions import ConfigurationError
 
 logger = get_logger(__name__)
+
+
+def get_provider_value_safe(provider):
+    """Safely get provider value from either Provider enum or string.
+
+    This function handles the case where provider might be:
+    - A Provider enum object (from config) -> use .value
+    - A string (from state) -> use directly
+
+    Args:
+        provider: Either a Provider enum or string
+
+    Returns:
+        str: The provider value as string
+    """
+    if hasattr(provider, "value"):
+        # It's a Provider enum object
+        return provider.value
+    elif isinstance(provider, str):
+        # It's already a string from state
+        return provider
+    else:
+        # Fallback - try to convert to string
+        return str(provider)
 
 
 class AgentFactory:
@@ -76,7 +100,7 @@ class AgentFactory:
         try:
             # Create provider configuration for moderator
             provider_config = {
-                "provider": self.config.moderator.provider.value,
+                "provider": get_provider_value_safe(self.config.moderator.provider),
                 "model": self.config.moderator.model,
             }
 
@@ -113,7 +137,7 @@ class AgentFactory:
         try:
             # Create provider configuration for summarizer
             provider_config = {
-                "provider": self.config.summarizer.provider.value,
+                "provider": get_provider_value_safe(self.config.summarizer.provider),
                 "model": self.config.summarizer.model,
             }
 
@@ -154,7 +178,7 @@ class AgentFactory:
         try:
             # Create provider configuration for report writer
             provider_config = {
-                "provider": self.config.report_writer.provider.value,
+                "provider": get_provider_value_safe(self.config.report_writer.provider),
                 "model": self.config.report_writer.model,
                 "timeout": 300,  # Extended timeout for complex report generation (5 minutes)
             }
@@ -192,7 +216,7 @@ class AgentFactory:
 
         # Create provider configuration
         provider_config = {
-            "provider": agent_config.provider.value,
+            "provider": get_provider_value_safe(agent_config.provider),
             "model": agent_config.model,
         }
 
@@ -224,12 +248,12 @@ class AgentFactory:
         if not agents:
             raise ConfigurationError(
                 f"Failed to create any agents for configuration: "
-                f"{agent_config.provider.value}:{agent_config.model}"
+                f"{get_provider_value_safe(agent_config.provider)}:{agent_config.model}"
             )
 
         logger.info(
             f"Created {len(agents)}/{agent_config.count} agents for "
-            f"{agent_config.provider.value}:{agent_config.model}"
+            f"{get_provider_value_safe(agent_config.provider)}:{agent_config.model}"
         )
 
         return agents
@@ -318,7 +342,7 @@ class AgentFactory:
             )
 
             agent_detail = {
-                "provider": agent_config.provider.value,
+                "provider": get_provider_value_safe(agent_config.provider),
                 "model": agent_config.model,
                 "expected_count": agent_config.count,
                 "created_count": created_count,
@@ -508,7 +532,7 @@ def validate_agent_requirements(config: Config) -> Dict[str, Any]:
     # Analyze diversity
     for agent_config in config.agents:
         results["unique_models"].add(agent_config.model)
-        results["providers"].add(agent_config.provider.value)
+        results["providers"].add(get_provider_value_safe(agent_config.provider))
 
     # Recommendations
     if len(results["unique_models"]) == 1:

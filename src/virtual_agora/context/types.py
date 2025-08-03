@@ -24,7 +24,7 @@ class ContextData:
     # User's initial input/theme
     user_input: Optional[str] = None
 
-    # Topic-specific discussion messages
+    # Topic-specific discussion messages (legacy - use processed messages instead)
     topic_messages: List[Message] = None
 
     # Round summaries (all or topic-specific)
@@ -39,6 +39,20 @@ class ContextData:
     # Content to summarize (for summarizers)
     content_to_summarize: Optional[List[str]] = None
 
+    # NEW: Processed message types for enhanced context assembly
+
+    # User participation messages from previous rounds
+    user_participation_messages: Optional[List[Any]] = None  # List[ProcessedMessage]
+
+    # Current round messages from colleagues
+    current_round_messages: Optional[List[Any]] = None  # List[ProcessedMessage]
+
+    # Additional metadata for context validation and debugging
+    metadata: Optional[Dict[str, Any]] = None
+
+    # Formatted context messages ready for LangChain
+    formatted_context_messages: Optional[List[Any]] = None  # List[BaseMessage]
+
     def __post_init__(self):
         """Initialize mutable defaults."""
         if self.topic_messages is None:
@@ -47,6 +61,14 @@ class ContextData:
             self.round_summaries = []
         if self.topic_reports is None:
             self.topic_reports = {}
+        if self.user_participation_messages is None:
+            self.user_participation_messages = []
+        if self.current_round_messages is None:
+            self.current_round_messages = []
+        if self.metadata is None:
+            self.metadata = {}
+        if self.formatted_context_messages is None:
+            self.formatted_context_messages = []
 
     @property
     def has_context_documents(self) -> bool:
@@ -72,3 +94,13 @@ class ContextData:
     def has_topic_reports(self) -> bool:
         """Check if topic reports are available."""
         return len(self.topic_reports) > 0
+
+    @property
+    def has_user_participation_messages(self) -> bool:
+        """Check if user participation messages are available."""
+        return len(self.user_participation_messages) > 0
+
+    @property
+    def has_current_round_messages(self) -> bool:
+        """Check if current round messages are available."""
+        return len(self.current_round_messages) > 0

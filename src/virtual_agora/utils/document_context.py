@@ -155,9 +155,17 @@ def get_detailed_context_info(context_dir: str = "context") -> Dict[str, any]:
                 # Count tokens
                 if text_splitter:
                     try:
-                        # Use the tokenizer to count tokens
-                        # The text splitter has a method to count tokens
-                        tokens = len(text_splitter._tokenizer.encode(content))
+                        # Check if text_splitter has a proper tokenizer method
+                        if hasattr(text_splitter, "_tokenizer") and hasattr(
+                            text_splitter._tokenizer, "encode"
+                        ):
+                            tokens = len(text_splitter._tokenizer.encode(content))
+                        elif hasattr(text_splitter, "count_tokens"):
+                            # Some text splitters have a count_tokens method
+                            tokens = text_splitter.count_tokens(content)
+                        else:
+                            # Fallback to approximation if no tokenizer available
+                            tokens = len(content) // 4
                     except Exception as e:
                         logger.debug(f"Token counting failed for {file_path.name}: {e}")
                         # Fallback to approximation

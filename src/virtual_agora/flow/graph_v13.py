@@ -38,7 +38,77 @@ from .nodes_v13 import V13FlowNodes
 from .edges_v13 import V13FlowConditions
 from .interrupt_manager import get_interrupt_manager
 
+# Import new discussion round components
+from .nodes.discussion_round import DiscussionRoundNode
+from .participation_strategies import ParticipationTiming, create_participation_strategy
+
+# Import new orchestrator components
+from .orchestrator import DiscussionFlowOrchestrator
+from .node_registry import (
+    NodeRegistry,
+    create_default_v13_registry,
+    create_hybrid_v13_registry,
+)
+from .routing import FlowRouter, create_flow_router
+from .error_recovery import ErrorRecoveryManager, create_error_recovery_manager
+
+# Import agenda node factory for Step 3.2
+from .nodes.agenda.factory import AgendaNodeFactory
+
+# Import the full DiscussionFlowConfig instead of duplicating it
+try:
+    from ..config.discussion_config import DiscussionFlowConfig
+except ImportError:
+    # Fallback simple config if discussion_config module not available
+    class DiscussionFlowConfig:
+        """Simple fallback configuration for discussion flow behavior."""
+
+        def __init__(self):
+            # Default to current behavior (end-of-round) for backward compatibility
+            self.user_participation_timing = ParticipationTiming.END_OF_ROUND
+
+        def create_discussion_node(
+            self, flow_state_manager, discussing_agents, specialized_agents
+        ):
+            """Create discussion round node with configured timing strategy."""
+            participation_strategy = create_participation_strategy(
+                self.user_participation_timing
+            )
+            return DiscussionRoundNode(
+                flow_state_manager=flow_state_manager,
+                discussing_agents=discussing_agents,
+                specialized_agents=specialized_agents,
+                participation_strategy=participation_strategy,
+            )
+
+        def get_timing_description(self) -> str:
+            """Get human-readable description of current timing configuration."""
+            descriptions = {
+                ParticipationTiming.START_OF_ROUND: "User guides discussion before agents speak",
+                ParticipationTiming.END_OF_ROUND: "User responds after agents complete discussion",
+                ParticipationTiming.DISABLED: "No user participation during discussion rounds",
+            }
+            return descriptions.get(
+                self.user_participation_timing, "Unknown timing mode"
+            )
+
+
 logger = get_logger(__name__)
+
+
+def get_provider_value_safe(provider):
+    """Safely get provider value from either Provider enum or string.
+
+    Args:
+        provider: Either a Provider enum or string
+
+    Returns:
+        str: The provider value as string
+    """
+    if hasattr(provider, "value"):
+        return provider.value
+    else:
+        return provider
 
 
 class VirtualAgoraV13Flow:
@@ -57,6 +127,7 @@ class VirtualAgoraV13Flow:
         config: VirtualAgoraConfig,
         enable_monitoring: bool = True,
         checkpoint_interval: int = 3,
+        discussion_config: Optional[DiscussionFlowConfig] = None,
     ):
         """Initialize the v1.3 flow with configuration.
 
@@ -64,6 +135,7 @@ class VirtualAgoraV13Flow:
             config: Virtual Agora configuration
             enable_monitoring: Whether to enable flow monitoring and debugging
             checkpoint_interval: Number of rounds between periodic user checkpoints
+            discussion_config: Configuration for discussion flow behavior (user participation timing)
         """
         self.config = config
         self.checkpoint_interval = checkpoint_interval
@@ -71,6 +143,9 @@ class VirtualAgoraV13Flow:
         self.graph: Optional[StateGraph] = None
         self.compiled_graph: Optional[Any] = None
         self.checkpointer = create_enhanced_checkpointer()
+
+        # Initialize discussion configuration (defaults to current behavior for backward compatibility)
+        self.discussion_config = discussion_config or DiscussionFlowConfig()
 
         # Initialize monitoring and debugging
         self.monitoring_enabled = enable_monitoring
@@ -95,11 +170,30 @@ class VirtualAgoraV13Flow:
         )
         self.conditions = V13FlowConditions(self.checkpoint_interval)
 
+        # Initialize unified discussion round node
+        self.unified_discussion_node = self._create_unified_discussion_node()
+
+        # Create agenda node factory for extracted nodes
+        self.agenda_node_factory = self._create_agenda_node_factory()
+
+        # Initialize orchestrator components (error recovery manager must come first)
+        self.error_recovery_manager = create_error_recovery_manager()
+        self.flow_router = create_flow_router(self.conditions)
+
+        # Create hybrid registry (uses error recovery manager)
+        self.node_registry = self._create_hybrid_node_registry()
+
+        self.orchestrator = DiscussionFlowOrchestrator(
+            node_registry=self.node_registry,
+            conditions=self.conditions,
+            flow_state_manager=self.nodes.flow_state_manager,
+        )
+
     def _initialize_agents(self) -> None:
         """Initialize all specialized agents and discussing agents."""
         # Create moderator (facilitation only in v1.3)
         moderator_llm = create_provider(
-            provider=self.config.moderator.provider.value,
+            provider=get_provider_value_safe(self.config.moderator.provider),
             model=self.config.moderator.model,
             temperature=getattr(self.config.moderator, "temperature", 0.7),
             max_tokens=getattr(self.config.moderator, "max_tokens", None),
@@ -112,7 +206,7 @@ class VirtualAgoraV13Flow:
         # Create summarizer
         if hasattr(self.config, "summarizer"):
             summarizer_llm = create_provider(
-                provider=self.config.summarizer.provider.value,
+                provider=get_provider_value_safe(self.config.summarizer.provider),
                 model=self.config.summarizer.model,
                 temperature=getattr(self.config.summarizer, "temperature", 0.7),
                 max_tokens=getattr(self.config.summarizer, "max_tokens", None),
@@ -131,7 +225,7 @@ class VirtualAgoraV13Flow:
         # Create report writer agent
         if hasattr(self.config, "report_writer"):
             report_writer_llm = create_provider(
-                provider=self.config.report_writer.provider.value,
+                provider=get_provider_value_safe(self.config.report_writer.provider),
                 model=self.config.report_writer.model,
                 temperature=getattr(self.config.report_writer, "temperature", 0.6),
                 max_tokens=getattr(self.config.report_writer, "max_tokens", None),
@@ -151,7 +245,7 @@ class VirtualAgoraV13Flow:
         agent_counter = 0
         for agent_config in self.config.agents:
             provider_llm = create_provider(
-                provider=agent_config.provider.value,
+                provider=get_provider_value_safe(agent_config.provider),
                 model=agent_config.model,
                 temperature=getattr(agent_config, "temperature", 0.7),
                 max_tokens=getattr(agent_config, "max_tokens", None),
@@ -172,6 +266,91 @@ class VirtualAgoraV13Flow:
                 self.discussing_agents.append(agent)
                 logger.debug(f"Initialized discussing agent: {agent_id}")
 
+    def _create_unified_discussion_node(self) -> DiscussionRoundNode:
+        """Create unified discussion round node with configured participation timing.
+
+        Returns:
+            DiscussionRoundNode configured with the current discussion configuration
+        """
+        # Get FlowStateManager from V13FlowNodes for compatibility
+        flow_state_manager = self.nodes.flow_state_manager
+
+        # Create the unified discussion node using our configuration
+        unified_node = self.discussion_config.create_discussion_node(
+            flow_state_manager=flow_state_manager,
+            discussing_agents=self.discussing_agents,
+            specialized_agents=self.specialized_agents,
+        )
+
+        logger.info(
+            f"Created unified discussion node with {self.discussion_config.get_timing_description()}"
+        )
+        return unified_node
+
+    def _create_agenda_node_factory(self) -> AgendaNodeFactory:
+        """Create factory for agenda nodes with proper dependencies.
+
+        Returns:
+            AgendaNodeFactory configured with required agents
+
+        Raises:
+            ValueError: If required agents are not available
+        """
+        moderator_agent = self.specialized_agents.get("moderator")
+        if not moderator_agent:
+            raise ValueError("Moderator agent not available for agenda node factory")
+
+        if not self.discussing_agents:
+            raise ValueError("No discussing agents available for agenda node factory")
+
+        factory = AgendaNodeFactory(
+            moderator_agent=moderator_agent, discussing_agents=self.discussing_agents
+        )
+
+        logger.info(
+            f"Created agenda node factory with moderator '{moderator_agent.agent_id}' "
+            f"and {len(self.discussing_agents)} discussing agents"
+        )
+        return factory
+
+    def _create_hybrid_node_registry(self) -> Dict[str, Any]:
+        """Create hybrid node registry with extracted + V13 wrapped nodes.
+
+        Returns:
+            Dictionary mapping node names to FlowNode instances
+        """
+        registry = create_hybrid_v13_registry(
+            v13_nodes=self.nodes,
+            agenda_node_factory=self.agenda_node_factory,
+            unified_discussion_node=self.unified_discussion_node,
+        )
+
+        # Register custom error recovery strategies for critical nodes
+        self.error_recovery_manager.register_recovery_strategy(
+            "discussion_round", self._discussion_round_recovery
+        )
+        self.error_recovery_manager.register_recovery_strategy(
+            "user_approval", self._user_approval_recovery
+        )
+
+        # Log hybrid registry summary
+        all_nodes = registry.get_all_nodes()
+        extracted_count = len(
+            [
+                name
+                for name, meta in registry._node_metadata.items()
+                if meta.get("extracted", False)
+            ]
+        )
+        v13_count = len(all_nodes) - extracted_count
+
+        logger.info(
+            f"Created hybrid node registry with {len(all_nodes)} total nodes: "
+            f"{extracted_count} extracted, {v13_count} V13 wrappers"
+        )
+
+        return all_nodes
+
     def build_graph(self) -> StateGraph:
         """Build the v1.3 Virtual Agora discussion flow graph.
 
@@ -186,23 +365,44 @@ class VirtualAgoraV13Flow:
         graph.add_node("agent_instantiation", self.nodes.agent_instantiation_node)
         graph.add_node("get_theme", self.nodes.get_theme_node)
 
-        # ===== Phase 1: Agenda Setting Nodes =====
-        graph.add_node("agenda_proposal", self.nodes.agenda_proposal_node)
-        graph.add_node("topic_refinement", self.nodes.topic_refinement_node)
-        graph.add_node("collate_proposals", self.nodes.collate_proposals_node)
-        graph.add_node("agenda_voting", self.nodes.agenda_voting_node)
-        graph.add_node("synthesize_agenda", self.nodes.synthesize_agenda_node)
-        graph.add_node("agenda_approval", self.nodes.agenda_approval_node)
+        # ===== Phase 1: Agenda Setting Nodes (HYBRID: Extracted + V13 Wrapped) =====
+        agenda_nodes = [
+            "agenda_proposal",
+            "topic_refinement",
+            "collate_proposals",
+            "agenda_voting",
+            "synthesize_agenda",
+            "agenda_approval",
+        ]
+
+        for node_name in agenda_nodes:
+            if node_name in self.node_registry:
+                node = self.node_registry[node_name]
+
+                # Check if this is an extracted FlowNode or V13 wrapper
+                if hasattr(node, "execute") and callable(node.execute):
+                    # Extracted FlowNode - use execute method
+                    graph.add_node(node_name, node.execute)
+                    logger.info(f"Added extracted agenda node: {node_name}")
+                else:
+                    # V13 wrapper - node is already a callable function
+                    graph.add_node(node_name, node)
+                    logger.info(f"Added V13 wrapper agenda node: {node_name}")
+            else:
+                logger.error(f"Agenda node '{node_name}' not found in hybrid registry")
 
         # ===== Phase 2: Discussion Loop Nodes =====
         graph.add_node("announce_item", self.nodes.announce_item_node)
-        graph.add_node("discussion_round", self.nodes.discussion_round_node)
+
+        # Use unified discussion round node that handles configurable user participation
+        graph.add_node("discussion_round", self.unified_discussion_node.execute)
+
         graph.add_node("round_summarization", self.nodes.round_summarization_node)
-        graph.add_node(
-            "user_turn_participation", self.nodes.user_turn_participation_node
-        )
         graph.add_node("end_topic_poll", self.nodes.end_topic_poll_node)
         graph.add_node("periodic_user_stop", self.nodes.periodic_user_stop_node)
+
+        # Legacy nodes (kept for backward compatibility but not used in unified flow)
+        # graph.add_node("user_turn_participation", self.nodes.user_turn_participation_node)
 
         # ===== Phase 3: Topic Conclusion Nodes =====
         graph.add_node("final_considerations", self.nodes.final_considerations_node)
@@ -258,27 +458,31 @@ class VirtualAgoraV13Flow:
             },
         )
 
-        # Phase 2: Discussion Flow
+        # Phase 2: Simplified Discussion Flow
         graph.add_edge("announce_item", "discussion_round")
-        graph.add_edge("discussion_round", "round_summarization")
 
-        # Conditional: Check if user participation should be shown (round >= 2)
+        # Unified discussion round handles user participation internally based on strategy
+        # Then goes directly to round summarization (unless user forces conclusion)
         graph.add_conditional_edges(
-            "round_summarization",
-            self.conditions.should_show_user_participation,
+            "discussion_round",
+            self.conditions.evaluate_user_turn_decision,  # Check for user-forced conclusion
             {
-                "user_participation": "user_turn_participation",
-                "continue_flow": "end_topic_poll",  # Skip user participation for round 1
+                "continue_discussion": "round_summarization",  # Normal flow: summarize the round
+                "conclude_topic": "final_considerations",  # User forced conclusion: skip to end
             },
         )
 
-        # Handle user turn decision
+        # After round summarization, check round threshold
+        graph.add_edge("round_summarization", "round_threshold_check")
+
+        # Add intermediate node for round threshold checking
+        graph.add_node("round_threshold_check", self.nodes.round_threshold_check_node)
         graph.add_conditional_edges(
-            "user_turn_participation",
-            self.conditions.evaluate_user_turn_decision,
+            "round_threshold_check",
+            self.conditions.check_round_threshold,
             {
-                "continue_discussion": "end_topic_poll",
-                "conclude_topic": "final_considerations",
+                "start_polling": "end_topic_poll",  # Start polling if threshold reached
+                "continue_discussion": "discussion_round",  # Continue with next round
             },
         )
 
@@ -299,7 +503,21 @@ class VirtualAgoraV13Flow:
             self.conditions.evaluate_conclusion_vote,
             {
                 "continue_discussion": "discussion_round",
-                "conclude_topic": "final_considerations",
+                "conclude_topic": "user_topic_conclusion_confirmation",
+            },
+        )
+
+        # Add user confirmation before topic conclusion
+        graph.add_node(
+            "user_topic_conclusion_confirmation",
+            self.nodes.user_topic_conclusion_confirmation_node,
+        )
+        graph.add_conditional_edges(
+            "user_topic_conclusion_confirmation",
+            self.conditions.evaluate_user_topic_conclusion_confirmation,
+            {
+                "confirm_conclusion": "final_considerations",
+                "continue_discussion": "discussion_round",
             },
         )
 
@@ -309,7 +527,7 @@ class VirtualAgoraV13Flow:
             self.conditions.evaluate_conclusion_vote,
             {
                 "continue_discussion": "discussion_round",
-                "conclude_topic": "final_considerations",
+                "conclude_topic": "user_topic_conclusion_confirmation",
             },
         )
 
@@ -360,10 +578,10 @@ class VirtualAgoraV13Flow:
         return graph
 
     def _evaluate_user_approval_routing(self, state: VirtualAgoraState) -> str:
-        """Evaluate user approval routing with proper state validation.
+        """Evaluate user approval routing using centralized FlowRouter.
 
-        This replaces the complex lambda function with proper error handling
-        and state validation to prevent the third iteration bug.
+        This method now delegates the complex routing logic to the FlowRouter
+        component, which provides better separation of concerns and testability.
 
         Args:
             state: Current state
@@ -371,142 +589,44 @@ class VirtualAgoraV13Flow:
         Returns:
             Routing decision: "end_session", "no_items", "has_items", or "modify_agenda"
         """
-        logger.info("=== USER APPROVAL ROUTING EVALUATION START ===")
+        # Delegate to the centralized flow router
+        return self.flow_router.evaluate_user_approval_routing(state)
 
-        # LOG: Complete state context for routing decision
-        routing_context = {
-            "user_approves_continuation": state.get("user_approves_continuation"),
-            "agents_vote_end_session": state.get("agents_vote_end_session"),
-            "user_forced_conclusion": state.get("user_forced_conclusion"),
-            "user_requested_modification": state.get("user_requested_modification"),
-            "topic_queue": state.get("topic_queue", []),
-            "active_topic": state.get("active_topic"),
-            "completed_topics": state.get("completed_topics", []),
-            "current_phase": state.get("current_phase"),
-            "current_round": state.get("current_round", 0),
+    def _discussion_round_recovery(
+        self, node_name: str, error: Exception, state: VirtualAgoraState
+    ) -> Dict[str, Any]:
+        """Custom recovery strategy for discussion round failures."""
+        logger.warning(f"Discussion round '{node_name}' failed: {error}")
+
+        return {
+            "discussion_round_error": True,
+            "error_node": node_name,
+            "error_message": f"Discussion round failed: {error}",
+            "skip_to_round_summary": True,
+            "continue_with_next_round": True,
+            "agent_responses": [],  # Empty responses to prevent downstream errors
+            "round_completed": False,
+            "recovery_strategy": "skip_to_summary",
         }
-        logger.info(f"Routing context: {routing_context}")
 
-        # First check explicit session continuation evaluation
-        logger.debug("Checking session continuation evaluation...")
-        session_decision = self.conditions.evaluate_session_continuation(state)
-        logger.info(f"Session continuation decision: {session_decision}")
+    def _user_approval_recovery(
+        self, node_name: str, error: Exception, state: VirtualAgoraState
+    ) -> Dict[str, Any]:
+        """Custom recovery strategy for user approval failures."""
+        logger.warning(f"User approval '{node_name}' failed: {error}")
 
-        if session_decision == "end_session":
-            logger.info(
-                "ROUTING DECISION: end_session (from session continuation evaluation)"
-            )
-            return "end_session"
-
-        # Check if user explicitly requested agenda modification
-        if state.get("user_requested_modification", False):
-            logger.info(
-                "ROUTING DECISION: modify_agenda (user explicitly requested modification)"
-            )
-            return "modify_agenda"
-
-        # Validate and clean topic_queue
+        # Default to continuing with remaining topics
         topic_queue = state.get("topic_queue", [])
-        logger.debug(
-            f"Raw topic_queue from state: {topic_queue} (Type: {type(topic_queue)})"
-        )
+        has_topics = bool(topic_queue)
 
-        # Handle nested list corruption
-        cleaned_queue = []
-        corruption_detected = False
-
-        for i, item in enumerate(topic_queue):
-            logger.debug(
-                f"Processing topic_queue item {i}: {item} (Type: {type(item)})"
-            )
-            if isinstance(item, list):
-                logger.warning(f"Nested list detected at index {i}: {item}")
-                corruption_detected = True
-                for nested_item in item:
-                    if isinstance(nested_item, str) and nested_item.strip():
-                        cleaned_queue.append(nested_item.strip())
-                        logger.debug(
-                            f"Extracted from nested list: '{nested_item.strip()}'"
-                        )
-                cleaned_queue.extend(item)
-            elif isinstance(item, str) and item.strip():
-                cleaned_queue.append(item.strip())
-                logger.debug(f"Added valid topic: '{item.strip()}'")
-            else:
-                logger.warning(
-                    f"Invalid topic_queue item ignored: {item} (Type: {type(item)})"
-                )
-
-        # Helper function to truncate long topic titles for cleaner logs
-        def truncate_topic(topic, max_length=60):
-            if isinstance(topic, str) and len(topic) > max_length:
-                return topic[:max_length] + "..."
-            return topic
-
-        def truncate_topic_list(topics):
-            return [truncate_topic(topic) for topic in topics]
-
-        # LOG: State validation results
-        logger.info(f"=== TOPIC QUEUE VALIDATION ===")
-        logger.debug(f"Original topic_queue: {topic_queue}")
-        logger.debug(f"Cleaned topic_queue: {cleaned_queue}")
-        logger.info(f"Original topic_queue: {truncate_topic_list(topic_queue)}")
-        logger.info(f"Cleaned topic_queue: {truncate_topic_list(cleaned_queue)}")
-        logger.info(f"Queue length: {len(topic_queue)} -> {len(cleaned_queue)}")
-        logger.info(f"Corruption detected: {corruption_detected}")
-        logger.info(f"Active topic: {truncate_topic(state.get('active_topic'))}")
-        logger.info(
-            f"Completed topics: {truncate_topic_list(state.get('completed_topics', []))}"
-        )
-        logger.info(f"Completed topics count: {len(state.get('completed_topics', []))}")
-
-        # Update state with cleaned queue if corruption was detected
-        if cleaned_queue != topic_queue:
-            logger.error(f"CRITICAL: Topic queue corruption detected!")
-            logger.error(f"  Original: {topic_queue}")
-            logger.error(f"  Cleaned:  {cleaned_queue}")
-            logger.error(
-                "  Note: Cannot update state from routing function - this may cause issues!"
-            )
-
-        # Handle interrupt context cleanup for completed topic
-        interrupt_manager = get_interrupt_manager()
-        completed_topics = state.get("completed_topics", [])
-        if completed_topics:
-            # Get the most recently completed topic for cleanup
-            last_completed_topic = (
-                completed_topics[-1]
-                if isinstance(completed_topics[-1], str)
-                else str(completed_topics[-1])
-            )
-            logger.info(f"=== TOPIC COMPLETION CLEANUP ===")
-            logger.info(
-                f"Clearing interrupt context for completed topic: {last_completed_topic}"
-            )
-            interrupt_manager.clear_topic_context(last_completed_topic)
-
-        # Make routing decision based on cleaned queue
-        if not cleaned_queue:
-            logger.info(
-                "ROUTING DECISION: no_items (no topics remaining in cleaned queue)"
-            )
-            logger.info(
-                f"Decision factors: cleaned_queue={cleaned_queue}, len={len(cleaned_queue)}"
-            )
-            return "no_items"
-        else:
-            # Set up interrupt context for next topic if we're continuing
-            if cleaned_queue:
-                next_topic = cleaned_queue[0]
-                logger.info(f"=== PREPARING FOR NEXT TOPIC ===")
-                logger.info(f"Resetting interrupt context for next topic: {next_topic}")
-                interrupt_manager.reset_for_new_topic(next_topic)
-
-            logger.info(
-                f"ROUTING DECISION: has_items ({len(cleaned_queue)} topics remaining)"
-            )
-            logger.info(f"Remaining topics: {truncate_topic_list(cleaned_queue)}")
-            return "has_items"
+        return {
+            "user_approval_error": True,
+            "error_node": node_name,
+            "error_message": f"User approval failed: {error}",
+            "user_approves_continuation": has_topics,  # Continue if there are topics
+            "use_default_approval": True,
+            "recovery_strategy": "default_continue" if has_topics else "default_end",
+        }
 
     def compile(self) -> Any:
         """Compile the graph with checkpointing.

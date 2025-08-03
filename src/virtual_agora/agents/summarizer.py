@@ -132,18 +132,26 @@ class SummarizerAgent(LLMAgent):
         target_tokens = int(original_tokens * self.compression_ratio)
         target_tokens = min(target_tokens, self.max_summary_tokens)
 
-        # Create summarization prompt
+        # Create Round Moderator-focused summarization prompt
         prompt = (
-            f"**Task:** Summarize Discussion Round.\n"
+            f"**Task:** Create Round Moderator Summary.\n"
             f"**Topic:** {topic}\n"
             f"**Round:** {round_number}\n\n"
             f"**Raw Discussion Transcript:**\n---\n{combined_text}\n---\n\n"
             f"**Instructions:**\n"
-            f"1.  Create a concise, neutral, and agent-agnostic summary of the key points from the transcript.\n"
-            f"2.  Synthesize the main arguments, points of consensus, disagreements, and any new insights.\n"
-            f"3.  Write in the third person. Do not attribute comments to specific speakers.\n"
-            f"4.  The target length is approximately {target_tokens} tokens.\n"
-            f"5.  Your response should contain **only the summary text** and nothing else."
+            f"Create a strategic summary to help the Round Moderator decide their next steps.\n\n"
+            f"**Required Elements:**\n"
+            f"• **Key Points**: Main arguments and positions presented\n"
+            f"• **Agreements**: Areas where participants found common ground\n"
+            f"• **Disagreements**: Points of contention or different perspectives\n"
+            f"• **Emerging Direction**: Where the discussion seems to be heading\n"
+            f"• **Strategic Context**: What might be helpful for the next round\n\n"
+            f"**Format Guidelines:**\n"
+            f"1. Write in third person, agent-agnostic style\n"
+            f"2. Focus on content that helps strategic decision-making\n"
+            f"3. Target length: approximately {target_tokens} tokens\n"
+            f"4. Structure the summary to aid Round Moderator choices (Participate/Continue/End Topic)\n"
+            f"5. Your response should contain **only the summary text** and nothing else."
         )
 
         # Generate summary

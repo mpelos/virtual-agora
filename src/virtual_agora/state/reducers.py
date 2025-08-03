@@ -33,12 +33,40 @@ def safe_list_append(current_list: Optional[List[Any]], new_item: Any) -> List[A
     logger.info(f"Current list: {current_list} (Type: {type(current_list)})")
     logger.info(f"New item: {new_item} (Type: {type(new_item)})")
 
-    # VALIDATION: Reject empty lists being passed as new_item
+    # VALIDATION: Handle empty lists being passed as new_item
     if isinstance(new_item, list) and len(new_item) == 0:
-        logger.error(f"REJECTED: Empty list passed as new_item: {new_item}")
-        logger.error(
-            f"This is likely a bug - reducers expect individual items, not empty lists"
-        )
+        # Count empty list occurrences to avoid spam
+        empty_list_count = getattr(safe_list_append, "_empty_list_count", 0) + 1
+        safe_list_append._empty_list_count = empty_list_count
+
+        # Only log detailed stack trace for first few occurrences
+        if empty_list_count <= 3:
+            import traceback
+
+            logger.error(
+                f"REJECTED: Empty list passed as new_item: {new_item} (occurrence #{empty_list_count})"
+            )
+            logger.error(
+                f"This indicates a bug in node return values or LangGraph processing"
+            )
+
+            if empty_list_count == 1:
+                logger.error(
+                    f"Call stack for debugging (showing only for first occurrence):"
+                )
+                # Get the call stack to help identify the source
+                stack = traceback.format_stack()
+                for frame in stack[-5:]:  # Show last 5 frames
+                    logger.error(f"  {frame.strip()}")
+        elif empty_list_count == 4:
+            logger.error(
+                f"SUPPRESSING further empty list errors to reduce log noise (total: {empty_list_count})"
+            )
+        elif empty_list_count % 10 == 0:
+            logger.warning(
+                f"Empty list rejections continue (total: {empty_list_count})"
+            )
+
         # Return current list unchanged to prevent corruption
         return current_list if current_list is not None else []
 
@@ -55,8 +83,125 @@ def safe_list_append(current_list: Optional[List[Any]], new_item: Any) -> List[A
         ):  # Reasonable number of agents
             is_intentional = True
             logger.debug(
-                f"LIST PASSED as new_item (likely turn_order_history): {new_item}"
+                f"Valid turn order list for turn_order_history: {len(new_item)} agents"
             )
+
+        # phase_history field - handle single-item lists (common bug)
+        elif (
+            len(new_item) == 1
+            and isinstance(new_item[0], dict)
+            and "from_phase" in new_item[0]
+            and "to_phase" in new_item[0]
+        ):
+            logger.warning(f"SINGLE-ITEM LIST detected for phase_history")
+            logger.warning(
+                f"Extracting phase transition from list wrapper - this indicates a bug in LangGraph processing"
+            )
+            # Extract the actual item from the list wrapper
+            actual_item = new_item[0]
+            is_intentional = True  # Mark as handled to avoid further warnings
+
+            # Continue with normal processing using the extracted item
+            if current_list is None:
+                result = [actual_item]
+                logger.info(
+                    f"Extracted phase transition from list wrapper: {actual_item.get('from_phase')} → {actual_item.get('to_phase')}"
+                )
+                return result
+            else:
+                result = current_list + [actual_item]
+                logger.info(
+                    f"Extracted and appended phase transition: {len(result)} total transitions"
+                )
+                return result
+
+        # round_history field - handle single-item lists (common bug)
+        elif (
+            len(new_item) == 1
+            and isinstance(new_item[0], dict)
+            and "round_id" in new_item[0]
+            and "round_number" in new_item[0]
+        ):
+            logger.warning(f"SINGLE-ITEM LIST detected for round_history")
+            logger.warning(
+                f"Extracting round info from list wrapper - this indicates a bug in LangGraph processing"
+            )
+            # Extract the actual item from the list wrapper
+            actual_item = new_item[0]
+            is_intentional = True  # Mark as handled to avoid further warnings
+
+            # Continue with normal processing using the extracted item
+            if current_list is None:
+                result = [actual_item]
+                logger.info(
+                    f"Extracted round info from list wrapper: round {actual_item.get('round_number')}"
+                )
+                return result
+            else:
+                result = current_list + [actual_item]
+                logger.info(
+                    f"Extracted and appended round info: {len(result)} total rounds"
+                )
+                return result
+
+        # round_summaries field - handle single-item lists (common bug)
+        elif (
+            len(new_item) == 1
+            and isinstance(new_item[0], dict)
+            and "round_number" in new_item[0]
+            and "summary_text" in new_item[0]
+        ):
+            logger.warning(f"SINGLE-ITEM LIST detected for round summaries")
+            logger.warning(
+                f"Extracting item from list wrapper - this indicates a bug in node return values"
+            )
+            # Extract the actual item from the list wrapper
+            actual_item = new_item[0]
+            is_intentional = True  # Mark as handled to avoid further warnings
+
+            # Continue with normal processing using the extracted item
+            if current_list is None:
+                result = [actual_item]
+                logger.info(
+                    f"Extracted round summary from list wrapper: round {actual_item.get('round_number')}"
+                )
+                return result
+            else:
+                result = current_list + [actual_item]
+                logger.info(
+                    f"Extracted and appended round summary: {len(result)} total summaries"
+                )
+                return result
+
+        # turn_order_history field - handle nested lists (double wrapping bug)
+        elif (
+            len(new_item) == 1
+            and isinstance(new_item[0], list)
+            and len(new_item[0]) > 0
+            and all(isinstance(item, str) for item in new_item[0])
+            and len(new_item[0]) <= 10
+        ):
+            logger.warning(f"NESTED LIST detected for turn_order_history")
+            logger.warning(
+                f"Extracting turn order from nested list wrapper - this indicates a bug in LangGraph processing"
+            )
+            # Extract the actual turn order from the nested list
+            actual_turn_order = new_item[0]
+            is_intentional = True  # Mark as handled to avoid further warnings
+
+            # Continue with normal processing using the extracted turn order
+            if current_list is None:
+                result = [actual_turn_order]
+                logger.info(
+                    f"Extracted turn order from nested list: {len(actual_turn_order)} agents"
+                )
+                return result
+            else:
+                result = current_list + [actual_turn_order]
+                logger.info(
+                    f"Extracted and appended turn order: {len(result)} total turn orders"
+                )
+                return result
 
         # votes field - handle vote batches properly
         elif len(new_item) > 0 and all(
@@ -92,10 +237,12 @@ def safe_list_append(current_list: Optional[List[Any]], new_item: Any) -> List[A
                     f"First vote sample: {new_item[0] if new_item else 'none'}"
                 )
         else:
-            logger.warning(f"LIST PASSED as new_item: {new_item}")
-            logger.warning(
-                f"Verify this is intentional - reducers typically expect individual items"
-            )
+            # Only warn for non-intentional list patterns
+            if not is_intentional:
+                logger.warning(f"LIST PASSED as new_item: {new_item}")
+                logger.warning(
+                    f"Verify this is intentional - reducers typically expect individual items"
+                )
 
     if current_list is None:
         result = [new_item]

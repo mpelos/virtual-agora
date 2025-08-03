@@ -18,6 +18,36 @@ from virtual_agora.state.schema import (
 from virtual_agora.state.validators import StateValidator
 
 
+def _extract_message_speaker_id(msg) -> str:
+    """Safely extract speaker_id from both AIMessage objects and dict formats.
+
+    Args:
+        msg: Message object (BaseMessage or dict)
+
+    Returns:
+        Speaker ID string
+    """
+    if hasattr(msg, "content"):  # LangChain BaseMessage (AIMessage, HumanMessage, etc.)
+        return getattr(msg, "additional_kwargs", {}).get("speaker_id", "unknown")
+    else:  # Virtual Agora dict format
+        return msg.get("speaker_id", "unknown")
+
+
+def _extract_message_content(msg) -> str:
+    """Safely extract content from both AIMessage objects and dict formats.
+
+    Args:
+        msg: Message object (BaseMessage or dict)
+
+    Returns:
+        Message content string
+    """
+    if hasattr(msg, "content"):  # LangChain BaseMessage
+        return msg.content
+    else:  # Virtual Agora dict format
+        return msg.get("content", "")
+
+
 def format_state_summary(state: VirtualAgoraState) -> str:
     """Format a human-readable summary of the current state.
 
@@ -154,11 +184,20 @@ def calculate_statistics(state: VirtualAgoraState) -> Dict[str, Any]:
     phase_durations = calculate_phase_durations(state)
     stats["phase_durations_seconds"] = phase_durations
 
-    # Add message timing statistics
+    # Add message timing statistics with defensive handling
     if state["messages"]:
-        message_times = [msg["timestamp"] for msg in state["messages"]]
-        stats["messages"]["first_message_time"] = min(message_times).isoformat()
-        stats["messages"]["last_message_time"] = max(message_times).isoformat()
+        message_times = []
+        for msg in state["messages"]:
+            if isinstance(msg, dict):
+                timestamp = msg.get("timestamp")
+            else:
+                timestamp = getattr(msg, "timestamp", None)
+            if timestamp:
+                message_times.append(timestamp)
+
+        if message_times:
+            stats["messages"]["first_message_time"] = min(message_times).isoformat()
+            stats["messages"]["last_message_time"] = max(message_times).isoformat()
 
         # Calculate message frequency
         if len(message_times) > 1:
@@ -213,7 +252,15 @@ def get_phase_messages(state: VirtualAgoraState, phase: int) -> List[Message]:
     Returns:
         List of messages from that phase
     """
-    return [msg for msg in state["messages"] if msg["phase"] == phase]
+    result = []
+    for msg in state["messages"]:
+        if isinstance(msg, dict):
+            msg_phase = msg.get("phase")
+        else:
+            msg_phase = getattr(msg, "phase", None)
+        if msg_phase == phase:
+            result.append(msg)
+    return result
 
 
 def get_topic_messages(state: VirtualAgoraState, topic: str) -> List[Message]:
@@ -226,7 +273,15 @@ def get_topic_messages(state: VirtualAgoraState, topic: str) -> List[Message]:
     Returns:
         List of messages for that topic
     """
-    return [msg for msg in state["messages"] if msg.get("topic") == topic]
+    result = []
+    for msg in state["messages"]:
+        if isinstance(msg, dict):
+            msg_topic = msg.get("topic")
+        else:
+            msg_topic = getattr(msg, "topic", None)
+        if msg_topic == topic:
+            result.append(msg)
+    return result
 
 
 def get_agent_messages(state: VirtualAgoraState, agent_id: str) -> List[Message]:
@@ -239,7 +294,9 @@ def get_agent_messages(state: VirtualAgoraState, agent_id: str) -> List[Message]
     Returns:
         List of messages from that agent
     """
-    return [msg for msg in state["messages"] if msg["speaker_id"] == agent_id]
+    return [
+        msg for msg in state["messages"] if _extract_message_speaker_id(msg) == agent_id
+    ]
 
 
 def get_vote_results(state: VirtualAgoraState, vote_round_id: str) -> Dict[str, int]:
@@ -287,20 +344,37 @@ def format_discussion_log(state: VirtualAgoraState) -> str:
     current_topic = None
 
     for msg in state["messages"]:
+        # Safely extract message data
+        if isinstance(msg, dict):
+            msg_phase = msg.get("phase")
+            msg_topic = msg.get("topic")
+            timestamp = msg.get("timestamp", datetime.now())
+            speaker = msg.get("speaker_id", "unknown")
+            role = f"[{msg.get('speaker_role', 'unknown').upper()}]"
+            content = msg.get("content", "")
+        else:
+            # Handle AIMessage or other BaseMessage objects
+            msg_phase = getattr(msg, "phase", None)
+            msg_topic = getattr(msg, "topic", None)
+            timestamp = getattr(msg, "timestamp", datetime.now())
+            speaker = _extract_message_speaker_id(msg)
+            role = f"[{getattr(msg, 'speaker_role', 'unknown').upper()}]"
+            content = _extract_message_content(msg)
+
         # Add phase header if changed
-        if msg["phase"] != current_phase:
-            current_phase = msg["phase"]
+        if msg_phase is not None and msg_phase != current_phase:
+            current_phase = msg_phase
             lines.extend(
                 [
                     "",
-                    f"--- {StateValidator.PHASE_NAMES[current_phase]} ---",
+                    f"--- {StateValidator.PHASE_NAMES.get(current_phase, f'Phase {current_phase}')} ---",
                     "",
                 ]
             )
 
         # Add topic header if changed
-        if msg.get("topic") != current_topic:
-            current_topic = msg.get("topic")
+        if msg_topic != current_topic:
+            current_topic = msg_topic
             if current_topic:
                 lines.extend(
                     [
@@ -310,10 +384,12 @@ def format_discussion_log(state: VirtualAgoraState) -> str:
                 )
 
         # Format message
-        timestamp = msg["timestamp"].strftime("%H:%M:%S")
-        speaker = msg["speaker_id"]
-        role = f"[{msg['speaker_role'].upper()}]"
-        lines.append(f"{timestamp} {role} {speaker}: {msg['content']}")
+        time_str = (
+            timestamp.strftime("%H:%M:%S")
+            if hasattr(timestamp, "strftime")
+            else str(timestamp)
+        )
+        lines.append(f"{time_str} {role} {speaker}: {content}")
 
     # Add summary section if available
     if state["final_report"]:
@@ -338,21 +414,44 @@ def export_for_analysis(state: VirtualAgoraState) -> Dict[str, Any]:
     Returns:
         Dictionary with analysis-friendly data
     """
-    # Convert messages to simple format
+    # Convert messages to simple format with defensive handling
     messages = []
     for msg in state["messages"]:
+        # Safely extract message data
+        if isinstance(msg, dict):
+            msg_id = msg.get("id", "unknown")
+            speaker_id = msg.get("speaker_id", "unknown")
+            speaker_role = msg.get("speaker_role", "unknown")
+            content = msg.get("content", "")
+            timestamp = msg.get("timestamp", datetime.now())
+            phase = msg.get("phase", 0)
+            topic = msg.get("topic")
+        else:
+            # Handle AIMessage or other BaseMessage objects
+            msg_id = getattr(msg, "id", "unknown")
+            speaker_id = _extract_message_speaker_id(msg)
+            speaker_role = getattr(msg, "speaker_role", "unknown")
+            content = _extract_message_content(msg)
+            timestamp = getattr(msg, "timestamp", datetime.now())
+            phase = getattr(msg, "phase", 0)
+            topic = getattr(msg, "topic", None)
+
         messages.append(
             {
-                "id": msg["id"],
-                "speaker_id": msg["speaker_id"],
-                "speaker_role": msg["speaker_role"],
-                "content": msg["content"],
-                "timestamp": msg["timestamp"].isoformat(),
-                "phase": msg["phase"],
-                "phase_name": StateValidator.PHASE_NAMES[msg["phase"]],
-                "topic": msg.get("topic"),
-                "word_count": len(msg["content"].split()),
-                "char_count": len(msg["content"]),
+                "id": msg_id,
+                "speaker_id": speaker_id,
+                "speaker_role": speaker_role,
+                "content": content,
+                "timestamp": (
+                    timestamp.isoformat()
+                    if hasattr(timestamp, "isoformat")
+                    else str(timestamp)
+                ),
+                "phase": phase,
+                "phase_name": StateValidator.PHASE_NAMES.get(phase, f"Phase {phase}"),
+                "topic": topic,
+                "word_count": len(content.split()) if content else 0,
+                "char_count": len(content) if content else 0,
             }
         )
 
@@ -440,13 +539,27 @@ def debug_state(state: VirtualAgoraState) -> str:
             f"{agent['message_count']} messages"
         )
 
-    # Recent messages
+    # Recent messages with defensive handling
     lines.extend(["", "Recent messages:"])
     for msg in state["messages"][-5:]:
-        lines.append(
-            f"  [{msg['timestamp'].strftime('%H:%M:%S')}] "
-            f"{msg['speaker_id']}: {msg['content'][:50]}..."
+        # Safely extract message data
+        if isinstance(msg, dict):
+            timestamp = msg.get("timestamp", datetime.now())
+            speaker_id = msg.get("speaker_id", "unknown")
+            content = msg.get("content", "")
+        else:
+            # Handle AIMessage or other BaseMessage objects
+            timestamp = getattr(msg, "timestamp", datetime.now())
+            speaker_id = _extract_message_speaker_id(msg)
+            content = _extract_message_content(msg)
+
+        time_str = (
+            timestamp.strftime("%H:%M:%S")
+            if hasattr(timestamp, "strftime")
+            else str(timestamp)
         )
+        content_preview = content[:50] + "..." if len(content) > 50 else content
+        lines.append(f"  [{time_str}] {speaker_id}: {content_preview}")
 
     # Active vote
     if state["active_vote"]:

@@ -11,7 +11,7 @@ from virtual_agora.flow.edges_v13 import V13FlowConditions
 @pytest.fixture
 def flow_conditions():
     """Create V13FlowConditions instance."""
-    return V13FlowConditions()
+    return V13FlowConditions(checkpoint_interval=5)
 
 
 class TestPhase1Conditions:

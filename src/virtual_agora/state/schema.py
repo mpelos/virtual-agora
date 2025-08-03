@@ -301,6 +301,13 @@ class VirtualAgoraState(TypedDict):
     user_defined_agenda: NotRequired[
         bool
     ]  # Whether agenda was set by user (not agents)
+
+    # User turn participation fields (for mid-discussion user interaction)
+    user_turn_decision: NotRequired[str]  # 'continue', 'participate', 'finalize'
+    user_participation_message: NotRequired[
+        Optional[str]
+    ]  # User's message if participating
+
     active_topic: Optional[str]
     topic_queue: List[str]  # Topics to be discussed
     proposed_topics: List[str]  # All proposed topics (Phase 1)

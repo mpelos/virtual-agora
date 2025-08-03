@@ -89,6 +89,43 @@ class ContextAwareMixin:
 
         return messages
 
+    def format_messages_with_prebuilt_context(
+        self,
+        prompt: str,
+        formatted_context_messages: Optional[List[BaseMessage]] = None,
+        include_system: bool = True,
+    ) -> List[BaseMessage]:
+        """Format messages using pre-built context messages from DiscussionRoundContextBuilder.
+
+        This method is optimized for discussion rounds where context has already been
+        properly formatted by the centralized context builders.
+
+        Args:
+            prompt: The current prompt/question
+            formatted_context_messages: Pre-formatted context messages from context builder
+            include_system: Whether to include system prompt
+
+        Returns:
+            List of formatted messages ready for LangChain
+        """
+        messages: List[BaseMessage] = []
+
+        # Add system prompt
+        if include_system and hasattr(self, "system_prompt") and self.system_prompt:
+            messages.append(SystemMessage(content=self.system_prompt))
+
+        # Add pre-formatted context messages
+        if formatted_context_messages:
+            messages.extend(formatted_context_messages)
+            logger.debug(
+                f"Added {len(formatted_context_messages)} pre-formatted context messages"
+            )
+
+        # Add the current prompt
+        messages.append(HumanMessage(content=prompt))
+
+        return messages
+
     def _build_enhanced_prompt(
         self, base_prompt: str, context_data: ContextData
     ) -> str:
@@ -111,7 +148,7 @@ class ContextAwareMixin:
         if context_data.has_user_input:
             prompt_parts.append(f"Discussion Theme: {context_data.user_input}")
 
-        # Add topic messages if available
+        # Add legacy topic messages if available (backward compatibility)
         if context_data.has_topic_messages:
             messages_text = "\n".join(
                 [
@@ -166,6 +203,34 @@ class ContextAwareMixin:
                 ]
             )
             prompt_parts.append(f"Content to Summarize:\n{content_text}")
+
+        # NEW: Add processed user participation messages
+        if context_data.has_user_participation_messages:
+            user_msg_parts = []
+            for msg in context_data.user_participation_messages[
+                -5:
+            ]:  # Last 5 user messages
+                if hasattr(msg, "round_number") and hasattr(msg, "content"):
+                    user_msg_parts.append(f"Round {msg.round_number}: {msg.content}")
+                else:
+                    user_msg_parts.append(str(msg))
+            if user_msg_parts:
+                prompt_parts.append(
+                    f"User Participation:\n" + "\n".join(user_msg_parts)
+                )
+
+        # NEW: Add processed current round messages
+        if context_data.has_current_round_messages:
+            current_msg_parts = []
+            for msg in context_data.current_round_messages:
+                if hasattr(msg, "speaker_id") and hasattr(msg, "content"):
+                    current_msg_parts.append(f"{msg.speaker_id}: {msg.content}")
+                else:
+                    current_msg_parts.append(str(msg))
+            if current_msg_parts:
+                prompt_parts.append(
+                    f"Current Round Discussion:\n" + "\n".join(current_msg_parts)
+                )
 
         # Combine all parts with the base prompt
         if prompt_parts:

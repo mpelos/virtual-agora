@@ -53,6 +53,7 @@ from virtual_agora.ui.human_in_the_loop import (
     get_initial_topic,
     get_continuation_approval,
     get_agenda_modifications,
+    get_user_turn_participation,
     display_session_status,
 )
 from virtual_agora.ui.hitl_manager import (
@@ -518,16 +519,16 @@ def handle_user_turn_participation_interrupt(
         user_message = user_response.get("user_message")
 
         return {
-            "action": action,
-            "user_message": user_message,
+            "user_turn_decision": action,
+            "user_participation_message": user_message,
         }
 
     except Exception as e:
         logger.error(f"Error in user turn participation interrupt: {e}")
         # Fallback to continue
         return {
-            "action": "continue",
-            "user_message": None,
+            "user_turn_decision": "continue",
+            "user_participation_message": None,
         }
 
 
